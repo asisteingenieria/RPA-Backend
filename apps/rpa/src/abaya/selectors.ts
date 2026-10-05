@@ -64,6 +64,24 @@ export const sel = {
     inboxMarker: (p: Page) => sel.chatList.root(p),
     logout: (p: Page) => p.getByRole('link', { name: 'Salir' }),
   },
+
+  /**
+   * Selectores CSS por atributo para el MutationObserver de respaldo (corre dentro de la
+   * página, donde no existen los locators de Playwright). Solo atributos semánticos.
+   */
+  dom: {
+    messageItem: '[data-message-id]',
+    chatContainer: '[data-chat-id]',
+    chatListItem: 'nav[aria-label="Chats asignados"] [data-chat-id]',
+    attrs: {
+      messageId: 'data-message-id',
+      chatId: 'data-chat-id',
+      sender: 'data-sender',
+      timestamp: 'data-timestamp',
+    },
+    /** Valores de `data-sender` → remitente del dominio. */
+    senders: { customer: 'CUSTOMER', agent: 'AGENT', system: 'SYSTEM' },
+  },
 } as const;
 
 /** Escapa un valor para usarlo dentro de un selector de atributo `[attr="..."]`. */

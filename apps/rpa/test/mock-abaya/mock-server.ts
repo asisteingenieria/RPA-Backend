@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { totp } from '@abaya/crypto';
+import { WebSocketServer, type WebSocket } from 'ws';
 import { inboxHtml, loginHtml, sampleChats, type MockChat, type MockMessage } from './templates.js';
 
 export interface MockAbayaOptions {
@@ -28,6 +29,8 @@ export class MockAbayaServer {
   /** Si es true, los envíos se aceptan pero no aparecen (para probar UNCERTAIN en F4). */
   dropOutgoing = false;
   private server?: Server;
+  private wss?: WebSocketServer;
+  private readonly sockets = new Set<WebSocket>();
   private seq = 0;
 
   constructor(private readonly opts: MockAbayaOptions = {}) {
@@ -43,6 +46,18 @@ export class MockAbayaServer {
         res.end();
       });
     });
+    this.wss = new WebSocketServer({ noServer: true });
+    this.server.on('upgrade', (req, socket, head) => {
+      const path = new URL(req.url ?? '/', 'http://x').pathname;
+      if (path !== '/ws' || !this.isAuthed(req)) {
+        socket.destroy();
+        return;
+      }
+      this.wss!.handleUpgrade(req, socket, head, (ws) => {
+        this.sockets.add(ws);
+        ws.on('close', () => this.sockets.delete(ws));
+      });
+    });
     await new Promise<void>((r) => this.server!.listen(0, '127.0.0.1', r));
     return this.url;
   }
@@ -53,6 +68,8 @@ export class MockAbayaServer {
   }
 
   async stop(): Promise<void> {
+    for (const ws of this.sockets) ws.terminate();
+    this.wss?.close();
     this.server?.closeAllConnections();
     await new Promise<void>((r) => this.server?.close(() => r()) ?? r());
   }
@@ -73,17 +90,25 @@ export class MockAbayaServer {
     };
     chat.messages.push(m);
     chat.unread++;
+    this.broadcast('message.created', { chatId, ...wireMessage(m) });
     return m;
   }
 
   assignChat(chatId: string, alias = `Cliente ${chatId}`): MockChat {
     const chat: MockChat = { id: chatId, alias, unread: 0, messages: [] };
     this.chats.push(chat);
+    this.broadcast('chat.assigned', { chatId });
     return chat;
   }
 
   chat(chatId: string): MockChat | undefined {
     return this.chats.find((c) => c.id === chatId);
+  }
+
+  /** Empuja un evento a todos los navegadores conectados (como el WebSocket de Abaya). */
+  broadcast(event: string, data: unknown) {
+    const frame = JSON.stringify({ event, data });
+    for (const ws of this.sockets) ws.send(frame);
   }
 
   // ---------- HTTP ----------
@@ -146,24 +171,21 @@ export class MockAbayaServer {
       if (req.method === 'GET' && action === 'messages') {
         return json(res, {
           chatId,
-          messages: chat.messages.map((x) => ({
-            id: x.id,
-            sender: { type: x.sender },
-            text: x.text,
-            sentAt: x.sentAt,
-          })),
+          messages: chat.messages.map(wireMessage),
         });
       }
       if (req.method === 'POST') {
         const body = JSON.parse((await readBody(req)) || '{}') as Record<string, string>;
         if (action === 'messages') {
           if (!this.dropOutgoing) {
-            chat.messages.push({
+            const out: MockMessage = {
               id: `m-${chatId}-${++this.seq}`,
               sender: 'agent',
               text: body.text ?? '',
               sentAt: new Date().toISOString(),
-            });
+            };
+            chat.messages.push(out);
+            this.broadcast('message.created', { chatId, ...wireMessage(out) });
           }
           return json(res, { ok: true }, 201);
         }
@@ -190,6 +212,7 @@ export class MockAbayaServer {
   private removeChat(chatId: string) {
     const i = this.chats.findIndex((c) => c.id === chatId);
     if (i >= 0) this.chats.splice(i, 1);
+    this.broadcast('chat.removed', { chatId });
   }
 
   private sid(req: IncomingMessage): string | undefined {
@@ -224,4 +247,9 @@ function json(res: ServerResponse, body: unknown, status = 200) {
 function redirect(res: ServerResponse, location: string) {
   res.writeHead(302, { location });
   res.end();
+}
+
+/** Formato de mensaje "en el cable" (XHR y WebSocket) del simulador. */
+function wireMessage(m: MockMessage) {
+  return { id: m.id, sender: { type: m.sender }, text: m.text, sentAt: m.sentAt };
 }

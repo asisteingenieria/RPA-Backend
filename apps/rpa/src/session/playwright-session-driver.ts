@@ -28,7 +28,7 @@ export class PlaywrightSessionDriver implements SessionDriver {
   }
 
   /** Se invoca cada vez que se crea una página nueva (para re-enganchar listeners). */
-  onPage?: (page: Page) => void;
+  onPage?: (page: Page) => Promise<void> | void;
 
   async open(state?: StorageState): Promise<void> {
     this.browser ??= await chromium.launch({ headless: this.opts.headless });
@@ -41,7 +41,7 @@ export class PlaywrightSessionDriver implements SessionDriver {
     const page = await this.context.newPage();
     page.setDefaultTimeout(this.opts.navigationTimeoutMs ?? 15_000);
     this._page = page;
-    this.onPage?.(page);
+    await this.onPage?.(page);
     await page.goto(this.opts.baseUrl, { waitUntil: 'domcontentloaded' });
     // Esperar a que se vea la bandeja o el login (lo que aparezca primero).
     await sel.session

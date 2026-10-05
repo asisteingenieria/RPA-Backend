@@ -1,6 +1,8 @@
 // Dominio: sin dependencias externas (sección 2.5). Se completa en F2–F6.
 
+export * from './fingerprint.js';
 export * from './inbound.js';
+export * from './queues.js';
 
 export const CONVERSATION_STATUSES = [
   'ACTIVE',

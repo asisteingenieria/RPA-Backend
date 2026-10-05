@@ -201,6 +201,42 @@ export function clientScript(mode: 'static' | 'server'): string {
   });
 
   if (MODE === 'server') {
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.onmessage = (ev) => {
+      const { event, data } = JSON.parse(ev.data);
+      if (event === 'message.created') {
+        if (data.chatId === chatId()) {
+          const ol = $('ol[aria-label="Mensajes"]');
+          if (ol && !ol.querySelector('[data-message-id="' + data.id + '"]')) {
+            const li = document.createElement('li');
+            li.setAttribute('data-message-id', data.id);
+            li.setAttribute('data-sender', data.sender.type);
+            li.setAttribute('data-timestamp', data.sentAt);
+            li.innerHTML = '<p>' + esc(data.text) + '</p>';
+            ol.appendChild(li);
+          }
+        } else if (data.sender.type === 'customer') {
+          const item = document.querySelector('nav [data-chat-id="' + data.chatId + '"]');
+          if (item) {
+            let badge = item.querySelector('[data-unread]');
+            if (!badge) { badge = document.createElement('span'); item.appendChild(badge); }
+            const n = Number(badge.getAttribute('data-unread') || 0) + 1;
+            badge.setAttribute('data-unread', String(n));
+            badge.setAttribute('aria-label', n + ' mensajes sin leer');
+            badge.textContent = String(n);
+          }
+        }
+      }
+      if (event === 'chat.assigned' && !document.querySelector('nav [data-chat-id="' + data.chatId + '"]')) {
+        const li = document.createElement('li');
+        li.setAttribute('data-chat-id', data.chatId);
+        li.innerHTML = '<button type="button" aria-current="false">' + esc('Cliente ' + data.chatId) + '</button>';
+        $('nav[aria-label="Chats asignados"] ul').appendChild(li);
+      }
+      if (event === 'chat.removed') {
+        document.querySelector('nav [data-chat-id="' + data.chatId + '"]')?.remove();
+      }
+    };
     const render = (msgs) => {
       const ol = $('ol[aria-label="Mensajes"]');
       if (!ol) return;

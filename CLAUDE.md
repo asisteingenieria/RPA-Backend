@@ -119,7 +119,7 @@ abaya-rpa/
 - [x] F0 Fundaciones
 - [~] F1 Descubrimiento de Abaya (provisional contra el Abaya simulado; falta el descubrimiento real)
 - [x] F2 Sesión (probada contra el simulador; falta E2E @abaya real)
-- [ ] F3 Lectura de mensajes
+- [x] F3 Lectura de mensajes (probada contra el simulador; dedup en BD pendiente de prueba con Postgres)
 - [ ] F4 Envío de mensajes
 - [ ] F5 Motor de conversación
 - [ ] F6 Venta y transferencia
