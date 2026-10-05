@@ -30,6 +30,8 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
   /** Carpeta del storageState cifrado (fuera del control de versiones). */
   SESSION_STATE_DIR: z.string().default('.secrets'),
+  /** Trazas cifradas de errores (retención 7 días). */
+  TRACE_DIR: z.string().default('.secrets/traces'),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
   /** Modelo fijado (sección 13: versión de modelo fijada). Lo elige la suite de evaluación. */
@@ -63,6 +65,7 @@ export function requireAbayaConfig(cfg: AppConfig) {
     totpSecret: cfg.ABAYA_TOTP_SECRET,
     headless: cfg.ABAYA_HEADLESS,
     sessionStateDir: cfg.SESSION_STATE_DIR,
+    traceDir: cfg.TRACE_DIR,
     heartbeatMs: cfg.HEARTBEAT_INTERVAL_MS,
   };
 }

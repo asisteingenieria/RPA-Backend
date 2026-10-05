@@ -123,7 +123,7 @@ abaya-rpa/
 - [x] F4 Envío de mensajes (probada contra el simulador)
 - [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
-- [ ] F7 Robustez, operación y panel
+- [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
 - [ ] F8 Seguridad, despliegue y piloto
 
 ## Abaya simulado
@@ -150,3 +150,12 @@ Los archivos `*.int.test.ts` levantan un PostgreSQL temporal con `@abaya/db/test
 real. Las cadenas de hashes (`ConsentEvidence`, `RpaActionLog`) tienen `prevHash` único (no pueden
 bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se reintentan con
 `withSerializableRetry`.
+
+## Operación (F7)
+
+- Panel: `http://<api>/panel` (build de `apps/panel`), autenticado con `ADMIN_TOKEN` (Bearer) y
+  `X-Admin-User` para la auditoría. Sin `ADMIN_TOKEN`, `/admin` responde 503 (nunca abierto).
+- Kill switch en caliente: bandera `abaya:killswitch` en Redis (panel → rpa), falla cerrado.
+- Colas de acciones por robot: `abaya.outbound|transfer|close.<robotUser>`.
+- Trazas solo en error, cifradas, en `TRACE_DIR` (7 días); `decryptTrace` para verlas.
+- Alertas: logs + `ALERT_WEBHOOK_URL` (Slack/Teams), sin datos personales.

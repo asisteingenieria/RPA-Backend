@@ -21,6 +21,11 @@ export class PlaywrightSessionDriver implements SessionDriver {
 
   constructor(private readonly opts: PlaywrightSessionDriverOptions) {}
 
+  /** Contexto actual del navegador (para las trazas). */
+  get currentContext(): BrowserContext | undefined {
+    return this.context;
+  }
+
   /** Página activa, para el BrowserActor y el InboundWatcher. */
   get page(): Page {
     if (!this._page) throw new Error('Sesión sin página abierta');

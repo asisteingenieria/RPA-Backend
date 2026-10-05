@@ -21,6 +21,8 @@ import { PrismaOutboundRepository } from './outbound/outbound.repository.js';
 import { PrismaRecoveryRepository, RecoveryService } from './recovery/recovery.service.js';
 import { ChatIdentityGuard } from './safety/chat-identity-guard.js';
 import { RedisKillSwitch } from './safety/kill-switch.js';
+import { PlaywrightTraceRecorder, cleanupTraces } from './observability/trace-recorder.js';
+import { runSmokeTest } from './observability/smoke-test.js';
 import { PlaywrightSessionDriver } from './session/playwright-session-driver.js';
 import { SessionManager } from './session/session-manager.js';
 import { PrismaSessionRepository, type SessionStatus } from './session/session.repository.js';
@@ -43,6 +45,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   private handoffConsumers?: HandoffConsumers;
   private recoveryQueue?: Queue;
   private recovery?: RecoveryService;
+  private timers: NodeJS.Timeout[] = [];
   actor?: BrowserActor;
 
   async onModuleInit() {
@@ -98,6 +101,16 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       cipher,
       alerts,
       logger: createLogger('rpa.actor'),
+      tracer: new PlaywrightTraceRecorder(
+        () => driver.currentContext,
+        abaya.traceDir,
+        cipher,
+        (stage, err) =>
+          this.logger.warn(
+            { stage, err: err instanceof Error ? err.message : 'error' },
+            'falla de traza',
+          ),
+      ),
     });
     this.outboundConsumer = new OutboundConsumer(
       cfg.REDIS_URL,
@@ -137,6 +150,21 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       logger: createLogger('rpa.recovery'),
     });
 
+    // Prueba de humo cada 15 min y limpieza diaria de trazas (sección 8: máximo 7 días).
+    const manager = this.manager;
+    this.timers.push(
+      setInterval(() => {
+        void runSmokeTest({
+          sessionStatus: () => manager.status,
+          readInbox: () => actor.readInboxChatIds(),
+          alerts,
+          robotUser: abaya.robotUser,
+        });
+      }, 15 * 60_000),
+      setInterval(() => void cleanupTraces(abaya.traceDir, 7), 24 * 3_600_000),
+    );
+    void cleanupTraces(abaya.traceDir, 7);
+
     // No bloquear el arranque del proceso (y de /health) mientras se hace login.
     void this.manager
       .start()
@@ -169,6 +197,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown() {
+    this.timers.forEach(clearInterval);
     await this.outboundConsumer?.close();
     await this.handoffConsumers?.close();
     await this.recoveryQueue?.close();

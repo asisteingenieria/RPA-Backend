@@ -12,6 +12,7 @@ import type { OutboundRepository } from '../outbound/outbound.repository.js';
 import type { ChatIdentityGuard } from '../safety/chat-identity-guard.js';
 import type { KillSwitch } from '../safety/kill-switch.js';
 import type { ActorGate } from './actor-gate.js';
+import { NoopTraceRecorder, type TraceRecorder } from '../observability/trace-recorder.js';
 import { SerialExecutor } from './serial-executor.js';
 
 export type SendOutcome =
@@ -55,6 +56,8 @@ export interface BrowserActorDeps {
   /** Cuántos mensajes recientes del robot revisar para idempotencia (sección 6.4, paso 4). */
   idempotencyWindow?: number;
   now?: () => Date;
+  /** Trazas solo en error (sección 8). */
+  tracer?: TraceRecorder;
 }
 
 /**
@@ -66,9 +69,23 @@ export interface BrowserActorDeps {
 export class BrowserActor {
   private readonly exec = new SerialExecutor();
   private readonly now: () => Date;
+  private readonly tracer: TraceRecorder;
 
   constructor(private readonly d: BrowserActorDeps) {
     this.now = d.now ?? (() => new Date());
+    this.tracer = d.tracer ?? new NoopTraceRecorder();
+  }
+
+  /** Ejecuta una acción serializada con su chunk de traza (se guarda solo si algo falla). */
+  private traced<T>(fn: () => Promise<T>): Promise<T> {
+    return this.exec.run(async () => {
+      await this.tracer.begin();
+      try {
+        return await fn();
+      } finally {
+        await this.tracer.discard();
+      }
+    });
   }
 
   get queued(): number {
@@ -77,7 +94,7 @@ export class BrowserActor {
 
   /** Envía un mensaje saliente ya persistido (sección 6.4). */
   sendMessage(messageId: string): Promise<SendOutcome> {
-    return this.exec.run(() => this.doSend(messageId));
+    return this.traced(() => this.doSend(messageId));
   }
 
   /** Lectura de la bandeja (sin clics), serializada con las acciones para no chocar con ellas. */
@@ -89,7 +106,7 @@ export class BrowserActor {
 
   /** Abre un chat (lo usa el worker para leer chats con no leídos, y las demás acciones). */
   openChat(abayaChatId: string): Promise<boolean> {
-    return this.exec.run(async () => {
+    return this.traced(async () => {
       const start = Date.now();
       if (!(await this.preflight('OPEN_CHAT', abayaChatId, start))) return false;
       const ok = await this.open(abayaChatId);
@@ -103,7 +120,7 @@ export class BrowserActor {
    * verificar que el chat salió de la bandeja.
    */
   transfer(req: TransferRequest): Promise<HandoffOutcome> {
-    return this.exec.run(async () => {
+    return this.traced(async () => {
       const start = Date.now();
       const chatId = req.abayaChatId;
       if (!(await this.preflight('TRANSFER', chatId, start)))
@@ -169,7 +186,7 @@ export class BrowserActor {
 
   /** Cierra un chat que no es venta (sección 6.6) y verifica que salió de la bandeja. */
   closeConversation(abayaChatId: string): Promise<HandoffOutcome> {
-    return this.exec.run(async () => {
+    return this.traced(async () => {
       const start = Date.now();
       if (!(await this.preflight('CLOSE', abayaChatId, start)))
         return { result: 'BLOCKED_KILL_SWITCH' };
@@ -283,16 +300,29 @@ export class BrowserActor {
   private async open(chatId: string): Promise<boolean> {
     const page = this.d.page();
     const chat = new ChatPage(page);
-    if ((await chat.currentChatId()) === chatId) return true;
+    if ((await chat.currentChatId()) === chatId) return this.interactive();
     const list = new ChatListPage(page);
     if (!(await sel.chatList.item(page, chatId).count())) return false;
     await list.open(chatId);
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
-      if ((await chat.currentChatId().catch(() => null)) === chatId) return true;
+      if ((await chat.currentChatId().catch(() => null)) === chatId) return this.interactive();
       await page.waitForTimeout(100);
     }
     return false;
+  }
+
+  /**
+   * La pantalla puede mostrar el chat antes de que la aplicación termine de cargar sus
+   * scripts: un clic en ese momento se pierde. Esperar la carga completa antes de actuar.
+   */
+  private async interactive(): Promise<boolean> {
+    try {
+      await this.d.page().waitForLoadState('load', { timeout: 10_000 });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async identityOk(chat: ChatPage, chatId: string, messageId: string) {
@@ -325,7 +355,8 @@ export class BrowserActor {
       abayaChatId: chatId,
       result,
       durationMs: Date.now() - start,
-      traceRef: null,
+      traceRef:
+        result === 'ERROR' || result === 'UNCERTAIN' ? await this.tracer.capture(action) : null,
       createdAt: this.now(),
     });
   }
