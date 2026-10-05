@@ -21,12 +21,43 @@ export const envSchema = z.object({
   ABAYA_BASE_URL: optionalString,
   ABAYA_USER: optionalString,
   ABAYA_PASSWORD: optionalString,
+  /** MFA del usuario robot (pregunta 3 a Claro): sin MFA o TOTP con secreto en el gestor. */
+  ABAYA_MFA_MODE: z.enum(['none', 'totp']).default('none'),
+  ABAYA_TOTP_SECRET: optionalString,
+  ABAYA_HEADLESS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  /** Carpeta del storageState cifrado (fuera del control de versiones). */
+  SESSION_STATE_DIR: z.string().default('.secrets'),
+  HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
+
+/** Configuración mínima del robot en Abaya; falla si falta algo obligatorio. */
+export function requireAbayaConfig(cfg: AppConfig) {
+  const missing: string[] = (['ABAYA_BASE_URL', 'ABAYA_USER', 'ABAYA_PASSWORD'] as const).filter(
+    (k) => !cfg[k],
+  );
+  if (cfg.ABAYA_MFA_MODE === 'totp' && !cfg.ABAYA_TOTP_SECRET) missing.push('ABAYA_TOTP_SECRET');
+  if (missing.length) throw new Error(`Faltan variables de Abaya: ${missing.join(', ')}`);
+  return {
+    baseUrl: cfg.ABAYA_BASE_URL!,
+    robotUser: cfg.ABAYA_USER!,
+    password: cfg.ABAYA_PASSWORD!,
+    mfaMode: cfg.ABAYA_MFA_MODE,
+    totpSecret: cfg.ABAYA_TOTP_SECRET,
+    headless: cfg.ABAYA_HEADLESS,
+    sessionStateDir: cfg.SESSION_STATE_DIR,
+    heartbeatMs: cfg.HEARTBEAT_INTERVAL_MS,
+  };
+}
+
+export type AbayaConfig = ReturnType<typeof requireAbayaConfig>;
 
 /**
  * Valida variables de entorno. El error lista solo los nombres de las variables

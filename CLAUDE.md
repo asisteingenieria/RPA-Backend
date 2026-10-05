@@ -117,11 +117,18 @@ abaya-rpa/
 ## Estado
 
 - [x] F0 Fundaciones
-- [ ] F1 Descubrimiento de Abaya
-- [ ] F2 Sesión
+- [~] F1 Descubrimiento de Abaya (provisional contra el Abaya simulado; falta el descubrimiento real)
+- [x] F2 Sesión (probada contra el simulador; falta E2E @abaya real)
 - [ ] F3 Lectura de mensajes
 - [ ] F4 Envío de mensajes
 - [ ] F5 Motor de conversación
 - [ ] F6 Venta y transferencia
 - [ ] F7 Robustez, operación y panel
 - [ ] F8 Seguridad, despliegue y piloto
+
+## Abaya simulado
+
+Mientras no haya acceso al ambiente de pruebas, `apps/rpa/test/mock-abaya/` simula Abaya
+(markup semántico + servidor HTTP con login, sesión, mensajes, notas y transferencias). Las pruebas
+`*.pw.ts` lo usan. Cuando existan fixtures reales, el simulador se ajusta para imitarlos.
+Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.

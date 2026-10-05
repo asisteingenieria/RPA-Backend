@@ -17,3 +17,6 @@ packages/db/src/generated/
 **/traces/
 **/test-results/
 **/playwright-report/
+
+# storageState cifrado y otros secretos locales
+.secrets/

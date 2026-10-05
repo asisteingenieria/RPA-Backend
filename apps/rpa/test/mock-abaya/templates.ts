@@ -209,6 +209,10 @@ export function clientScript(mode: 'static' | 'server'): string {
       ).join('');
     };
     setInterval(async () => {
+      const r = await api('/api/ping');
+      if (r.status === 401) location.href = '/login';
+    }, 1000);
+    setInterval(async () => {
       const id = chatId();
       if (!id) return;
       const r = await api('/api/chats/' + encodeURIComponent(id) + '/messages');
