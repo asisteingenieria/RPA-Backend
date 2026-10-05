@@ -2,6 +2,7 @@
 
 export * from './fingerprint.js';
 export * from './inbound.js';
+export * from './outbound.js';
 export * from './queues.js';
 
 export const CONVERSATION_STATUSES = [

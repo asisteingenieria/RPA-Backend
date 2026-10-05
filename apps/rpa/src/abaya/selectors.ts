@@ -37,6 +37,11 @@ export const sel = {
     messageIdAttr: 'data-message-id',
     senderAttr: 'data-sender',
     timestampAttr: 'data-timestamp',
+    /**
+     * Mensaje pintado por la interfaz antes de que el servidor lo confirme (envío optimista).
+     * No cuenta como verificado. PROVISIONAL: en Abaya real puede ser un ícono de estado.
+     */
+    unconfirmedMessageId: /^local-/,
     input: (p: Page) => p.getByRole('textbox', { name: 'Escribe un mensaje' }),
     send: (p: Page) => p.getByRole('button', { name: 'Enviar' }),
     closeChat: (p: Page) => p.getByRole('button', { name: 'Cerrar chat' }),

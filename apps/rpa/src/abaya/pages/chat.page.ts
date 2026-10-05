@@ -66,12 +66,18 @@ export class ChatPage {
     await sel.chat.send(this.page).click();
   }
 
-  /** Espera a que un mensaje del robot con ese texto aparezca en la conversación. */
+  /**
+   * Espera a que un mensaje del robot con ese texto aparezca CONFIRMADO por el servidor
+   * (no basta con que la interfaz lo pinte de forma optimista).
+   */
   async waitForAgentMessage(text: string, timeoutMs = 10_000): Promise<boolean> {
     const expected = text.trim();
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if ((await this.lastAgentTexts(5)).includes(expected)) return true;
+      const confirmed = (await this.readMessages().catch(() => []))
+        .filter((m) => m.sender === 'AGENT' && m.text === expected)
+        .some((m) => !!m.messageId && !sel.chat.unconfirmedMessageId.test(m.messageId));
+      if (confirmed) return true;
       await this.page.waitForTimeout(200);
     }
     return false;

@@ -1,4 +1,4 @@
-import { fingerprintInput, type InboundMessage } from '@abaya/domain';
+import { fingerprintInput, inboundAad, type InboundMessage } from '@abaya/domain';
 import { sha256, type FieldCipher } from '@abaya/crypto';
 import type { Logger } from '@abaya/logger';
 import type { InboundQueue } from './inbound-queue.js';
@@ -106,7 +106,7 @@ export class InboundProcessor {
     if (conv.created) this.stats.newConversations++;
     const r = await this.deps.repo.insertInbound(conv.id, {
       fingerprint,
-      bodyEncrypted: this.deps.cipher.encrypt(m.text, `msg:${fingerprint}`),
+      bodyEncrypted: this.deps.cipher.encrypt(m.text, inboundAad(fingerprint)),
       detectedVia: via,
       occurredAt: m.occurredAt,
     });

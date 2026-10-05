@@ -136,7 +136,7 @@ export function clientScript(mode: 'static' | 'server'): string {
   function appendAgent(text) {
     const ol = $('ol[aria-label="Mensajes"]');
     const li = document.createElement('li');
-    li.setAttribute('data-message-id', 'local-' + Date.now());
+    li.setAttribute('data-message-id', (MODE === 'static' ? 'srv-' : 'local-') + Date.now());
     li.setAttribute('data-sender', 'agent');
     li.setAttribute('data-timestamp', new Date().toISOString());
     li.innerHTML = '<p>' + esc(text) + '</p>';

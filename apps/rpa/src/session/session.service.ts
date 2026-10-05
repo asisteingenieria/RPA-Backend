@@ -4,11 +4,17 @@ import { FieldCipher, totp } from '@abaya/crypto';
 import { createPrismaClient, type PrismaClient } from '@abaya/db';
 import { createLogger } from '@abaya/logger';
 import { ActorGate } from '../actor/actor-gate.js';
+import { BrowserActor } from '../actor/browser-actor.js';
 import { LogAlertAdapter } from '../alerts/log-alert.adapter.js';
 import { InboundProcessor } from '../inbound/inbound-processor.js';
 import { BullInboundQueue, type InboundQueue } from '../inbound/inbound-queue.js';
 import { InboundWatcher } from '../inbound/inbound-watcher.js';
 import { PrismaInboundRepository } from '../inbound/inbound.repository.js';
+import { PrismaActionLog } from '../audit/action-log.js';
+import { OutboundConsumer } from '../outbound/outbound-consumer.js';
+import { PrismaOutboundRepository } from '../outbound/outbound.repository.js';
+import { ChatIdentityGuard } from '../safety/chat-identity-guard.js';
+import { RedisKillSwitch } from '../safety/kill-switch.js';
 import { PlaywrightSessionDriver } from './playwright-session-driver.js';
 import { SessionManager } from './session-manager.js';
 import { PrismaSessionRepository, type SessionStatus } from './session.repository.js';
@@ -26,6 +32,9 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
   private driver?: PlaywrightSessionDriver;
   private prisma?: PrismaClient;
   private inboundQueue?: InboundQueue;
+  private killSwitch?: RedisKillSwitch;
+  private outboundConsumer?: OutboundConsumer;
+  actor?: BrowserActor;
 
   async onModuleInit() {
     const cfg = loadConfig();
@@ -65,6 +74,27 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
       }),
       heartbeatMs: abaya.heartbeatMs,
     });
+    this.killSwitch = RedisKillSwitch.fromUrl(cfg.REDIS_URL);
+    const alerts = new LogAlertAdapter();
+    const driver = this.driver;
+    this.actor = new BrowserActor({
+      robotUser: abaya.robotUser,
+      page: () => driver.page,
+      gate: this.gate,
+      killSwitch: this.killSwitch,
+      guard: new ChatIdentityGuard(),
+      actionLog: new PrismaActionLog(this.prisma),
+      outbound: new PrismaOutboundRepository(this.prisma),
+      cipher,
+      alerts,
+      logger: createLogger('rpa.actor'),
+    });
+    this.outboundConsumer = new OutboundConsumer(
+      cfg.REDIS_URL,
+      this.actor,
+      createLogger('rpa.outbound'),
+    );
+
     // No bloquear el arranque del proceso (y de /health) mientras se hace login.
     void this.manager.start().catch((err: unknown) => {
       this.logger.error(
@@ -83,7 +113,9 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown() {
+    await this.outboundConsumer?.close();
     await this.manager?.stop();
+    await this.killSwitch?.close();
     await this.inboundQueue?.close();
     await this.prisma?.$disconnect();
   }

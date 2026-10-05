@@ -28,6 +28,10 @@ export class MockAbayaServer {
   loginAttempts = 0;
   /** Si es true, los envíos se aceptan pero no aparecen (para probar UNCERTAIN en F4). */
   dropOutgoing = false;
+  /** Si se define, abrir el chat X muestra el chat Y (para probar el ChatIdentityGuard). */
+  readonly misroute = new Map<string, string>();
+  /** Mensajes del asesor recibidos por chat (para comprobar chat equivocado y duplicados). */
+  readonly agentPosts: { chatId: string; text: string }[] = [];
   private server?: Server;
   private wss?: WebSocketServer;
   private readonly sockets = new Set<WebSocket>();
@@ -120,7 +124,8 @@ export class MockAbayaServer {
 
     if (req.method === 'GET' && (path === '/' || path === '/inbox')) {
       if (!authed) return redirect(res, '/login');
-      const active = url.searchParams.get('chat') ?? undefined;
+      const requested = url.searchParams.get('chat') ?? undefined;
+      const active = requested ? (this.misroute.get(requested) ?? requested) : undefined;
       if (active) {
         const c = this.chat(active);
         if (c) c.unread = 0;
@@ -177,6 +182,7 @@ export class MockAbayaServer {
       if (req.method === 'POST') {
         const body = JSON.parse((await readBody(req)) || '{}') as Record<string, string>;
         if (action === 'messages') {
+          this.agentPosts.push({ chatId, text: body.text ?? '' });
           if (!this.dropOutgoing) {
             const out: MockMessage = {
               id: `m-${chatId}-${++this.seq}`,
