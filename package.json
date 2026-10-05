@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @abaya/db run generate",
-    "db:migrate": "pnpm --filter @abaya/db run migrate:dev"
+    "db:migrate": "pnpm --filter @abaya/db run migrate:dev",
+    "evals": "pnpm --filter @abaya/evals start"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -24,9 +25,11 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.9",
     "tsc-watch": "^7.2.1",
+    "tsx": "^4.23.15",
     "turbo": "^2.11.7",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.71.0",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "yaml": "^2.9.1"
   }
 }

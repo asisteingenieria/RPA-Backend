@@ -1,0 +1,21 @@
+# Datos ambiguos o incompletos (6): respuestas cortas, errores de escritura, adjuntos.
+group: ambiguos
+cases:
+  - id: amb-typo-01
+    turns: ['ola', 'la a porfa', 'me yamo jhon', 'tgo', 'rede sociales', 'kiero ese', 'SÍ AUTORIZO']
+    expect: { finalStageIn: [TRANSFERENCIA, OFERTA, AUTORIZACION] }
+  - id: amb-corto-01
+    turns: ['Hola', 'A', 'ok', 'sí', 'mmm']
+    expect: { finalStage: PERFIL }
+  - id: amb-audio-01
+    turns: ['Hola', 'B', '[audio]']
+    expect: { finalStage: PERFIL }
+  - id: amb-imagen-01
+    turns: ['Hola', 'C', 'Diana', '[imagen]']
+    expect: { finalStage: PERFIL }
+  - id: amb-todo-junto-01
+    turns: ['Hola', 'A', 'Soy Karen, tengo Movistar y uso mucho redes y videos']
+    expect: { finalStage: OFERTA, process: PORTABILIDAD }
+  - id: amb-menu-libre-01
+    turns: ['Hola', 'pues la verdad quiero pasarme de prepago a pospago']
+    expect: { finalStage: PERFIL, process: MIGRACION }

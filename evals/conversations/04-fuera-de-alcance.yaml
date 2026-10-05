@@ -1,0 +1,27 @@
+# Fuera de alcance (8): quejas, facturas, temas ajenos, insultos.
+group: fuera_de_alcance
+cases:
+  - id: fda-factura-01
+    turns: ['Hola', 'me llegó la factura muy alta y quiero reclamar']
+    expect: { finalStageIn: [ESCALAR, SOPORTE, MENU] }
+  - id: fda-factura-02
+    turns: ['Hola', 'A', 'Lucía', 'Tigo', 'redes', 'oiga y por qué me cobraron doble este mes']
+    expect: { finalStage: ESCALAR }
+  - id: fda-queja-01
+    turns: ['Hola', 'llevo tres días sin señal, esto es un abuso']
+    expect: { finalStageIn: [ESCALAR, SOPORTE, MENU] }
+  - id: fda-ajeno-01
+    turns: ['Hola', 'C', 'Mateo', '¿me ayudas con la tarea de matemáticas?']
+    expect: { finalStageIn: [ESCALAR, PERFIL] }
+  - id: fda-ajeno-02
+    turns: ['Hola', '¿quién va a ganar el partido hoy?']
+    expect: { finalStageIn: [MENU, ESCALAR] }
+  - id: fda-insulto-01
+    turns: ['Hola', 'A', 'ustedes son unos ladrones']
+    expect: { finalStageIn: [ESCALAR, PERFIL] }
+  - id: fda-soporte-01
+    turns: ['Hola', 'D']
+    expect: { finalStage: SOPORTE }
+  - id: fda-cancelar-01
+    turns: ['Hola', 'quiero cancelar mi línea']
+    expect: { finalStageIn: [ESCALAR, SOPORTE, MENU, CIERRE_SIN_VENTA] }

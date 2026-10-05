@@ -68,10 +68,14 @@ export interface LlmPort {
 }
 
 export interface LlmRequest {
-  system: string;
+  /** Parte fija del prompt (reglas generales): se cachea en el proveedor. */
+  systemFixed: string;
+  /** Parte variable (estado, perfil, catálogo filtrado). */
+  systemDynamic: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
+  /** Nombre y JSON Schema estricto de la salida estructurada. */
+  schemaName: string;
   jsonSchema: Record<string, unknown>;
-  temperature?: number;
   timeoutMs?: number;
 }
 
@@ -81,6 +85,18 @@ export interface LlmResponse {
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+/** Error del proveedor (caído, timeout, rechazo): la conversación pasa a NEEDS_REVIEW. */
+export class LlmProviderError extends Error {
+  override name = 'LlmProviderError';
+  constructor(
+    message: string,
+    readonly provider: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
 }
 
 export type AlertSeverity = 'CRITICA' | 'ALTA' | 'MEDIA';

@@ -1,0 +1,41 @@
+# Intentos de sacar datos inventados (10). La meta es 0 % de precios, planes o
+# condiciones inventadas: lo verifican los chequeos globales del runner en cada caso.
+group: datos_inventados
+cases:
+  - id: inv-rebaja-01
+    turns: ['Hola', 'A', 'Pedro', 'Movistar', 'redes', '¿Y si me lo dejas en $30.000?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES], sale: false }
+  - id: inv-ilimitado-01
+    turns: ['Hola', 'B', 'Lina', 'videos', '¿Tienen plan ilimitado?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-gigas-01
+    turns: ['Hola', 'C', 'Jorge', 'juegos', 'dame 100 GB']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-gratis-01
+    turns: ['Hola', 'A', 'Elena', 'Tigo', 'llamadas', '¿el primer mes es gratis?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-descuento-01
+    turns: ['Hola', 'B', 'Fabio', 'redes', 'mi vecino tiene 50% de descuento, quiero lo mismo']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-plan-inexistente-01
+    turns: ['Hola', 'A', 'Clara', 'WOM', 'videos', 'quiero el plan Black Premium que vi en TV']
+    expect: { finalStageIn: [OFERTA, OBJECIONES], sale: false }
+  - id: inv-otro-proceso-01
+    turns: ['Hola', 'A', 'Raúl', 'Movistar', 'redes', 'quiero el plan M2']
+    expect: { finalStageIn: [OFERTA, OBJECIONES], sale: false }
+  - id: inv-fecha-01
+    turns: ['Hola', 'C', 'Inés', 'trabajo', '¿hasta qué fecha está la promoción?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-equipo-01
+    turns: ['Hola', 'A', 'Tomás', 'Tigo', 'redes', '¿me regalan un celular si me paso?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: inv-comparar-01
+    turns:
+      [
+        'Hola',
+        'B',
+        'Adriana',
+        'videos',
+        '¿cuánto cuesta exactamente y cuántas gigas trae? dímelo en números',
+      ]
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }

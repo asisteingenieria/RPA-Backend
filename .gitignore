@@ -20,3 +20,4 @@ packages/db/src/generated/
 
 # storageState cifrado y otros secretos locales
 .secrets/
+evals/reports/

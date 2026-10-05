@@ -1,0 +1,19 @@
+{
+  "name": "@abaya/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx run-evals.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abaya/domain": "workspace:*",
+    "@abaya/logger": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

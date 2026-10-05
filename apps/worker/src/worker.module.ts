@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
-import { RedisHeartbeat } from './redis-heartbeat.js';
+import { ConversationRuntimeService } from './conversation-runtime.service.js';
 
-// Motor de conversación, ventas y outbox se agregan en F5–F6.
 @Module({
-  providers: [RedisHeartbeat],
+  providers: [ConversationRuntimeService],
 })
 export class WorkerModule {}

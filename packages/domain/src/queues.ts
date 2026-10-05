@@ -20,10 +20,15 @@ export interface OutboundJob {
 export interface TransferJob {
   conversationId: string;
   abayaChatId: string;
+  /** BACKOFFICE: venta autorizada. HUMAN: caso que la IA no puede manejar (sección 6.6). */
+  target: 'BACKOFFICE' | 'HUMAN';
+  /** Mensajes que deben estar SENT_VERIFIED antes de transferir (p. ej. la despedida). */
+  afterMessageIds: string[];
 }
 
 export interface CloseJob {
   conversationId: string;
   abayaChatId: string;
   reason: 'SUPPORT' | 'NO_SALE' | 'INACTIVE';
+  afterMessageIds: string[];
 }

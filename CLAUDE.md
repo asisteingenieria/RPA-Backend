@@ -121,7 +121,7 @@ abaya-rpa/
 - [x] F2 Sesión (probada contra el simulador; falta E2E @abaya real)
 - [x] F3 Lectura de mensajes (probada contra el simulador; dedup en BD pendiente de prueba con Postgres)
 - [x] F4 Envío de mensajes (probada contra el simulador)
-- [ ] F5 Motor de conversación
+- [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
 - [ ] F6 Venta y transferencia
 - [ ] F7 Robustez, operación y panel
 - [ ] F8 Seguridad, despliegue y piloto
@@ -132,3 +132,13 @@ Mientras no haya acceso al ambiente de pruebas, `apps/rpa/test/mock-abaya/` simu
 (markup semántico + servidor HTTP con login, sesión, mensajes, notas y transferencias). Las pruebas
 `*.pw.ts` lo usan. Cuando existan fixtures reales, el simulador se ajusta para imitarlos.
 Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
+
+## Motor de conversación (F5)
+
+- `apps/worker/src/engine/`: máquina de estados, plantillas, validadores, prompts versionados.
+- Menú y autorización son **deterministas**: solo un "SÍ AUTORIZO" explícito (regex en código) es
+  consentimiento; el modelo nunca puede darlo por hecho.
+- Catálogo y textos legales son **sintéticos** (`plans.synthetic.json`, `templates.ts`) hasta
+  recibir los oficiales de Claro. Cargar catálogo: `pnpm --filter @abaya/worker seed -- <archivo>`.
+- Suite de evaluación: `pnpm evals` (línea base sin red) o
+  `pnpm evals -- --provider anthropic,openai` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.

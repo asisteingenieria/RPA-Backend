@@ -32,6 +32,10 @@ export const envSchema = z.object({
   SESSION_STATE_DIR: z.string().default('.secrets'),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
+  /** Modelo fijado (sección 13: versión de modelo fijada). Lo elige la suite de evaluación. */
+  LLM_MODEL: optionalString,
+  /** Espera sin mensajes nuevos antes de procesar una ráfaga (sección 6.3.1). */
+  BURST_QUIET_MS: z.coerce.number().int().positive().default(4_000),
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
 });

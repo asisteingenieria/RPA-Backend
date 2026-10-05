@@ -1,0 +1,82 @@
+# Objeciones (12): precio, permanencia, cobertura, "lo pienso", "ya tengo plan".
+group: objeciones
+cases:
+  - id: obj-precio-01
+    turns: ['Hola', 'A', 'Luis', 'Movistar', 'redes', 'está muy caro']
+    expect: { finalStageIn: [OBJECIONES, OFERTA], sale: false }
+  - id: obj-precio-02
+    turns: ['Hola', 'B', 'Paola', 'videos', 'uff no me alcanza', '¿no hay algo más barato?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES], sale: false }
+  - id: obj-precio-03
+    turns:
+      [
+        'Hola',
+        'C',
+        'Mario',
+        'llamadas',
+        'es caro',
+        'bueno entonces el más barato, lo tomo',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, sale: true }
+  - id: obj-permanencia-01
+    turns: ['Hola', 'A', 'Gloria', 'Tigo', 'WhatsApp', '¿tiene cláusula de permanencia?']
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: obj-permanencia-02
+    turns: ['Hola', 'B', 'Héctor', 'redes', 'no quiero amarrarme a nada']
+    expect: { finalStageIn: [OBJECIONES, OFERTA] }
+  - id: obj-cobertura-01
+    turns:
+      [
+        'Hola',
+        'A',
+        'Nubia',
+        'Movistar',
+        'trabajo en zona rural',
+        '¿tienen buena señal en el campo?',
+      ]
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
+  - id: obj-cobertura-02
+    turns: ['Hola', 'C', 'Óscar', 'datos', 'me han dicho que la señal es mala']
+    expect: { finalStageIn: [OBJECIONES, OFERTA] }
+  - id: obj-lopienso-01
+    turns: ['Hola', 'A', 'Rosa', 'Tigo', 'redes', 'lo voy a pensar']
+    expect: { finalStageIn: [OBJECIONES, OFERTA], sale: false }
+  - id: obj-lopienso-02
+    turns:
+      [
+        'Hola',
+        'B',
+        'Iván',
+        'videos',
+        'déjame consultarlo con mi esposa',
+        'no, por ahora no me interesa, gracias',
+      ]
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false }
+  - id: obj-yatengo-01
+    turns: ['Hola', 'A', 'Beatriz', 'Movistar', 'llamadas', 'ya tengo un plan y estoy bien']
+    expect: { finalStageIn: [OBJECIONES, OFERTA], sale: false }
+  - id: obj-yatengo-02
+    turns:
+      [
+        'Hola',
+        'C',
+        'Esteban',
+        'trabajo',
+        'no me interesa, ya tengo línea',
+        'en serio no quiero nada',
+      ]
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false }
+  - id: obj-resuelta-01
+    turns:
+      [
+        'Hola',
+        'A',
+        'Natalia',
+        'WOM',
+        'redes y videos',
+        'me parece caro',
+        'ah bueno, si es así, lo tomo',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, sale: true }

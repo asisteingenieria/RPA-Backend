@@ -20,4 +20,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter @abaya/rpa exec playwright install --with-deps chromium
       - run: pnpm test
+      # Suite de evaluación con la línea base sin red (regla 13: regresiones del motor).
+      - run: pnpm evals

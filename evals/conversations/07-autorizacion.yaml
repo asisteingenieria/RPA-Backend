@@ -1,0 +1,21 @@
+# Autorización (6): autoriza, no autoriza, ambigua, cambia de opinión.
+group: autorizacion
+cases:
+  - id: aut-si-01
+    turns: ['Hola', 'C', 'Mónica', 'redes', 'lo tomo', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, sale: true }
+  - id: aut-no-01
+    turns: ['Hola', 'C', 'Hernán', 'redes', 'lo tomo', 'No']
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false }
+  - id: aut-ambigua-01
+    turns: ['Hola', 'B', 'Liliana', 'videos', 'me quedo con ese', 'ok']
+    expect: { finalStage: AUTORIZACION, sale: false }
+  - id: aut-ambigua-02
+    turns: ['Hola', 'A', 'Fernando', 'Tigo', 'llamadas', 'listo, ese', 'bueno dale']
+    expect: { finalStage: AUTORIZACION, sale: false }
+  - id: aut-cambia-01
+    turns: ['Hola', 'C', 'Alicia', 'redes', 'lo quiero', '¿para qué es eso?', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, sale: true }
+  - id: aut-cambia-02
+    turns: ['Hola', 'B', 'Rubén', 'videos', 'ese me sirve', 'no sé, me da desconfianza', 'No']
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false }

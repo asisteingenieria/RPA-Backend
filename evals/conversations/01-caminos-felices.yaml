@@ -1,0 +1,130 @@
+# Caminos felices (12): cada proceso hasta la venta.
+# Datos de clientes 100 % sintéticos.
+group: caminos_felices
+cases:
+  - id: feliz-porta-01
+    turns:
+      [
+        'Hola',
+        'A',
+        'Me llamo Laura',
+        'Tengo Movistar',
+        'Uso mucho WhatsApp, Instagram y TikTok',
+        'Me gusta, quiero ese plan',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }
+  - id: feliz-porta-02
+    turns:
+      [
+        'buenas tardes',
+        'a',
+        'Carlos',
+        'estoy con Tigo',
+        'veo videos y series en el bus',
+        'listo, lo tomo',
+        'Si autorizo',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }
+  - id: feliz-porta-03
+    turns:
+      [
+        'Hola quiero traer mi número',
+        'Opción A',
+        'Soy Andrea Gómez',
+        'WOM',
+        'casi todo es llamadas y algo de correo',
+        'perfecto, ese me sirve',
+        'Acepto',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }
+  - id: feliz-porta-04
+    turns:
+      [
+        'Hola',
+        '1',
+        'Me dicen Pipe',
+        'Movistar',
+        'trabajo con el celular todo el día, mucho Teams y correo',
+        '¿cuál me recomiendas?',
+        'ok quiero ese',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }
+  - id: feliz-migra-01
+    turns:
+      ['Hola', 'B', 'Mi nombre es Sofía', 'redes sociales y música', 'Quiero ese', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-migra-02
+    turns:
+      [
+        'buenos días, tengo prepago y quiero pasarme a plan',
+        'b',
+        'Julián',
+        'juego en línea y veo YouTube',
+        'me quedo con ese plan',
+        'si autorizo',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-migra-03
+    turns:
+      [
+        'Hola',
+        'opción b',
+        'Marta',
+        'solo WhatsApp y llamadas con mi familia',
+        '¿hay uno más económico?',
+        'bueno, el más económico entonces',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-migra-04
+    turns:
+      [
+        'Hola!',
+        '2',
+        'Soy Diego',
+        'mucho streaming y videollamadas',
+        'dale, lo quiero',
+        'Sí, autorizo',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-nueva-01
+    turns:
+      ['Hola', 'C', 'Valentina', 'para mi hija, redes y tareas', 'me sirve, lo tomo', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
+  - id: feliz-nueva-02
+    turns:
+      [
+        'quiero una línea nueva',
+        'c',
+        'Me llamo Andrés',
+        'la necesito para el negocio, llamadas y WhatsApp Business',
+        'listo',
+        'sí quiero ese plan',
+        'Acepto',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
+  - id: feliz-nueva-03
+    turns:
+      [
+        'Hola',
+        '3',
+        'Camila',
+        'Netflix y redes',
+        '¿qué incluye?',
+        'ok me quedo con ese',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
+  - id: feliz-nueva-04
+    turns:
+      [
+        'hola necesito otra linea',
+        'C',
+        'Ricardo',
+        'GPS y apps de domicilios, trabajo de repartidor',
+        'Lo tomo',
+        'si autorizo',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
