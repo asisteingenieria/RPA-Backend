@@ -62,6 +62,8 @@ export const sel = {
       sel.transfer.dialog(p).getByRole('button', { name: 'Confirmar transferencia' }),
     /** Etiqueta visible de la cola de backoffice (confirmar con Claro, pregunta 13). */
     backofficeQueueLabel: 'Backoffice ventas',
+    /** Cola humana para casos que la IA no puede manejar (pregunta 12). */
+    humanQueueLabel: 'Asesores humanos',
   },
 
   session: {

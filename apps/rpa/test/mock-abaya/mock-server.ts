@@ -28,6 +28,8 @@ export class MockAbayaServer {
   loginAttempts = 0;
   /** Si es true, los envíos se aceptan pero no aparecen (para probar UNCERTAIN en F4). */
   dropOutgoing = false;
+  /** Si es true, el servidor rechaza las transferencias (prueba de transferencia fallida). */
+  failTransfer = false;
   /** Si se define, abrir el chat X muestra el chat Y (para probar el ChatIdentityGuard). */
   readonly misroute = new Map<string, string>();
   /** Mensajes del asesor recibidos por chat (para comprobar chat equivocado y duplicados). */
@@ -200,6 +202,7 @@ export class MockAbayaServer {
           return json(res, { ok: true }, 201);
         }
         if (action === 'transfer') {
+          if (this.failTransfer) return json(res, { error: 'transfer failed' }, 500);
           this.transfers.push({ chatId, queue: body.queue ?? '' });
           this.removeChat(chatId);
           return json(res, { ok: true });

@@ -194,8 +194,13 @@ export function clientScript(mode: 'static' | 'server'): string {
       const queue = $('select', form).value;
       if (!queue) { e.preventDefault(); return; }
       e.preventDefault();
-      if (MODE === 'server') await api('/api/chats/' + chatId() + '/transfer', { queue });
-      dlg.close();
+      if (MODE === 'server') {
+        const r = await api('/api/chats/' + chatId() + '/transfer', { queue });
+        dlg.close();
+        if (!r.ok) return; // falla del servidor: el chat sigue en la bandeja
+      } else {
+        dlg.close();
+      }
       removeActiveChat();
     }
   });

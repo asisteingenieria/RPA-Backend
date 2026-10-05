@@ -1,13 +1,16 @@
 import { GENESIS_HASH, chainHash, sha256, type FieldCipher } from '@abaya/crypto';
 import type { PrismaClient } from '@abaya/db';
-import { inboundAad, outboundAad, type Stage } from '@abaya/domain';
+import {
+  consentAad,
+  inboundAad,
+  outboundAad,
+  profileAad,
+  saleAad,
+  type Stage,
+} from '@abaya/domain';
 import type { ChatTurnMessage, Profile } from '../engine/types.js';
 import type { ConversationStore, TurnCommit, TurnInput } from './conversation.store.js';
 import { resolvePayload } from './memory.store.js';
-
-const profileAad = (id: string) => `profile:${id}`;
-const saleAad = (id: string) => `sale:${id}`;
-const consentAad = (id: string) => `consent:${id}`;
 
 /** Store real: PostgreSQL + Prisma, campos sensibles cifrados (sección 8). */
 export class PrismaConversationStore implements ConversationStore {

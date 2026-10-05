@@ -122,7 +122,7 @@ abaya-rpa/
 - [x] F3 Lectura de mensajes (probada contra el simulador; dedup en BD pendiente de prueba con Postgres)
 - [x] F4 Envío de mensajes (probada contra el simulador)
 - [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
-- [ ] F6 Venta y transferencia
+- [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
 - [ ] F7 Robustez, operación y panel
 - [ ] F8 Seguridad, despliegue y piloto
 

@@ -3,29 +3,32 @@ import { loadConfig, requireAbayaConfig } from '@abaya/config';
 import { FieldCipher, totp } from '@abaya/crypto';
 import { createPrismaClient, type PrismaClient } from '@abaya/db';
 import { createLogger } from '@abaya/logger';
-import { ActorGate } from '../actor/actor-gate.js';
-import { BrowserActor } from '../actor/browser-actor.js';
-import { LogAlertAdapter } from '../alerts/log-alert.adapter.js';
-import { InboundProcessor } from '../inbound/inbound-processor.js';
-import { BullInboundQueue, type InboundQueue } from '../inbound/inbound-queue.js';
-import { InboundWatcher } from '../inbound/inbound-watcher.js';
-import { PrismaInboundRepository } from '../inbound/inbound.repository.js';
-import { PrismaActionLog } from '../audit/action-log.js';
-import { OutboundConsumer } from '../outbound/outbound-consumer.js';
-import { PrismaOutboundRepository } from '../outbound/outbound.repository.js';
-import { ChatIdentityGuard } from '../safety/chat-identity-guard.js';
-import { RedisKillSwitch } from '../safety/kill-switch.js';
-import { PlaywrightSessionDriver } from './playwright-session-driver.js';
-import { SessionManager } from './session-manager.js';
-import { PrismaSessionRepository, type SessionStatus } from './session.repository.js';
-import { EncryptedFileStorageStateStore } from './storage-state.store.js';
+import { ActorGate } from './actor/actor-gate.js';
+import { BrowserActor } from './actor/browser-actor.js';
+import { LogAlertAdapter } from './alerts/log-alert.adapter.js';
+import { InboundProcessor } from './inbound/inbound-processor.js';
+import { BullInboundQueue, type InboundQueue } from './inbound/inbound-queue.js';
+import { InboundWatcher } from './inbound/inbound-watcher.js';
+import { PrismaInboundRepository } from './inbound/inbound.repository.js';
+import { PrismaActionLog } from './audit/action-log.js';
+import { HandoffConsumers } from './handoff/handoff-consumers.js';
+import { HandoffProcessor } from './handoff/handoff-processor.js';
+import { PrismaHandoffRepository } from './handoff/handoff.repository.js';
+import { OutboundConsumer } from './outbound/outbound-consumer.js';
+import { PrismaOutboundRepository } from './outbound/outbound.repository.js';
+import { ChatIdentityGuard } from './safety/chat-identity-guard.js';
+import { RedisKillSwitch } from './safety/kill-switch.js';
+import { PlaywrightSessionDriver } from './session/playwright-session-driver.js';
+import { SessionManager } from './session/session-manager.js';
+import { PrismaSessionRepository, type SessionStatus } from './session/session.repository.js';
+import { EncryptedFileStorageStateStore } from './session/storage-state.store.js';
 
 /**
  * Arranca la sesión del usuario robot y la lectura de mensajes si Abaya está configurado.
  * Sin ABAYA_BASE_URL el proceso rpa queda en modo inactivo (útil en desarrollo).
  */
 @Injectable()
-export class SessionService implements OnModuleInit, OnApplicationShutdown {
+export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = createLogger('rpa.session');
   readonly gate = new ActorGate();
   private manager?: SessionManager;
@@ -34,6 +37,7 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
   private inboundQueue?: InboundQueue;
   private killSwitch?: RedisKillSwitch;
   private outboundConsumer?: OutboundConsumer;
+  private handoffConsumers?: HandoffConsumers;
   actor?: BrowserActor;
 
   async onModuleInit() {
@@ -94,6 +98,16 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
       this.actor,
       createLogger('rpa.outbound'),
     );
+    this.handoffConsumers = new HandoffConsumers(
+      cfg.REDIS_URL,
+      new HandoffProcessor({
+        actor: this.actor,
+        repo: new PrismaHandoffRepository(this.prisma, cipher),
+        alerts,
+        logger: createLogger('rpa.handoff'),
+      }),
+      createLogger('rpa.handoff'),
+    );
 
     // No bloquear el arranque del proceso (y de /health) mientras se hace login.
     void this.manager.start().catch((err: unknown) => {
@@ -114,6 +128,7 @@ export class SessionService implements OnModuleInit, OnApplicationShutdown {
 
   async onApplicationShutdown() {
     await this.outboundConsumer?.close();
+    await this.handoffConsumers?.close();
     await this.manager?.stop();
     await this.killSwitch?.close();
     await this.inboundQueue?.close();

@@ -9,3 +9,7 @@ export function outboundAad(idempotencyKey: string): string {
 
 export type RpaAction = 'LOGIN' | 'OPEN_CHAT' | 'SEND' | 'NOTE' | 'TRANSFER' | 'CLOSE';
 export type RpaActionResult = 'OK' | 'ERROR' | 'UNCERTAIN' | 'BLOCKED' | 'SKIPPED';
+
+export const profileAad = (conversationId: string) => `profile:${conversationId}`;
+export const saleAad = (conversationId: string) => `sale:${conversationId}`;
+export const consentAad = (conversationId: string) => `consent:${conversationId}`;

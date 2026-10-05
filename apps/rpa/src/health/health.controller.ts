@@ -1,9 +1,11 @@
 import { Controller, Get, Inject } from '@nestjs/common';
-import { SessionService } from '../session/session.service.js';
+import { RpaRuntimeService } from '../rpa-runtime.service.js';
 
 @Controller('health')
 export class HealthController {
-  constructor(@Inject(SessionService) private readonly session: Pick<SessionService, 'status'>) {}
+  constructor(
+    @Inject(RpaRuntimeService) private readonly session: Pick<RpaRuntimeService, 'status'>,
+  ) {}
 
   @Get()
   health() {

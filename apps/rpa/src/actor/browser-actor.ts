@@ -4,6 +4,8 @@ import type { Logger } from '@abaya/logger';
 import type { Page } from 'playwright';
 import { ChatListPage } from '../abaya/pages/chat-list.page.js';
 import { ChatPage } from '../abaya/pages/chat.page.js';
+import { NotePage } from '../abaya/pages/note.page.js';
+import { TransferPage } from '../abaya/pages/transfer.page.js';
 import { sel } from '../abaya/selectors.js';
 import type { ActionLog } from '../audit/action-log.js';
 import type { OutboundRepository } from '../outbound/outbound.repository.js';
@@ -19,6 +21,20 @@ export type SendOutcome =
   | 'BLOCKED_KILL_SWITCH'
   | 'SKIPPED_UNCERTAIN'
   | 'NOT_FOUND';
+
+/** Resultado de transferir o cerrar. UNCERTAIN nunca se reintenta a ciegas (regla 2). */
+export type HandoffOutcome =
+  | { result: 'OK'; noteWritten: boolean }
+  | { result: 'BLOCKED_KILL_SWITCH' }
+  | { result: 'FAILED'; reason: string; noteWritten: boolean }
+  | { result: 'UNCERTAIN'; reason: string; noteWritten: boolean };
+
+export interface TransferRequest {
+  abayaChatId: string;
+  /** Nota interna (resumen para el backoffice). Se omite si ya se escribió en un intento previo. */
+  note?: string;
+  queueLabel: string;
+}
 
 export class ActionBlockedError extends Error {
   override name = 'ActionBlockedError';
@@ -73,6 +89,111 @@ export class BrowserActor {
       await this.log('OPEN_CHAT', abayaChatId, ok ? 'OK' : 'UNCERTAIN', start);
       return ok;
     });
+  }
+
+  /**
+   * Sección 6.5: abrir chat → verificar identidad → nota interna → transferir a la cola →
+   * verificar que el chat salió de la bandeja.
+   */
+  transfer(req: TransferRequest): Promise<HandoffOutcome> {
+    return this.exec.run(async () => {
+      const start = Date.now();
+      const chatId = req.abayaChatId;
+      if (!(await this.preflight('TRANSFER', chatId, start)))
+        return { result: 'BLOCKED_KILL_SWITCH' };
+      const page = this.d.page();
+      const chat = new ChatPage(page);
+
+      if (!(await this.open(chatId))) {
+        // ¿Ya no está en la bandeja? Pudo transferirse en un intento previo que murió.
+        const stillAssigned = (await new ChatListPage(page).listChats()).some(
+          (c) => c.abayaChatId === chatId,
+        );
+        await this.log('TRANSFER', chatId, stillAssigned ? 'ERROR' : 'UNCERTAIN', start);
+        return stillAssigned
+          ? { result: 'FAILED', reason: 'no se pudo abrir el chat', noteWritten: false }
+          : { result: 'UNCERTAIN', reason: 'el chat ya no está en la bandeja', noteWritten: false };
+      }
+      if (!(await this.identityOk(chat, chatId, 'transfer'))) {
+        await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
+        return {
+          result: 'UNCERTAIN',
+          reason: 'identidad del chat no verificada',
+          noteWritten: false,
+        };
+      }
+
+      let noteWritten = false;
+      if (req.note) {
+        const noteStart = Date.now();
+        try {
+          noteWritten = await new NotePage(page).writeNote(req.note);
+        } catch {
+          noteWritten = false;
+        }
+        await this.log('NOTE', chatId, noteWritten ? 'OK' : 'ERROR', noteStart);
+        if (!noteWritten)
+          return { result: 'FAILED', reason: 'no se pudo guardar la nota', noteWritten };
+        // Revalidar identidad antes de transferir.
+        if (!(await this.identityOk(chat, chatId, 'transfer'))) {
+          await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
+          return { result: 'UNCERTAIN', reason: 'el chat cambió tras la nota', noteWritten };
+        }
+      }
+
+      try {
+        await new TransferPage(page).transferTo(req.queueLabel);
+      } catch {
+        // El diálogo pudo quedar a medias: no sabemos si se transfirió.
+        await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
+        return { result: 'UNCERTAIN', reason: 'error durante la transferencia', noteWritten };
+      }
+      const gone = await this.waitChatGone(chatId);
+      await this.log('TRANSFER', chatId, gone ? 'OK' : 'UNCERTAIN', start);
+      return gone
+        ? { result: 'OK', noteWritten }
+        : {
+            result: 'UNCERTAIN',
+            reason: 'el chat sigue en la bandeja tras transferir',
+            noteWritten,
+          };
+    });
+  }
+
+  /** Cierra un chat que no es venta (sección 6.6) y verifica que salió de la bandeja. */
+  closeConversation(abayaChatId: string): Promise<HandoffOutcome> {
+    return this.exec.run(async () => {
+      const start = Date.now();
+      if (!(await this.preflight('CLOSE', abayaChatId, start)))
+        return { result: 'BLOCKED_KILL_SWITCH' };
+      const chat = new ChatPage(this.d.page());
+      if (!(await this.open(abayaChatId)) || !(await this.identityOk(chat, abayaChatId, 'close'))) {
+        await this.log('CLOSE', abayaChatId, 'UNCERTAIN', start);
+        return { result: 'UNCERTAIN', reason: 'chat no verificado', noteWritten: false };
+      }
+      try {
+        await chat.closeChat();
+      } catch {
+        await this.log('CLOSE', abayaChatId, 'UNCERTAIN', start);
+        return { result: 'UNCERTAIN', reason: 'error al cerrar', noteWritten: false };
+      }
+      const gone = await this.waitChatGone(abayaChatId);
+      await this.log('CLOSE', abayaChatId, gone ? 'OK' : 'UNCERTAIN', start);
+      return gone
+        ? { result: 'OK', noteWritten: false }
+        : { result: 'UNCERTAIN', reason: 'el chat sigue en la bandeja', noteWritten: false };
+    });
+  }
+
+  private async waitChatGone(chatId: string, timeoutMs = 10_000): Promise<boolean> {
+    const list = new ChatListPage(this.d.page());
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const chats = await list.listChats().catch(() => null);
+      if (chats && !chats.some((c) => c.abayaChatId === chatId)) return true;
+      await this.d.page().waitForTimeout(200);
+    }
+    return false;
   }
 
   private async doSend(messageId: string): Promise<SendOutcome> {
