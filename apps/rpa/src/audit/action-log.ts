@@ -1,5 +1,5 @@
 import { GENESIS_HASH, chainHash } from '@abaya/crypto';
-import type { PrismaClient } from '@abaya/db';
+import { withSerializableRetry, type PrismaClient } from '@abaya/db';
 import type { RpaAction, RpaActionResult } from '@abaya/domain';
 
 export interface ActionLogEntry {
@@ -41,19 +41,21 @@ export class PrismaActionLog implements ActionLog {
   async append(entry: ActionLogEntry): Promise<StoredActionLog> {
     // Serializable: dos escrituras concurrentes no pueden encadenar al mismo prevHash
     // (además `hash` es único en BD).
-    return this.prisma.$transaction(
-      async (tx) => {
-        const last = await tx.rpaActionLog.findFirst({
-          where: { robotUser: entry.robotUser },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          select: { hash: true },
-        });
-        const prevHash = last?.hash ?? GENESIS_HASH;
-        const hash = chainHash(prevHash, actionLogHashInput(entry));
-        await tx.rpaActionLog.create({ data: { ...entry, prevHash, hash } });
-        return { ...entry, prevHash, hash };
-      },
-      { isolationLevel: 'Serializable' },
+    return withSerializableRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const last = await tx.rpaActionLog.findFirst({
+            where: { robotUser: entry.robotUser },
+            orderBy: { seq: 'desc' },
+            select: { hash: true },
+          });
+          const prevHash = last?.hash ?? GENESIS_HASH;
+          const hash = chainHash(prevHash, actionLogHashInput(entry));
+          await tx.rpaActionLog.create({ data: { ...entry, prevHash, hash } });
+          return { ...entry, prevHash, hash };
+        },
+        { isolationLevel: 'Serializable' },
+      ),
     );
   }
 }

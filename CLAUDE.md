@@ -119,7 +119,7 @@ abaya-rpa/
 - [x] F0 Fundaciones
 - [~] F1 Descubrimiento de Abaya (provisional contra el Abaya simulado; falta el descubrimiento real)
 - [x] F2 Sesión (probada contra el simulador; falta E2E @abaya real)
-- [x] F3 Lectura de mensajes (probada contra el simulador; dedup en BD pendiente de prueba con Postgres)
+- [x] F3 Lectura de mensajes (probada contra el simulador y PostgreSQL)
 - [x] F4 Envío de mensajes (probada contra el simulador)
 - [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
@@ -142,3 +142,11 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   recibir los oficiales de Claro. Cargar catálogo: `pnpm --filter @abaya/worker seed -- <archivo>`.
 - Suite de evaluación: `pnpm evals` (línea base sin red) o
   `pnpm evals -- --provider anthropic,openai` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
+
+## Pruebas de integración con PostgreSQL
+
+Los archivos `*.int.test.ts` levantan un PostgreSQL temporal con `@abaya/db/testing`
+(`embedded-postgres`, puerto libre, carpeta temporal, migraciones aplicadas): no tocan ninguna base
+real. Las cadenas de hashes (`ConsentEvidence`, `RpaActionLog`) tienen `prevHash` único (no pueden
+bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se reintentan con
+`withSerializableRetry`.

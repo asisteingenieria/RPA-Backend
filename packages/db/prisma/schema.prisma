@@ -85,11 +85,14 @@ model Sale {
 model ConsentEvidence {
   // append-only con cadena de hashes
   id                     String   @id @default(cuid())
+  /// Orden real de inserción: la punta de la cadena es el seq más alto.
+  seq                    Int      @unique @default(autoincrement())
   conversationId         String
   textShownHash          String // hash del texto de autorización mostrado
   customerReplyEncrypted Bytes
   acceptedAt             DateTime // hora de Bogotá
-  prevHash               String
+  /// Único: la cadena no puede bifurcarse.
+  prevHash               String   @unique
   hash                   String   @unique
 
   @@index([conversationId])
@@ -105,8 +108,9 @@ model RpaSession {
 }
 
 model RpaActionLog {
-  // auditoría inmutable con cadena de hashes
+  // auditoría inmutable con cadena de hashes (una cadena por usuario robot)
   id          String   @id @default(cuid())
+  seq         Int      @unique @default(autoincrement())
   robotUser   String
   action      String // LOGIN, OPEN_CHAT, SEND, NOTE, TRANSFER, CLOSE
   abayaChatId String?
@@ -117,6 +121,8 @@ model RpaActionLog {
   hash        String   @unique
   createdAt   DateTime @default(now())
 
+  /// La cadena de cada robot no puede bifurcarse.
+  @@unique([robotUser, prevHash])
   @@index([robotUser, createdAt])
 }
 
