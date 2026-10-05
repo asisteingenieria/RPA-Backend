@@ -4,9 +4,14 @@ import { routeEvent } from './outbox-publisher.js';
 describe('routeEvent', () => {
   it('ReplyReady → abaya.outbound', () => {
     expect(
-      routeEvent('ReplyReady', { messageId: 'm1', abayaChatId: 'CH-1', conversationId: 'c' }),
+      routeEvent('ReplyReady', {
+        messageId: 'm1',
+        abayaChatId: 'CH-1',
+        robotUser: 'robot-ventas-01',
+        conversationId: 'c',
+      }),
     ).toEqual({
-      queue: 'abaya.outbound',
+      queue: 'abaya.outbound.robot-ventas-01',
       data: { messageId: 'm1', abayaChatId: 'CH-1' },
     });
   });
@@ -16,11 +21,12 @@ describe('routeEvent', () => {
       routeEvent('TransferRequested', {
         conversationId: 'c',
         abayaChatId: 'CH-1',
+        robotUser: 'robot-ventas-01',
         target: 'BACKOFFICE',
         afterMessageIds: ['m9'],
       }),
     ).toEqual({
-      queue: 'abaya.transfer',
+      queue: 'abaya.transfer.robot-ventas-01',
       data: {
         conversationId: 'c',
         abayaChatId: 'CH-1',
@@ -35,9 +41,16 @@ describe('routeEvent', () => {
       routeEvent('ConversationClosed', {
         conversationId: 'c',
         abayaChatId: 'CH-1',
+        robotUser: 'robot-ventas-01',
         reason: 'SUPPORT',
       })?.queue,
-    ).toBe('abaya.close');
+    ).toBe('abaya.close.robot-ventas-01');
+  });
+
+  it('un evento de acción sin robotUser es un error (no se adivina la cola)', () => {
+    expect(() => routeEvent('ReplyReady', { messageId: 'm1', abayaChatId: 'CH-1' })).toThrow(
+      /robotUser/,
+    );
   });
 
   it('SaleCompleted y NeedsReview no generan trabajo en Abaya', () => {

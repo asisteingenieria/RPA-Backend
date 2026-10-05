@@ -13,6 +13,7 @@
     "seed": "tsx --env-file-if-exists=../../.env src/catalog/seed.ts"
   },
   "dependencies": {
+    "@abaya/alerts": "workspace:*",
     "@abaya/config": "workspace:*",
     "@abaya/crypto": "workspace:*",
     "@abaya/db": "workspace:*",

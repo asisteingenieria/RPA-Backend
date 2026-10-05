@@ -2,7 +2,7 @@ import type { TransferJob } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import type { HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
-import { MemoryAlertAdapter } from '../alerts/log-alert.adapter.js';
+import { MemoryAlertAdapter } from '@abaya/alerts';
 import { HandoffProcessor } from './handoff-processor.js';
 import { MemoryHandoffRepository } from './handoff.repository.js';
 

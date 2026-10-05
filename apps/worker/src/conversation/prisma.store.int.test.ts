@@ -214,9 +214,9 @@ describe('OutboxPublisher', () => {
     const ob = new OutboxPublisher(db.prisma, publisher, createLogger('t', { level: 'silent' }));
     await ob.tick();
     expect(published.map((p) => p.queue)).toEqual([
-      'abaya.outbound',
-      'abaya.outbound',
-      'abaya.close',
+      'abaya.outbound.robot',
+      'abaya.outbound.robot',
+      'abaya.close.robot',
     ]);
     expect(await db.prisma.outboxEvent.count({ where: { publishedAt: null } })).toBe(0);
     // Un segundo tick no republica.

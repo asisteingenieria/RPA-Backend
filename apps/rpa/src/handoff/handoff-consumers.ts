@@ -1,4 +1,4 @@
-import { QUEUES, type CloseJob, type TransferJob } from '@abaya/domain';
+import { QUEUES, robotQueue, type CloseJob, type TransferJob } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 import { DelayedError, Worker, type Job } from 'bullmq';
 import type { HandoffDecision, HandoffProcessor } from './handoff-processor.js';
@@ -17,10 +17,10 @@ const RETRY_MS = 10_000;
 export class HandoffConsumers {
   private readonly workers: Worker[];
 
-  constructor(redisUrl: string, processor: HandoffProcessor, logger: Logger) {
+  constructor(redisUrl: string, robotUser: string, processor: HandoffProcessor, logger: Logger) {
     const connection = { url: redisUrl };
     const transfer = new Worker<TransferJob & { retries?: number }>(
-      QUEUES.transfer,
+      robotQueue(QUEUES.transfer, robotUser),
       async (job, token) => {
         const retries = job.data.retries ?? 0;
         const decision = await processor.transfer(job.data, retries);
@@ -30,7 +30,7 @@ export class HandoffConsumers {
       { connection, concurrency: 1 },
     );
     const close = new Worker<CloseJob>(
-      QUEUES.close,
+      robotQueue(QUEUES.close, robotUser),
       async (job, token) => {
         const decision = await processor.close(job.data);
         await this.apply(job, token, decision, logger, job.data);

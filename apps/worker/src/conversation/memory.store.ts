@@ -18,6 +18,7 @@ interface MemMessage {
 interface MemConversation {
   id: string;
   abayaChatId: string;
+  robotUser: string;
   stage: Stage;
   profile: Profile;
   status: ConversationStatus;
@@ -37,6 +38,7 @@ export class MemoryConversationStore implements ConversationStore {
     this.conversations.set(id, {
       id,
       abayaChatId,
+      robotUser: 'robot-ventas-01',
       stage: 'MENU',
       profile: {},
       status: 'ACTIVE',
@@ -72,6 +74,7 @@ export class MemoryConversationStore implements ConversationStore {
     return {
       state: { conversationId, stage: c.stage, profile: { ...c.profile }, history },
       abayaChatId: c.abayaChatId,
+      robotUser: c.robotUser,
       status: c.status,
       pending: pending.map((m) => ({ id: m.id, text: m.text })),
     };

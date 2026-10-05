@@ -32,3 +32,17 @@ export interface CloseJob {
   reason: 'SUPPORT' | 'NO_SALE' | 'INACTIVE';
   afterMessageIds: string[];
 }
+
+/**
+ * Las acciones sobre Abaya (envío, transferencia, cierre) van a una cola POR usuario robot:
+ * cada chat solo existe en la bandeja de su robot (sección 2.4: más volumen = más robots).
+ */
+export function robotQueue(
+  base: (typeof QUEUES)['outbound' | 'transfer' | 'close'],
+  robotUser: string,
+): string {
+  return `${base}.${robotUser.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+/** Bandera del apagado de emergencia en Redis (la activa el panel, la lee el rpa). */
+export const KILL_SWITCH_KEY = 'abaya:killswitch';

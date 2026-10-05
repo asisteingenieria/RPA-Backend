@@ -14,6 +14,7 @@
     "test:pw": "playwright test"
   },
   "dependencies": {
+    "@abaya/alerts": "workspace:*",
     "@abaya/config": "workspace:*",
     "@abaya/crypto": "workspace:*",
     "@abaya/db": "workspace:*",

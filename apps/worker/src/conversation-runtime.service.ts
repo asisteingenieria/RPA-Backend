@@ -13,6 +13,13 @@ import { ConversationEngine } from './engine/conversation-engine.js';
 import { AnthropicLlmAdapter } from './llm/adapters/anthropic.adapter.js';
 import { OpenAiLlmAdapter } from './llm/adapters/openai.adapter.js';
 import { BullQueuePublisher, OutboxPublisher } from './outbox/outbox-publisher.js';
+import {
+  AlertMonitor,
+  closeInactive,
+  conversationsWithPendingInbound,
+  databaseChecks,
+} from './maintenance/maintenance.js';
+import { alertsFromConfig } from '@abaya/alerts';
 
 function llmFromConfig(cfg: AppConfig): LlmPort {
   switch (cfg.LLM_PROVIDER) {
@@ -44,17 +51,14 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
   private inbound?: Worker<InboundJob>;
   private outbox?: OutboxPublisher;
   private publisher?: BullQueuePublisher;
+  private timers: NodeJS.Timeout[] = [];
 
   async onModuleInit() {
     const cfg = loadConfig();
     this.prisma = createPrismaClient(cfg.DATABASE_URL);
     const cipher = new FieldCipher(cfg.FIELD_ENCRYPTION_KEY);
     const catalog = new PrismaCatalog(this.prisma);
-    const alerts: AlertPort = {
-      raise: async (code, severity, detail) => {
-        this.logger.error({ alert: code, severity, ...detail }, `ALERTA ${severity}: ${code}`);
-      },
-    };
+    const alerts: AlertPort = alertsFromConfig(cfg, createLogger('worker.alerts'));
     const turns = new TurnService({
       store: new PrismaConversationStore(this.prisma, cipher),
       engine: new ConversationEngine({ llm: llmFromConfig(cfg), catalog }),
@@ -79,6 +83,33 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     this.publisher = new BullQueuePublisher(cfg.REDIS_URL);
     this.outbox = new OutboxPublisher(this.prisma, this.publisher, createLogger('worker.outbox'));
     this.outbox.start();
+
+    // Recuperación: retomar las conversaciones con mensajes sin atender (reinicio a mitad de turno).
+    const pending = await conversationsWithPendingInbound(this.prisma);
+    for (const id of pending) this.scheduler.notify(id);
+    if (pending.length) this.logger.info({ count: pending.length }, 'conversaciones retomadas');
+
+    const prisma = this.prisma;
+    const monitor = new AlertMonitor(
+      databaseChecks(prisma),
+      alerts,
+      createLogger('worker.monitor'),
+    );
+    this.timers.push(
+      setInterval(() => void monitor.tick(), 60_000),
+      setInterval(() => {
+        closeInactive(prisma, new Date(), cfg.INACTIVITY_MINUTES)
+          .then(
+            (n) => n && this.logger.info({ closed: n }, 'conversaciones cerradas por inactividad'),
+          )
+          .catch((err: unknown) =>
+            this.logger.error(
+              { err: err instanceof Error ? err.name : 'unknown' },
+              'error en inactividad',
+            ),
+          );
+      }, 5 * 60_000),
+    );
     this.logger.info(
       { llm: cfg.LLM_PROVIDER, model: cfg.LLM_MODEL ?? 'por defecto' },
       'worker listo',
@@ -86,6 +117,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
   }
 
   async onApplicationShutdown() {
+    this.timers.forEach(clearInterval);
     await this.inbound?.close();
     await this.scheduler?.stop();
     await this.outbox?.stop();

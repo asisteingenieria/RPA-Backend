@@ -179,3 +179,14 @@ model OutboxEvent {
 
   @@index([publishedAt])
 }
+
+model AdminAuditLog {
+  // acciones hechas desde el panel / API de administración (F7)
+  id        String   @id @default(cuid())
+  actor     String
+  action    String // KILL_SWITCH_ON | KILL_SWITCH_OFF | SESSION_RESET | ...
+  target    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

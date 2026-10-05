@@ -9,6 +9,8 @@ export interface PendingInbound {
 export interface TurnInput {
   state: ConversationState;
   abayaChatId: string;
+  /** Usuario robot dueño del chat: sus acciones van a la cola de ese robot. */
+  robotUser: string;
   status: ConversationStatus;
   /** Mensajes del cliente aún no atendidos por el motor (la ráfaga). */
   pending: PendingInbound[];

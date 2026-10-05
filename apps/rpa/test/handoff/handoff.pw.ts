@@ -4,7 +4,7 @@ import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
 import { BrowserActor } from '../../src/actor/browser-actor.js';
-import { MemoryAlertAdapter } from '../../src/alerts/log-alert.adapter.js';
+import { MemoryAlertAdapter } from '@abaya/alerts';
 import { MemoryActionLog } from '../../src/audit/action-log.js';
 import { HandoffProcessor } from '../../src/handoff/handoff-processor.js';
 import { MemoryHandoffRepository } from '../../src/handoff/handoff.repository.js';

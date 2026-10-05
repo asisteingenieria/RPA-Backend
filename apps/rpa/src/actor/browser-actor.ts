@@ -80,6 +80,13 @@ export class BrowserActor {
     return this.exec.run(() => this.doSend(messageId));
   }
 
+  /** Lectura de la bandeja (sin clics), serializada con las acciones para no chocar con ellas. */
+  readInboxChatIds(): Promise<string[]> {
+    return this.exec.run(async () =>
+      (await new ChatListPage(this.d.page()).listChats()).map((c) => c.abayaChatId),
+    );
+  }
+
   /** Abre un chat (lo usa el worker para leer chats con no leídos, y las demás acciones). */
   openChat(abayaChatId: string): Promise<boolean> {
     return this.exec.run(async () => {

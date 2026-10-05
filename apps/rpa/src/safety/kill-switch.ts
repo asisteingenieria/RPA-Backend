@@ -1,6 +1,5 @@
+import { KILL_SWITCH_KEY } from '@abaya/domain';
 import { Redis } from 'ioredis';
-
-export const KILL_SWITCH_KEY = 'abaya:killswitch';
 
 /** Apagado de emergencia: revisado antes de cada acción de interfaz (regla 5). */
 export interface KillSwitch {

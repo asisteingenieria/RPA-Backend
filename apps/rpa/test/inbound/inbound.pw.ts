@@ -4,7 +4,7 @@ import type { InboundMessage } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
-import { MemoryAlertAdapter } from '../../src/alerts/log-alert.adapter.js';
+import { MemoryAlertAdapter } from '@abaya/alerts';
 import { InboundProcessor } from '../../src/inbound/inbound-processor.js';
 import { MemoryInboundQueue } from '../../src/inbound/inbound-queue.js';
 import { InboundWatcher } from '../../src/inbound/inbound-watcher.js';

@@ -1,4 +1,4 @@
-import { QUEUES, type OutboundJob } from '@abaya/domain';
+import { QUEUES, robotQueue, type OutboundJob } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 import { Worker } from 'bullmq';
 import { ActionBlockedError, type BrowserActor } from '../actor/browser-actor.js';
@@ -11,9 +11,9 @@ import { ActionBlockedError, type BrowserActor } from '../actor/browser-actor.js
 export class OutboundConsumer {
   private readonly worker: Worker<OutboundJob>;
 
-  constructor(redisUrl: string, actor: BrowserActor, logger: Logger) {
+  constructor(redisUrl: string, robotUser: string, actor: BrowserActor, logger: Logger) {
     this.worker = new Worker<OutboundJob>(
-      QUEUES.outbound,
+      robotQueue(QUEUES.outbound, robotUser),
       async (job) => {
         const outcome = await actor.sendMessage(job.data.messageId);
         if (outcome === 'BLOCKED_KILL_SWITCH') {

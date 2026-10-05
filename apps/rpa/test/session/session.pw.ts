@@ -6,7 +6,7 @@ import { FieldCipher, totp } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
-import { MemoryAlertAdapter } from '../../src/alerts/log-alert.adapter.js';
+import { MemoryAlertAdapter } from '@abaya/alerts';
 import { PlaywrightSessionDriver } from '../../src/session/playwright-session-driver.js';
 import { SessionManager } from '../../src/session/session-manager.js';
 import { MemorySessionRepository } from '../../src/session/session.repository.js';
@@ -96,7 +96,7 @@ test('si se cierra la sesión a mano, vuelve a entrar solo (< 1 min)', async () 
   await expect.poll(() => mock.loginAttempts, { timeout: 60_000, intervals: [250] }).toBe(2);
   await expect.poll(() => t.mgr.status, { timeout: 60_000 }).toBe('ACTIVE');
   expect(Date.now() - lostAt).toBeLessThan(60_000);
-  expect(t.recovered()).toBe(1);
+  await expect.poll(() => t.recovered(), { timeout: 10_000 }).toBe(1);
   expect(t.gate.isOpen()).toBe(true);
   await t.mgr.stop();
 });

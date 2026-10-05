@@ -134,7 +134,10 @@ export class TurnService {
         payload: { conversationId, abayaChatId: input.abayaChatId, outboundIndex: i },
       }),
     );
-    commit.events = [...replyEvents, ...commit.events];
+    commit.events = [...replyEvents, ...commit.events].map((e) => ({
+      ...e,
+      payload: { ...e.payload, robotUser: input.robotUser },
+    }));
 
     await this.d.store.commitTurn(commit);
     this.d.logger.info(

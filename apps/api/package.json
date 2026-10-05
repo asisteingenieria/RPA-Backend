@@ -12,9 +12,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@abaya/alerts": "workspace:*",
     "@abaya/config": "workspace:*",
     "@abaya/crypto": "workspace:*",
-    "@abaya/db": "workspace:*",
     "@abaya/domain": "workspace:*",
     "@abaya/logger": "workspace:*",
     "@nestjs/common": "^12.1.2",
@@ -24,5 +24,8 @@
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@abaya/db": "workspace:*"
   }
 }

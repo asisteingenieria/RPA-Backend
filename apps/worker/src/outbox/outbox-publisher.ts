@@ -1,5 +1,11 @@
 import type { PrismaClient } from '@abaya/db';
-import { QUEUES, type CloseJob, type OutboundJob, type TransferJob } from '@abaya/domain';
+import {
+  QUEUES,
+  robotQueue,
+  type CloseJob,
+  type OutboundJob,
+  type TransferJob,
+} from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 import { Queue } from 'bullmq';
 
@@ -40,15 +46,18 @@ export function routeEvent(
   type: string,
   payload: Record<string, unknown>,
 ): { queue: string; data: OutboundJob | TransferJob | CloseJob } | null {
+  const robot = typeof payload.robotUser === 'string' ? payload.robotUser : undefined;
+  const needsRobot = ['ReplyReady', 'TransferRequested', 'ConversationClosed'].includes(type);
+  if (needsRobot && !robot) throw new Error(`evento ${type} sin robotUser`);
   switch (type) {
     case 'ReplyReady':
       return {
-        queue: QUEUES.outbound,
+        queue: robotQueue(QUEUES.outbound, robot!),
         data: { messageId: String(payload.messageId), abayaChatId: String(payload.abayaChatId) },
       };
     case 'TransferRequested':
       return {
-        queue: QUEUES.transfer,
+        queue: robotQueue(QUEUES.transfer, robot!),
         data: {
           conversationId: String(payload.conversationId),
           abayaChatId: String(payload.abayaChatId),
@@ -58,7 +67,7 @@ export function routeEvent(
       };
     case 'ConversationClosed':
       return {
-        queue: QUEUES.close,
+        queue: robotQueue(QUEUES.close, robot!),
         data: {
           conversationId: String(payload.conversationId),
           abayaChatId: String(payload.abayaChatId),

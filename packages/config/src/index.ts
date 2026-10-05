@@ -36,6 +36,12 @@ export const envSchema = z.object({
   LLM_MODEL: optionalString,
   /** Espera sin mensajes nuevos antes de procesar una ráfaga (sección 6.3.1). */
   BURST_QUIET_MS: z.coerce.number().int().positive().default(4_000),
+  /** Webhook entrante (Slack/Teams) para alertas; vacío = solo logs. */
+  ALERT_WEBHOOK_URL: optionalString,
+  /** Cierre por inactividad del cliente (sección 6.6). */
+  INACTIVITY_MINUTES: z.coerce.number().int().positive().default(120),
+  /** Token del panel/API de administración (Bearer). Obligatorio para habilitar /admin. */
+  ADMIN_TOKEN: optionalString,
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
 });

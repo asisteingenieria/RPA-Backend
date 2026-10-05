@@ -47,15 +47,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@abaya/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@abaya/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@abaya/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
-      '@abaya/db':
-        specifier: workspace:*
-        version: link:../../packages/db
       '@abaya/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -83,9 +83,16 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+    devDependencies:
+      '@abaya/db':
+        specifier: workspace:*
+        version: link:../../packages/db
 
   apps/rpa:
     dependencies:
+      '@abaya/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@abaya/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -141,6 +148,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@abaya/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@abaya/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -206,6 +216,18 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+
+  packages/alerts:
+    dependencies:
+      '@abaya/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@abaya/logger':
+        specifier: workspace:*
+        version: link:../logger
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/config:
     dependencies:

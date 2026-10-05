@@ -1,3 +1,5 @@
+import { QUEUES, robotQueue } from '@abaya/domain';
+import { Queue } from 'bullmq';
 import { Injectable, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { loadConfig, requireAbayaConfig } from '@abaya/config';
 import { FieldCipher, totp } from '@abaya/crypto';
@@ -5,7 +7,7 @@ import { createPrismaClient, type PrismaClient } from '@abaya/db';
 import { createLogger } from '@abaya/logger';
 import { ActorGate } from './actor/actor-gate.js';
 import { BrowserActor } from './actor/browser-actor.js';
-import { LogAlertAdapter } from './alerts/log-alert.adapter.js';
+import { alertsFromConfig } from '@abaya/alerts';
 import { InboundProcessor } from './inbound/inbound-processor.js';
 import { BullInboundQueue, type InboundQueue } from './inbound/inbound-queue.js';
 import { InboundWatcher } from './inbound/inbound-watcher.js';
@@ -16,6 +18,7 @@ import { HandoffProcessor } from './handoff/handoff-processor.js';
 import { PrismaHandoffRepository } from './handoff/handoff.repository.js';
 import { OutboundConsumer } from './outbound/outbound-consumer.js';
 import { PrismaOutboundRepository } from './outbound/outbound.repository.js';
+import { PrismaRecoveryRepository, RecoveryService } from './recovery/recovery.service.js';
 import { ChatIdentityGuard } from './safety/chat-identity-guard.js';
 import { RedisKillSwitch } from './safety/kill-switch.js';
 import { PlaywrightSessionDriver } from './session/playwright-session-driver.js';
@@ -38,6 +41,8 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   private killSwitch?: RedisKillSwitch;
   private outboundConsumer?: OutboundConsumer;
   private handoffConsumers?: HandoffConsumers;
+  private recoveryQueue?: Queue;
+  private recovery?: RecoveryService;
   actor?: BrowserActor;
 
   async onModuleInit() {
@@ -48,6 +53,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
     }
     const abaya = requireAbayaConfig(cfg);
     const cipher = new FieldCipher(cfg.FIELD_ENCRYPTION_KEY);
+    const alerts = alertsFromConfig(cfg, createLogger('rpa.alerts'));
     this.prisma = createPrismaClient(cfg.DATABASE_URL);
     this.inboundQueue = new BullInboundQueue(cfg.REDIS_URL);
 
@@ -68,7 +74,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       driver: this.driver,
       store: new EncryptedFileStorageStateStore(abaya.sessionStateDir, abaya.robotUser, cipher),
       repo: new PrismaSessionRepository(this.prisma),
-      alerts: new LogAlertAdapter(),
+      alerts,
       gate: this.gate,
       logger: this.logger,
       credentials: () => ({
@@ -77,9 +83,9 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
         ...(abaya.mfaMode === 'totp' && abaya.totpSecret ? { otp: totp(abaya.totpSecret) } : {}),
       }),
       heartbeatMs: abaya.heartbeatMs,
+      onRecovered: () => this.reconcile(),
     });
     this.killSwitch = RedisKillSwitch.fromUrl(cfg.REDIS_URL);
-    const alerts = new LogAlertAdapter();
     const driver = this.driver;
     this.actor = new BrowserActor({
       robotUser: abaya.robotUser,
@@ -95,11 +101,13 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
     });
     this.outboundConsumer = new OutboundConsumer(
       cfg.REDIS_URL,
+      abaya.robotUser,
       this.actor,
       createLogger('rpa.outbound'),
     );
     this.handoffConsumers = new HandoffConsumers(
       cfg.REDIS_URL,
+      abaya.robotUser,
       new HandoffProcessor({
         actor: this.actor,
         repo: new PrismaHandoffRepository(this.prisma, cipher),
@@ -108,14 +116,48 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       }),
       createLogger('rpa.handoff'),
     );
+    this.recoveryQueue = new Queue(robotQueue(QUEUES.outbound, abaya.robotUser), {
+      connection: { url: cfg.REDIS_URL },
+    });
+    const recoveryQueue = this.recoveryQueue;
+    const actor = this.actor;
+    this.recovery = new RecoveryService({
+      robotUser: abaya.robotUser,
+      repo: new PrismaRecoveryRepository(this.prisma),
+      inboxChatIds: () => actor.readInboxChatIds(),
+      // jobId fijo por mensaje: no se apilan reencolados; el actor es idempotente.
+      enqueueOutbound: async (messageId, abayaChatId) => {
+        await recoveryQueue.add(
+          'message',
+          { messageId, abayaChatId },
+          { jobId: `recover-${messageId}` },
+        );
+      },
+      alerts,
+      logger: createLogger('rpa.recovery'),
+    });
 
     // No bloquear el arranque del proceso (y de /health) mientras se hace login.
-    void this.manager.start().catch((err: unknown) => {
+    void this.manager
+      .start()
+      .then((status) => (status === 'ACTIVE' ? this.reconcile() : undefined))
+      .catch((err: unknown) => {
+        this.logger.error(
+          { err: err instanceof Error ? err.name : 'unknown' },
+          'fallo al iniciar sesión',
+        );
+      });
+  }
+
+  private async reconcile() {
+    try {
+      await this.recovery?.run();
+    } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.name : 'unknown' },
-        'fallo al iniciar sesión',
+        'error en reconciliación',
       );
-    });
+    }
   }
 
   get status(): SessionStatus | 'DISABLED' {
@@ -129,6 +171,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown() {
     await this.outboundConsumer?.close();
     await this.handoffConsumers?.close();
+    await this.recoveryQueue?.close();
     await this.manager?.stop();
     await this.killSwitch?.close();
     await this.inboundQueue?.close();

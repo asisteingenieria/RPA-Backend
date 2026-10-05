@@ -46,6 +46,7 @@ export class PrismaConversationStore implements ConversationStore {
     return {
       state: { conversationId, stage: c.stage as Stage, profile, history },
       abayaChatId: c.abayaChatId,
+      robotUser: c.robotUser,
       status: c.status,
       pending: pending.map((m) => ({ id: m.id, text: this.decryptBody(m) })),
     };

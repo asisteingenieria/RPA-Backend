@@ -3,7 +3,7 @@ import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import type { LoginCredentials, LoginResult } from '../abaya/pages/login.page.js';
 import { ActorGate } from '../actor/actor-gate.js';
-import { MemoryAlertAdapter } from '../alerts/log-alert.adapter.js';
+import { MemoryAlertAdapter } from '@abaya/alerts';
 import type { SessionDriver } from './session-driver.js';
 import { SessionManager } from './session-manager.js';
 import { MemorySessionRepository } from './session.repository.js';
