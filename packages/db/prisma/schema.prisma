@@ -1,0 +1,174 @@
+// Modelo de datos — sección 5 de docs/planRPA.md
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+  runtime             = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ConversationStatus {
+  ACTIVE
+  WAITING_CONSENT
+  TRANSFERRING
+  TRANSFERRED_BACKOFFICE
+  CLOSED_NO_SALE
+  CLOSED_SUPPORT
+  CLOSED_INACTIVE
+  NEEDS_REVIEW // algo quedó incierto: requiere humano
+}
+
+model Conversation {
+  id               String             @id @default(cuid())
+  abayaChatId      String             @unique
+  stage            String             @default("MENU") // estado de la máquina
+  profileEncrypted Bytes? // datos extraídos (nombre, operador, uso)
+  robotUser        String
+  status           ConversationStatus @default(ACTIVE)
+  customerRefHash  String? // hash del identificador del cliente
+  lastInboundAt    DateTime?
+  lastOutboundAt   DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  messages         Message[]
+  sale             Sale?
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum OutboundStatus {
+  PENDING
+  SENDING
+  SENT_VERIFIED
+  UNCERTAIN // no verificado: NUNCA se reintenta automáticamente
+  FAILED
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  conversationId String
+  direction      Direction
+  fingerprint    String?         @unique // entrantes: deduplicación
+  idempotencyKey String?         @unique // salientes
+  bodyEncrypted  Bytes
+  status         OutboundStatus?
+  detectedVia    String? // "network" | "dom"
+  attempts       Int             @default(0)
+  occurredAt     DateTime
+  createdAt      DateTime        @default(now())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, occurredAt])
+}
+
+model Sale {
+  id               String       @id @default(cuid())
+  conversationId   String       @unique
+  process          String // tipo de venta (portabilidad, migración, línea nueva)
+  planCode         String
+  summaryEncrypted Bytes // resumen estructurado para el backoffice
+  transferredAt    DateTime?
+  backofficeNoteOk Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model ConsentEvidence {
+  // append-only con cadena de hashes
+  id                     String   @id @default(cuid())
+  conversationId         String
+  textShownHash          String // hash del texto de autorización mostrado
+  customerReplyEncrypted Bytes
+  acceptedAt             DateTime // hora de Bogotá
+  prevHash               String
+  hash                   String   @unique
+
+  @@index([conversationId])
+}
+
+model RpaSession {
+  id               String    @id @default(cuid())
+  robotUser        String    @unique
+  status           String // ACTIVE | RELOGGING | DOWN | PAUSED
+  lastHeartbeat    DateTime
+  lastLoginAt      DateTime?
+  consecutiveFails Int       @default(0)
+}
+
+model RpaActionLog {
+  // auditoría inmutable con cadena de hashes
+  id          String   @id @default(cuid())
+  robotUser   String
+  action      String // LOGIN, OPEN_CHAT, SEND, NOTE, TRANSFER, CLOSE
+  abayaChatId String?
+  result      String // OK | ERROR | UNCERTAIN
+  durationMs  Int
+  traceRef    String?
+  prevHash    String
+  hash        String   @unique
+  createdAt   DateTime @default(now())
+
+  @@index([robotUser, createdAt])
+}
+
+model Plan {
+  // catálogo: ÚNICA fuente de planes y precios
+  code         String    @id // p. ej. M1, L2, P1
+  process      String // PORTABILIDAD | MIGRACION | LINEA_NUEVA
+  name         String
+  dataGb       Int
+  priceCop     Int
+  discountText String? // texto aprobado por Claro, no generado
+  benefits     String[]
+  active       Boolean   @default(true)
+  validFrom    DateTime
+  validTo      DateTime?
+}
+
+model PromptVersion {
+  // prompts versionados, nunca editados en caliente
+  id         String   @id @default(cuid())
+  stage      String
+  version    Int
+  content    String
+  approvedBy String?
+  active     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([stage, version])
+}
+
+model LlmCall {
+  // trazabilidad de cada llamada al modelo
+  id               String   @id @default(cuid())
+  conversationId   String
+  stage            String
+  provider         String
+  model            String
+  promptVersionId  String
+  latencyMs        Int
+  inputTokens      Int
+  outputTokens     Int
+  validationResult String // OK | REGENERATED | FALLBACK
+  createdAt        DateTime @default(now())
+
+  @@index([conversationId])
+}
+
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([publishedAt])
+}

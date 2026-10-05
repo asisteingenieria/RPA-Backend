@@ -1,0 +1,23 @@
+{
+  "chatId": "CH-1001",
+  "messages": [
+    {
+      "id": "m-1",
+      "sender": { "type": "system" },
+      "text": "Chat asignado a robot-ventas-01",
+      "sentAt": "2026-10-05T14:00:00.000Z"
+    },
+    {
+      "id": "m-2",
+      "sender": { "type": "customer" },
+      "text": "Hola, quiero información de planes",
+      "sentAt": "2026-10-05T14:00:05.000Z"
+    },
+    {
+      "id": "m-3",
+      "sender": { "type": "agent" },
+      "text": "¡Hola! Con gusto te ayudo.",
+      "sentAt": "2026-10-05T14:00:10.000Z"
+    }
+  ]
+}

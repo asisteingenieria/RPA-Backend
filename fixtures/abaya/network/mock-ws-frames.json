@@ -1,0 +1,14 @@
+[
+  {
+    "event": "message.created",
+    "data": {
+      "chatId": "CH-1001",
+      "id": "m-5",
+      "sender": { "type": "customer" },
+      "text": "Quiero portar mi número",
+      "sentAt": "2026-10-05T14:01:00.000-05:00"
+    }
+  },
+  { "event": "chat.assigned", "data": { "chatId": "CH-1003" } },
+  { "event": "chat.removed", "data": { "chatId": "CH-1002" } }
+]

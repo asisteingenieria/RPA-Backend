@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: abaya
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abaya_dev}
+      POSTGRES_DB: abaya_rpa
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U abaya -d abaya_rpa']
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://abaya:${POSTGRES_PASSWORD:-abaya_dev}@postgres:5432/abaya_rpa?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  rpa:
+    build:
+      context: .
+      dockerfile: apps/rpa/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://abaya:${POSTGRES_PASSWORD:-abaya_dev}@postgres:5432/abaya_rpa?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://abaya:${POSTGRES_PASSWORD:-abaya_dev}@postgres:5432/abaya_rpa?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

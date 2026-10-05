@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+*.log
+
+# Secretos: nunca versionar
+.env
+.env.*
+!.env.example
+
+# Prisma client generado
+packages/db/src/generated/
+
+# Playwright: sesiones, trazas y reportes (pueden contener datos personales)
+**/storage-state*
+**/traces/
+**/test-results/
+**/playwright-report/
