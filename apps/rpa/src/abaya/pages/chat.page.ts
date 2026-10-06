@@ -66,18 +66,27 @@ export class ChatPage {
     await sel.chat.send(this.page).click();
   }
 
-  /**
-   * Espera a que un mensaje del robot con ese texto aparezca CONFIRMADO por el servidor
-   * (no basta con que la interfaz lo pinte de forma optimista).
-   */
-  async waitForAgentMessage(text: string, timeoutMs = 10_000): Promise<boolean> {
+  /** Mensajes del robot con ese texto ya confirmados por el servidor. */
+  async countConfirmedAgentMessages(text: string): Promise<number> {
     const expected = text.trim();
+    return (await this.readMessages().catch(() => [])).filter(
+      (m) =>
+        m.sender === 'AGENT' &&
+        m.text === expected &&
+        !!m.messageId &&
+        !sel.chat.unconfirmedMessageId.test(m.messageId),
+    ).length;
+  }
+
+  /**
+   * Espera a que haya MÁS mensajes confirmados con ese texto que `before` (contados antes de
+   * enviar). Contar evita dar por enviado un texto repetido usando un mensaje anterior, y
+   * exigir confirmación del servidor evita fiarse del pintado optimista de la interfaz.
+   */
+  async waitForAgentMessage(text: string, timeoutMs = 10_000, before = 0): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const confirmed = (await this.readMessages().catch(() => []))
-        .filter((m) => m.sender === 'AGENT' && m.text === expected)
-        .some((m) => !!m.messageId && !sel.chat.unconfirmedMessageId.test(m.messageId));
-      if (confirmed) return true;
+      if ((await this.countConfirmedAgentMessages(text)) > before) return true;
       await this.page.waitForTimeout(200);
     }
     return false;

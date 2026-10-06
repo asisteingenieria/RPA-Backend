@@ -1,5 +1,5 @@
 import type { LlmRequest } from '@abaya/domain';
-import type { TurnOutput } from '../apps/worker/src/engine/output-schema.js';
+import type { TurnOutput } from '../../engine/output-schema.js';
 
 /**
  * "LLM simulado" por palabras clave: línea base sin red para CI y para probar el runner.

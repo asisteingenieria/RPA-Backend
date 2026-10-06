@@ -12,6 +12,8 @@ import { TurnService } from './conversation/turn.service.js';
 import { ConversationEngine } from './engine/conversation-engine.js';
 import { AnthropicLlmAdapter } from './llm/adapters/anthropic.adapter.js';
 import { OpenAiLlmAdapter } from './llm/adapters/openai.adapter.js';
+import { heuristicBrain } from './llm/adapters/heuristic-brain.js';
+import { ScriptedLlmAdapter } from './llm/adapters/scripted.adapter.js';
 import { BullQueuePublisher, OutboxPublisher } from './outbox/outbox-publisher.js';
 import {
   AlertMonitor,
@@ -34,6 +36,9 @@ function llmFromConfig(cfg: AppConfig): LlmPort {
         model: cfg.LLM_MODEL,
         ...(cfg.OPENAI_API_KEY ? { apiKey: cfg.OPENAI_API_KEY } : {}),
       });
+    case 'simulado':
+      // Solo desarrollo (la configuración lo rechaza en producción): sin red ni API key.
+      return new ScriptedLlmAdapter(heuristicBrain);
     default:
       throw new Error(`LLM_PROVIDER ${cfg.LLM_PROVIDER} sin adaptador todavía`);
   }

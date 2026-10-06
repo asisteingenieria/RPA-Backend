@@ -30,4 +30,11 @@ describe('loadConfig', () => {
       expect.objectContaining({ message: expect.not.stringContaining('secreto-no-url') }),
     );
   });
+
+  it('rechaza el LLM simulado en producción y lo permite en desarrollo', () => {
+    expect(loadConfig({ ...valid, LLM_PROVIDER: 'simulado' }).LLM_PROVIDER).toBe('simulado');
+    expect(() =>
+      loadConfig({ ...valid, NODE_ENV: 'production', LLM_PROVIDER: 'simulado' }),
+    ).toThrow(/producción/);
+  });
 });

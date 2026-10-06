@@ -492,9 +492,9 @@ Se implementan al menos dos adaptadores y se elige con la suite de evaluación c
 1. Verificar `KillSwitch`.
 2. Abrir el chat por `abayaChatId`.
 3. **ChatIdentityGuard:** confirmar en pantalla que es el chat correcto. Si hay duda: abortar, `UNCERTAIN`, alerta.
-4. **Idempotencia:** si el texto ya aparece entre los últimos mensajes del robot, marcar `SENT_VERIFIED` sin reenviar.
+4. **Idempotencia:** solo si un intento anterior pudo haber enviado este mensaje (quedó en `SENDING` porque el proceso murió): si el texto aparece entre los últimos mensajes del robot, marcar `SENT_VERIFIED` sin reenviar; si no aparece, `UNCERTAIN`. Un mensaje `PENDING` siempre se envía, aunque el robot ya haya dicho el mismo texto antes. *(Cambio v1.2: la regla original descartaba en silencio respuestas legítimas repetidas, como plantillas o respuestas cortas; detectado en la demo de punta a punta.)*
 5. Escribir respetando saltos de línea y formato de WhatsApp (`*negrita*`).
-6. Enviar y esperar que el mensaje aparezca (timeout 10 s).
+6. Enviar y esperar que el mensaje aparezca **confirmado por el servidor** (no basta el pintado optimista de la interfaz) y que haya **uno más** que antes de enviar (un texto repetido no se confunde con el anterior). Timeout 10 s.
 7. Resultado: `SENT_VERIFIED` o `UNCERTAIN`. Un `UNCERTAIN` **nunca** se reintenta solo: pasa a revisión.
 
 ### 6.5 Venta y transferencia al backoffice

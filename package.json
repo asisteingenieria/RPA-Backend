@@ -16,7 +16,9 @@
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @abaya/db run generate",
     "db:migrate": "pnpm --filter @abaya/db run migrate:dev",
-    "evals": "pnpm --filter @abaya/evals start"
+    "evals": "pnpm --filter @abaya/evals start",
+    "demo": "node scripts/demo.mjs",
+    "demo:abaya": "pnpm --filter @abaya/rpa exec tsx test/mock-abaya/serve.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

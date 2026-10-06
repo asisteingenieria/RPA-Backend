@@ -243,15 +243,16 @@ export class BrowserActor {
       return this.uncertain(messageId, chatId, start, 'identidad del chat no verificada');
     }
 
-    // 4. Idempotencia: si el texto ya está entre los últimos del robot, no reenviar.
-    // Cubre el caso de un proceso que murió en SENDING después de hacer clic.
-    const recent = await chat.lastAgentTexts(this.d.idempotencyWindow ?? 3);
-    if (recent.includes(text.trim())) {
-      await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
-      await this.log('SEND', chatId, 'OK', start);
-      return 'ALREADY_SENT';
-    }
+    // 4. Idempotencia SOLO si un intento anterior pudo haber enviado ESTE mensaje (el proceso
+    // murió en SENDING). Un mensaje PENDING nunca se intentó: aunque el robot haya dicho el
+    // mismo texto antes (plantillas, respuestas cortas), es una respuesta nueva y se envía.
     if (msg.status === 'SENDING') {
+      const recent = await chat.lastAgentTexts(this.d.idempotencyWindow ?? 3);
+      if (recent.includes(text.trim())) {
+        await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
+        await this.log('SEND', chatId, 'OK', start);
+        return 'ALREADY_SENT';
+      }
       // Murió durante un envío y el texto no aparece: puede haberse enviado a medias o
       // estar pendiente en la interfaz. No reintentar a ciegas.
       return this.uncertain(messageId, chatId, start, 'envío previo interrumpido');
@@ -271,6 +272,8 @@ export class BrowserActor {
     if (!(await this.identityOk(chat, chatId, messageId))) {
       return this.uncertain(messageId, chatId, start, 'el chat cambió antes de enviar');
     }
+    // Cuántas veces está ya este texto confirmado: la verificación exige una más.
+    const confirmedBefore = await chat.countConfirmedAgentMessages(text);
     try {
       await chat.clickSend();
     } catch {
@@ -278,7 +281,11 @@ export class BrowserActor {
     }
 
     // 6–7. Verificar que aparece.
-    const seen = await chat.waitForAgentMessage(text, this.d.verifyTimeoutMs ?? 10_000);
+    const seen = await chat.waitForAgentMessage(
+      text,
+      this.d.verifyTimeoutMs ?? 10_000,
+      confirmedBefore,
+    );
     if (!seen) return this.uncertain(messageId, chatId, start, 'mensaje no apareció tras enviar');
 
     await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');

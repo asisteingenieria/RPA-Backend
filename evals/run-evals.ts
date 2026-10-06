@@ -25,7 +25,7 @@ import { FORBIDDEN_PROMISES } from '../apps/worker/src/engine/validators/validat
 import { AnthropicLlmAdapter } from '../apps/worker/src/llm/adapters/anthropic.adapter.js';
 import { OpenAiLlmAdapter } from '../apps/worker/src/llm/adapters/openai.adapter.js';
 import { ScriptedLlmAdapter } from '../apps/worker/src/llm/adapters/scripted.adapter.js';
-import { heuristicBrain } from './heuristic-brain.js';
+import { heuristicBrain } from '../apps/worker/src/llm/adapters/heuristic-brain.js';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const STAGES = [

@@ -37,7 +37,8 @@ export const envSchema = z.object({
   /** Trazas cifradas de errores (retención 7 días). */
   TRACE_DIR: z.string().default('.secrets/traces'),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
-  LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
+  /** `simulado`: cerebro heurístico sin red, SOLO para desarrollo (rechazado en producción). */
+  LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini', 'simulado']).default('anthropic'),
   /** Modelo fijado (sección 13: versión de modelo fijada). Lo elige la suite de evaluación. */
   LLM_MODEL: optionalString,
   /** Espera sin mensajes nuevos antes de procesar una ráfaga (sección 6.3.1). */
@@ -53,6 +54,15 @@ export const envSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
+
+/** Reglas que cruzan variables (se aplican después del esquema). */
+function crossChecks(cfg: AppConfig): string[] {
+  const issues: string[] = [];
+  if (cfg.NODE_ENV === 'production' && cfg.LLM_PROVIDER === 'simulado') {
+    issues.push('LLM_PROVIDER: "simulado" no está permitido en producción');
+  }
+  return issues;
+}
 
 /** Configuración mínima del robot en Abaya; falla si falta algo obligatorio. */
 export function requireAbayaConfig(cfg: AppConfig) {
@@ -86,5 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Configuración inválida: ${issues}`);
   }
+  const cross = crossChecks(result.data);
+  if (cross.length) throw new Error(`Configuración inválida: ${cross.join('; ')}`);
   return result.data;
 }

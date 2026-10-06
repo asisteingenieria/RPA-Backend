@@ -149,13 +149,36 @@ test('ChatIdentityGuard: si se abre otro chat, aborta sin escribir y alerta', as
   await t.mgr.stop();
 });
 
-test('idempotencia: si el texto ya está en pantalla no se reenvía', async () => {
+test('idempotencia: proceso muerto en SENDING con el texto ya en pantalla → no se reenvía', async () => {
   const t = await boot(mock);
   // El fixture CH-1001 ya tiene "¡Hola! Con gusto te ayudo." del asesor.
   const id = t.queue('CH-1001', '¡Hola! Con gusto te ayudo.');
+  await t.outbound.setStatus(id, 'SENDING', true);
   expect(await t.actor.sendMessage(id)).toBe('ALREADY_SENT');
   expect(mock.agentPosts).toHaveLength(0);
   expect((await t.outbound.get(id))?.status).toBe('SENT_VERIFIED');
+  await t.mgr.stop();
+});
+
+test('regresión: una respuesta nueva con el mismo texto que una anterior SÍ se envía', async () => {
+  const t = await boot(mock);
+  // El robot ya dijo esto antes, pero este mensaje (PENDING) es una respuesta nueva.
+  const id = t.queue('CH-1001', '¡Hola! Con gusto te ayudo.');
+  expect(await t.actor.sendMessage(id)).toBe('SENT_VERIFIED');
+  expect(mock.agentPosts).toEqual([{ chatId: 'CH-1001', text: '¡Hola! Con gusto te ayudo.' }]);
+  // Y dos respuestas idénticas seguidas también salen las dos.
+  const id2 = t.queue('CH-1001', '¡Hola! Con gusto te ayudo.');
+  expect(await t.actor.sendMessage(id2)).toBe('SENT_VERIFIED');
+  expect(mock.agentPosts).toHaveLength(2);
+  await t.mgr.stop();
+});
+
+test('regresión: un texto repetido que no llega queda UNCERTAIN (no se confunde con el anterior)', async () => {
+  const t = await boot(mock);
+  mock.dropOutgoing = true;
+  // "¡Hola! Con gusto te ayudo." ya existe confirmado en CH-1001: no debe contar como entrega.
+  const id = t.queue('CH-1001', '¡Hola! Con gusto te ayudo.');
+  expect(await t.actor.sendMessage(id)).toBe('UNCERTAIN');
   await t.mgr.stop();
 });
 

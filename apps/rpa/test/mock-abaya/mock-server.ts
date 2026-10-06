@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { totp } from '@abaya/crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { customerPageHtml } from './customer-page.js';
 import { inboxHtml, loginHtml, sampleChats, type MockChat, type MockMessage } from './templates.js';
 
 export interface MockAbayaOptions {
@@ -45,7 +46,10 @@ export class MockAbayaServer {
     this.chats = opts.chats ?? sampleChats();
   }
 
-  async start(): Promise<string> {
+  /** Chats que salieron de la bandeja (transferidos/cerrados), para la página del cliente. */
+  readonly history: MockChat[] = [];
+
+  async start(port = 0): Promise<string> {
     this.server = createServer((req, res) => {
       this.handle(req, res).catch(() => {
         res.statusCode = 500;
@@ -64,7 +68,7 @@ export class MockAbayaServer {
         ws.on('close', () => this.sockets.delete(ws));
       });
     });
-    await new Promise<void>((r) => this.server!.listen(0, '127.0.0.1', r));
+    await new Promise<void>((r) => this.server!.listen(port, '127.0.0.1', r));
     return this.url;
   }
 
@@ -123,6 +127,27 @@ export class MockAbayaServer {
     const url = new URL(req.url ?? '/', 'http://x');
     const authed = this.isAuthed(req);
     const path = url.pathname;
+
+    // ---------- página del cliente simulado (solo desarrollo) ----------
+    if (path === '/__cliente') return html(res, customerPageHtml());
+    if (req.method === 'GET' && path === '/__cliente/api/state') {
+      return json(res, {
+        chats: this.chats,
+        history: this.history,
+        notes: this.notes,
+        transfers: this.transfers,
+        closed: this.closed,
+      });
+    }
+    if (req.method === 'POST' && path === '/__cliente/api/messages') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { chatId?: string; text?: string };
+      if (!body.chatId || !body.text) return json(res, { error: 'chatId y text' }, 400);
+      return json(
+        res,
+        this.addCustomerMessage(body.chatId.slice(0, 40), body.text.slice(0, 2000)),
+        201,
+      );
+    }
 
     if (req.method === 'GET' && (path === '/' || path === '/inbox')) {
       if (!authed) return redirect(res, '/login');
@@ -220,7 +245,7 @@ export class MockAbayaServer {
 
   private removeChat(chatId: string) {
     const i = this.chats.findIndex((c) => c.id === chatId);
-    if (i >= 0) this.chats.splice(i, 1);
+    if (i >= 0) this.history.push(...this.chats.splice(i, 1));
     this.broadcast('chat.removed', { chatId });
   }
 

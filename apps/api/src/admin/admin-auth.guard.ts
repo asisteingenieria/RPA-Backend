@@ -66,13 +66,11 @@ export class AdminAuthGuard implements CanActivate {
         'Administración deshabilitada: ADMIN_TOKEN no configurado',
       );
     }
-    const req = ctx
-      .switchToHttp()
-      .getRequest<{
-        headers: Record<string, string | undefined>;
-        adminUser?: string;
-        ip?: string;
-      }>();
+    const req = ctx.switchToHttp().getRequest<{
+      headers: Record<string, string | undefined>;
+      adminUser?: string;
+      ip?: string;
+    }>();
     const ip = req.ip ?? 'desconocida';
     if (this.limiter.isBlocked(ip)) {
       throw new HttpException('Demasiados intentos fallidos', HttpStatus.TOO_MANY_REQUESTS);

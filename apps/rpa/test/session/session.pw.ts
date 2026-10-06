@@ -113,6 +113,20 @@ test('con contraseña incorrecta se detiene tras 3 intentos y alerta', async () 
   await t.mgr.stop();
 });
 
+test('regresión: con la bandeja vacía (sin chats asignados) la sesión queda activa', async () => {
+  await mock.stop();
+  mock = new MockAbayaServer({ chats: [] });
+  await mock.start();
+  const t = await makeManager(mock);
+  expect(await t.mgr.start()).toBe('ACTIVE');
+  expect(mock.loginAttempts).toBe(1);
+  // Y el heartbeat no la da por perdida.
+  await new Promise((r) => setTimeout(r, 1_500));
+  expect(t.mgr.status).toBe('ACTIVE');
+  expect(mock.loginAttempts).toBe(1);
+  await t.mgr.stop();
+});
+
 test('login con MFA por TOTP', async () => {
   await mock.stop();
   const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';

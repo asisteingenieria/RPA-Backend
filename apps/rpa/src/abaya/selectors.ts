@@ -67,8 +67,12 @@ export const sel = {
   },
 
   session: {
-    /** Señal de sesión viva: la bandeja de chats es visible. */
-    inboxMarker: (p: Page) => sel.chatList.root(p),
+    /**
+     * Señal de sesión viva: un elemento SIEMPRE visible con la sesión abierta (el enlace de
+     * salir). La lista de chats no sirve: vacía mide 0 px y Playwright la considera oculta,
+     * así que un robot sin chats asignados parecería deslogueado.
+     */
+    inboxMarker: (p: Page) => sel.session.logout(p),
     logout: (p: Page) => p.getByRole('link', { name: 'Salir' }),
   },
 

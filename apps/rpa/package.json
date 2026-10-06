@@ -33,6 +33,7 @@
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
     "ws": "^8.22.0"
   },
   "files": [
