@@ -2,7 +2,7 @@ import { QUEUES, robotQueue } from '@abaya/domain';
 import { Queue } from 'bullmq';
 import { Injectable, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { loadConfig, requireAbayaConfig } from '@abaya/config';
-import { FieldCipher, totp } from '@abaya/crypto';
+import { cipherFromConfig, totp } from '@abaya/crypto';
 import { createPrismaClient, type PrismaClient } from '@abaya/db';
 import { createLogger } from '@abaya/logger';
 import { ActorGate } from './actor/actor-gate.js';
@@ -55,7 +55,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     const abaya = requireAbayaConfig(cfg);
-    const cipher = new FieldCipher(cfg.FIELD_ENCRYPTION_KEY);
+    const cipher = cipherFromConfig(cfg);
     const alerts = alertsFromConfig(cfg, createLogger('rpa.alerts'));
     this.prisma = createPrismaClient(cfg.DATABASE_URL);
     this.inboundQueue = new BullInboundQueue(cfg.REDIS_URL);

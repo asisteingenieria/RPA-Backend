@@ -89,6 +89,8 @@ model ConsentEvidence {
   seq                    Int      @unique @default(autoincrement())
   conversationId         String
   textShownHash          String // hash del texto de autorización mostrado
+  /// Versión de la plantilla legal mostrada (permite reconstruir el texto y su hash).
+  templateVersion        String
   customerReplyEncrypted Bytes
   acceptedAt             DateTime // hora de Bogotá
   /// Único: la cadena no puede bifurcarse.

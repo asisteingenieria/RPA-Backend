@@ -31,5 +31,8 @@
   },
   "devDependencies": {
     "tsx": "^4.23.15"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

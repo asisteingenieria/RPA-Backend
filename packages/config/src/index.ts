@@ -16,6 +16,10 @@ export const envSchema = z.object({
     .refine((v) => Buffer.from(v, 'base64').length === 32, {
       message: 'FIELD_ENCRYPTION_KEY debe ser base64 de 32 bytes',
     }),
+  /** Id de la clave actual (1–255). Al rotar: nueva clave con id nuevo, la vieja a PREVIOUS. */
+  FIELD_ENCRYPTION_KEY_ID: z.coerce.number().int().min(1).max(255).default(1),
+  /** Claves anteriores `id:base64,id:base64`, solo para descifrar durante una rotación. */
+  FIELD_ENCRYPTION_PREVIOUS_KEYS: optionalString,
   API_PORT: z.coerce.number().int().positive().default(3000),
   RPA_PORT: z.coerce.number().int().positive().default(3001),
   ABAYA_BASE_URL: optionalString,

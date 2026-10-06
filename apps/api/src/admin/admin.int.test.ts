@@ -169,3 +169,13 @@ describe('startOfBogotaDay', () => {
     );
   });
 });
+
+// Debe ir al final: deja bloqueada la IP local para el resto del archivo.
+describe('bloqueo por intentos fallidos', () => {
+  it('bloquea la IP tras 10 intentos fallidos (429), incluso con el token correcto', async () => {
+    for (let i = 0; i < 10; i++) {
+      await call('/admin/overview', {}, 'token-incorrecto-de-igual-longitud-xx');
+    }
+    expect((await call('/admin/overview')).status).toBe(429);
+  });
+});

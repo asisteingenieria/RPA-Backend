@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { LlmRequest } from '@abaya/domain';
+import { sha256 } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import { MemoryCatalog, catalogFileSchema } from '../catalog/catalog.js';
@@ -106,7 +107,13 @@ describe('TurnService: camino de venta completo (Abaya y LLM simulados)', () => 
     ]);
     expect(store.sales[0]!.summary).toContain('Cliente: ana');
     expect(store.sales[0]!.summary).toContain('Operador actual: operadorx');
-    expect(store.consents[0]!.textShown).toContain('Ley 1581 de 2012');
+    // La evidencia apunta al texto legal exacto que se envió al cliente.
+    const legal = T.authorization(new Date(store.get('c1').profile.authorizationShownAt!));
+    expect(store.outboundTexts('c1').some((t) => t.includes(legal))).toBe(true);
+    expect(store.consents[0]).toMatchObject({
+      textShownHash: sha256(legal),
+      templateVersion: T.TEMPLATE_VERSION,
+    });
 
     // El último turno: despedida → venta → transferencia (después de la despedida).
     const lastTurn = store.events.slice(-3);

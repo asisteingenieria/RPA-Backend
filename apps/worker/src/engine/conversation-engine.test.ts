@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { sha256 } from '@abaya/crypto';
 import { LlmProviderError } from '@abaya/domain';
 import { describe, expect, it } from 'vitest';
 import { MemoryCatalog, catalogFileSchema } from '../catalog/catalog.js';
@@ -199,6 +200,9 @@ describe('aceptación, autorización y transferencia', () => {
     const text = sent(r)[0]!;
     expect(text).toContain('Ley 1266 de 2008');
     expect(text).toContain(T.bogotaDateTime(NOW));
+    // Evidencia: hash del texto exacto mostrado y versión de la plantilla.
+    expect(r.profile.authorizationTextHash).toBe(sha256(T.authorization(NOW)));
+    expect(r.profile.authorizationTemplateVersion).toBe(T.TEMPLATE_VERSION);
   });
 
   const auth = state({
@@ -208,6 +212,8 @@ describe('aceptación, autorización y transferencia', () => {
       name: 'Ana',
       planCode: 'P1',
       authorizationShownAt: NOW.toISOString(),
+      authorizationTextHash: sha256(T.authorization(NOW)),
+      authorizationTemplateVersion: T.TEMPLATE_VERSION,
     },
     history: [{ role: 'bot', text: T.authorization(NOW) }],
   });
@@ -219,7 +225,8 @@ describe('aceptación, autorización y transferencia', () => {
     expect(llm.requests).toHaveLength(0);
     expect(r.actions.map((a) => a.type)).toEqual(['RECORD_CONSENT', 'SEND', 'TRANSFER_BACKOFFICE']);
     expect(r.actions[0]).toMatchObject({
-      textShown: T.authorization(NOW),
+      textShownHash: sha256(T.authorization(NOW)),
+      templateVersion: T.TEMPLATE_VERSION,
       customerReply: 'Sí autorizo',
     });
   });
@@ -297,6 +304,22 @@ describe('otros caminos', () => {
     expect(llm.requests[0]!.messages.at(-1)!.content).toBe('hola\nsoy Ana\nquiero cambiarme');
     expect(sent(r)).toHaveLength(1);
     expect(r.profile.name).toBe('Ana');
+  });
+
+  it('minimización: teléfonos y documentos no se envían al proveedor del LLM', async () => {
+    const { e, llm } = engine([out({ intent: 'DA_DATO', reply: '¡Gracias!' })]);
+    await e.runTurn(
+      state({
+        stage: 'PERFIL',
+        profile: { process: 'PORTABILIDAD' },
+        history: [{ role: 'customer', text: 'mi cédula es 1020304050' }],
+      }),
+      ['mi número es 3001234567'],
+    );
+    const sentToLlm = JSON.stringify(llm.requests[0]!.messages);
+    expect(sentToLlm).not.toContain('3001234567');
+    expect(sentToLlm).not.toContain('1020304050');
+    expect(sentToLlm).toContain('[TEL]');
   });
 
   it('la parte fija del prompt es idéntica entre turnos (caché)', async () => {

@@ -67,7 +67,8 @@ export class TurnService {
           break;
         case 'RECORD_CONSENT': {
           commit.consent = {
-            textShown: a.textShown,
+            textShownHash: a.textShownHash,
+            templateVersion: a.templateVersion,
             customerReply: a.customerReply,
             acceptedAt: now,
           };

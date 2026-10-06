@@ -29,6 +29,9 @@ export interface Profile {
   offeredPlanCode?: string;
   /** Momento (ISO) en que se mostró el texto de autorización: permite regenerarlo exacto. */
   authorizationShownAt?: string;
+  /** Versión de la plantilla legal y hash del texto exacto mostrado (evidencia, sección 8). */
+  authorizationTemplateVersion?: string;
+  authorizationTextHash?: string;
 }
 
 export interface ChatTurnMessage {
@@ -51,7 +54,12 @@ export type TurnAction =
   | { type: 'CLOSE'; reason: 'SUPPORT' | 'NO_SALE' }
   | { type: 'ESCALATE' }
   | { type: 'NEEDS_REVIEW'; reason: string }
-  | { type: 'RECORD_CONSENT'; textShown: string; customerReply: string };
+  | {
+      type: 'RECORD_CONSENT';
+      textShownHash: string;
+      templateVersion: string;
+      customerReply: string;
+    };
 
 export type ValidationResult = 'OK' | 'REGENERATED' | 'FALLBACK';
 

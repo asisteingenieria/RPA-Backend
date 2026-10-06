@@ -113,11 +113,12 @@ export class PrismaConversationStore implements ConversationStore {
               select: { hash: true },
             });
             const prevHash = last?.hash ?? GENESIS_HASH;
-            const textShownHash = sha256(t.consent.textShown);
+            const { textShownHash, templateVersion } = t.consent;
             const replyEnc = this.cipher.encrypt(t.consent.customerReply, consentAad(id));
             const hash = chainHash(prevHash, {
               conversationId: id,
               textShownHash,
+              templateVersion,
               customerReplyHash: sha256(t.consent.customerReply),
               acceptedAt: t.consent.acceptedAt.toISOString(),
             });
@@ -125,6 +126,7 @@ export class PrismaConversationStore implements ConversationStore {
               data: {
                 conversationId: id,
                 textShownHash,
+                templateVersion,
                 customerReplyEncrypted: new Uint8Array(replyEnc),
                 acceptedAt: t.consent.acceptedAt,
                 prevHash,

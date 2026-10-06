@@ -1,0 +1,62 @@
+# Revisión de seguridad (F8)
+
+> Revisión contra las secciones 7 (reglas no negociables) y 8 (seguridad y protección de datos)
+> de `docs/planRPA.md`. Fecha: 2026-10-06. Alcance: todo el repositorio en la rama principal.
+
+## Resumen
+
+| Severidad | Hallazgos | Corregidos | Pendientes (dependen de Claro o del despliegue) |
+| --------- | --------- | ---------- | ----------------------------------------------- |
+| Alta      | 4         | 2          | 2                                               |
+| Media     | 5         | 4          | 1                                               |
+| Baja      | 4         | 1          | 3 (aceptados con mitigación)                    |
+
+Bloqueantes para el piloto: **A3** y **A4** (requieren insumos de Claro).
+
+## Hallazgos
+
+### Alta
+
+| Id  | Hallazgo                                                                                                                                                                                                                         | Estado                                                                                                                                                  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | `.dockerignore` no excluía `.secrets/` y las apps no declaraban `files`: `pnpm deploy` copiaba la carpeta completa, así que la imagen del rpa podía incluir el `storageState` cifrado del robot, trazas, pruebas y el simulador. | **Corregido.** `.dockerignore` excluye secretos, sesiones, trazas y reportes; todos los paquetes declaran `files` (solo `dist`; `db` además `prisma/`). |
+| A2  | Dependencias con vulnerabilidades conocidas (2 altas, 1 media) en el CLI de Prisma: `mysql2` y `deepmerge-ts`.                                                                                                                   | **Corregido** con `overrides` en `pnpm-workspace.yaml`. `pnpm audit --prod`: 0 vulnerabilidades.                                                        |
+| A3  | No hay política de retención de conversaciones ni procedimiento para los derechos de los titulares (consulta, rectificación, supresión). Ley 1581.                                                                               | **Pendiente: Claro** (pregunta 19). El borrado se implementa como tarea programada cuando se defina el plazo.                                           |
+| A4  | Textos legales (autorización Ley 1266/1581) y catálogo son **sintéticos** (`templates.ts`, `plans.synthetic.json`).                                                                                                              | **Pendiente: Claro** (preguntas 16 y 17). Bloqueante absoluto para el piloto.                                                                           |
+
+### Media
+
+| Id  | Hallazgo                                                                                                                                                             | Estado                                                                                                                                                                                                                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1  | La evidencia de consentimiento no guardaba la versión de la plantilla legal: si la plantilla cambiaba entre mostrarla y aceptarla, el texto no se podía reconstruir. | **Corregido.** Al mostrar la autorización se fijan en el perfil el hash del texto exacto y `TEMPLATE_VERSION`; `ConsentEvidence.templateVersion` entra en la cadena de hashes (migración `consent_template_version`).                                                              |
+| M2  | Sin rotación de la clave de cifrado de campos: cambiarla dejaba ilegible lo anterior.                                                                                | **Corregido.** Formato v2 con id de clave; llavero con `FIELD_ENCRYPTION_KEY_ID` + `FIELD_ENCRYPTION_PREVIOUS_KEYS`; lee el formato v1. Procedimiento en `docs/runbook.md`.                                                                                                        |
+| M3  | API de administración con un token compartido y sin límite de intentos; el usuario (`X-Admin-User`) es declarado por el cliente.                                     | **Parcial.** Comparación en tiempo constante, cerrada sin token, mínimo 24 caracteres y bloqueo de IP tras 10 fallos en 15 min. **Recomendado antes de producción:** SSO/OIDC corporativo delante del panel (por ejemplo en el proxy), lo que da identidad real para la auditoría. |
+| M4  | Los mensajes del cliente se enviaban completos al proveedor del LLM, incluidos teléfonos o documentos que escribiera.                                                | **Corregido.** Teléfonos y números de documento se enmascaran antes de la llamada (`scrubText`).                                                                                                                                                                                   |
+| M5  | `docker-compose.yml` usa Redis sin autenticación ni TLS y una contraseña de Postgres por defecto; los secretos se leen de variables de entorno.                      | **Pendiente: despliegue (F8).** Ver la lista de verificación de despliegue en `docs/runbook.md`: Redis con contraseña/TLS, `sslmode=require`, secretos inyectados desde el gestor.                                                                                                 |
+
+### Baja
+
+| Id  | Hallazgo                                                                                            | Estado                                                                                                                |
+| --- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| B1  | La función que expone el observador del DOM a la página la puede invocar cualquier script de Abaya. | **Corregido.** Las filas se validan con zod (tipos, longitudes, máximo de filas, fechas).                             |
+| B2  | El token del panel se guarda en `sessionStorage`.                                                   | **Aceptado.** CSP estricta (`script-src 'self'`), sin recursos externos y sesión de pestaña. Desaparece con SSO (M3). |
+| B3  | `/health` responde sin autenticación (estado de la sesión del robot).                               | **Aceptado.** No expone datos personales; restringir por red en el despliegue.                                        |
+| B4  | En Windows, los permisos `0600` de `storageState` y trazas no aplican.                              | **Aceptado.** Producción en contenedor Linux (imagen de Playwright, usuario `pwuser`).                                |
+
+## Verificación de las reglas de la sección 7
+
+| Regla                                          | Cómo se garantiza                                                                                                       | Prueba                                                                |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 1. Identidad del chat antes de escribir        | `ChatIdentityGuard` antes de escribir, antes de enviar, antes de la nota y antes de transferir                          | `outbound.pw.ts` (chat equivocado), `handoff.pw.ts`                   |
+| 2. Nunca reintentar a ciegas                   | `UNCERTAIN` nunca se reintenta; `SENDING` tras caída se verifica en pantalla; transferencias inciertas → `NEEDS_REVIEW` | `outbound.pw.ts`, `handoff-processor.test.ts`, `recovery.int.test.ts` |
+| 3. Selectores solo en `selectors.ts`           | Prueba estática                                                                                                         | `rule4.test.ts`                                                       |
+| 4. Toda acción por el BrowserActor             | Prueba estática + colas por robot con concurrencia 1                                                                    | `rule4.test.ts`, `serial-executor.test.ts`                            |
+| 5. KillSwitch antes de cada acción             | `preflight` en todas las acciones; Redis caído = activo                                                                 | `outbound.pw.ts`, `handoff-processor.test.ts`                         |
+| 6. Sin datos personales en logs; cifrado en BD | Redacción de pino + enmascarado de textos; mensajes, perfil, resumen, consentimiento y trazas cifrados                  | `logger` tests, `prisma.store.int.test.ts`                            |
+| 7. Sin credenciales en código                  | Configuración validada por zod, errores sin valores, `.env` fuera de git y de las imágenes                              | `config` tests, historial de git revisado                             |
+| 8. Fixtures sanitizados                        | Solo datos sintéticos (`mock-*`), checklist en `fixtures/abaya/README.md`                                               | revisión manual                                                       |
+| 9. Auditoría encadenada                        | `RpaActionLog` con `prevHash` único (sin bifurcaciones)                                                                 | `prisma-repos.int.test.ts`                                            |
+| 10. Salida del LLM validada                    | 6 validadores + regeneración + respuesta segura                                                                         | `validators.test.ts`, evals                                           |
+| 11. El LLM no escribe datos                    | Marcadores + plantillas; chequeo global de cifras en evals                                                              | `conversation-engine.test.ts`, `pnpm evals`                           |
+| 12. El flujo lo decide la máquina              | Transiciones en código; menú y autorización deterministas                                                               | `state-machine.test.ts`                                               |
+| 13. Cambios de prompt/modelo con evals         | `pnpm evals` en CI (línea base); con proveedor real antes de cada cambio                                                | `.github/workflows/ci.yml`                                            |

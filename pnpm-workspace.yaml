@@ -9,3 +9,8 @@ allowBuilds:
   msgpackr-extract: true
   esbuild: true
   '@embedded-postgres/windows-x64': true
+
+# Correcciones de seguridad en dependencias transitivas del CLI de Prisma (F8).
+overrides:
+  mysql2: '>=3.23.1'
+  deepmerge-ts: '>=8.0.0'

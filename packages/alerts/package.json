@@ -21,5 +21,8 @@
     "@abaya/domain": "workspace:*",
     "@abaya/logger": "workspace:*",
     "zod": "^4.6.5"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

@@ -34,5 +34,10 @@
     "dotenv": "^18.0.5",
     "embedded-postgres": "18.4.0-beta.17",
     "prisma": "7.10.0"
-  }
+  },
+  "files": [
+    "dist",
+    "prisma",
+    "prisma.config.ts"
+  ]
 }

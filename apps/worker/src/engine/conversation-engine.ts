@@ -5,6 +5,8 @@ import {
   type LlmResponse,
   type Stage,
 } from '@abaya/domain';
+import { sha256 } from '@abaya/crypto';
+import { scrubText } from '@abaya/logger';
 import type { Catalog, Plan } from '../catalog/catalog.js';
 import { turnOutputJsonSchema, type TurnOutput } from './output-schema.js';
 import { BASE_PROMPT, PROMPT_VERSION, STAGE_PROMPTS } from './prompts/prompts.js';
@@ -95,10 +97,9 @@ export class ConversationEngine {
           [
             {
               type: 'RECORD_CONSENT',
-              // El texto exacto que se mostró se regenera de forma determinista.
-              textShown: profile.authorizationShownAt
-                ? T.authorization(new Date(profile.authorizationShownAt))
-                : '',
+              // Hash y versión del texto EXACTO que se mostró (fijados al mostrarlo).
+              textShownHash: profile.authorizationTextHash ?? '',
+              templateVersion: profile.authorizationTemplateVersion ?? 'desconocida',
               customerReply: text,
             },
             send(T.TRANSFER),
@@ -246,9 +247,12 @@ export class ConversationEngine {
     if (to === 'AUTORIZACION' && stage !== 'AUTORIZACION') {
       // Al ENTRAR a autorización: fijar el plan y mostrar el texto legal una sola vez.
       const shownAt = this.now();
+      const legal = T.authorization(shownAt);
       merged.planCode = accepted;
       merged.authorizationShownAt = shownAt.toISOString();
-      reply = `${reply}\n\n${T.authorization(shownAt)}`;
+      merged.authorizationTemplateVersion = T.TEMPLATE_VERSION;
+      merged.authorizationTextHash = sha256(legal);
+      reply = `${reply}\n\n${legal}`;
     }
     return { stage: to, profile: merged, actions: [send(reply.trim())] };
   }
@@ -323,9 +327,10 @@ export class ConversationEngine {
       messages: [
         ...history.map((m) => ({
           role: m.role === 'customer' ? ('user' as const) : ('assistant' as const),
-          content: m.text,
+          // Minimización (sección 8): teléfonos y documentos no salen hacia el proveedor.
+          content: scrubText(m.text),
         })),
-        { role: 'user', content: text },
+        { role: 'user', content: scrubText(text) },
       ],
       schemaName: 'turno_conversacion',
       jsonSchema: turnOutputJsonSchema,

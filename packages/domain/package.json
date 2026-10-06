@@ -16,5 +16,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

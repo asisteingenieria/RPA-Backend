@@ -27,5 +27,8 @@
   },
   "devDependencies": {
     "@abaya/db": "workspace:*"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

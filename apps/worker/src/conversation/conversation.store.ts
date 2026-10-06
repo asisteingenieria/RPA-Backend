@@ -34,7 +34,12 @@ export interface TurnCommit {
   /** Respuestas a enviar, en orden. El store crea los Message salientes. */
   outbound: { text: string; idempotencyKey: string }[];
   llmCalls: LlmCallRecord[];
-  consent?: { textShown: string; customerReply: string; acceptedAt: Date };
+  consent?: {
+    textShownHash: string;
+    templateVersion: string;
+    customerReply: string;
+    acceptedAt: Date;
+  };
   sale?: { process: string; planCode: string; summary: string };
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */
   events: OutboxEventInput[];

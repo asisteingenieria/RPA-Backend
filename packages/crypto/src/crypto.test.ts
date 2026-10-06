@@ -80,3 +80,49 @@ describe('cadena de hashes', () => {
     );
   });
 });
+
+describe('rotación de claves', () => {
+  const k1 = randomBytes(32).toString('base64');
+  const k2 = randomBytes(32).toString('base64');
+
+  it('tras rotar, lo cifrado con la clave anterior sigue legible', () => {
+    const old = new FieldCipher({ current: { id: 1, keyBase64: k1 } });
+    const enc = old.encrypt('dato viejo', 'x');
+    const rotated = new FieldCipher({
+      current: { id: 2, keyBase64: k2 },
+      previous: [{ id: 1, keyBase64: k1 }],
+    });
+    expect(rotated.decryptString(enc, 'x')).toBe('dato viejo');
+    expect(rotated.needsReencryption(enc)).toBe(true);
+    const fresh = rotated.encrypt('dato nuevo', 'x');
+    expect(rotated.needsReencryption(fresh)).toBe(false);
+    // La clave vieja sola no abre lo nuevo.
+    expect(() => old.decrypt(fresh, 'x')).toThrow(/clave 2 no disponible/);
+  });
+
+  it('lee el formato v1 (sin id de clave)', async () => {
+    const { createCipheriv } = await import('node:crypto');
+    const iv = randomBytes(12);
+    const c = createCipheriv('aes-256-gcm', Buffer.from(k1, 'base64'), iv);
+    c.setAAD(Buffer.from('x'));
+    const data = Buffer.concat([c.update('legado'), c.final()]);
+    const v1 = Buffer.concat([Buffer.from([1]), iv, c.getAuthTag(), data]);
+    const ring = new FieldCipher({
+      current: { id: 2, keyBase64: k2 },
+      previous: [{ id: 1, keyBase64: k1 }],
+    });
+    expect(ring.decryptString(v1, 'x')).toBe('legado');
+  });
+
+  it('parsea claves anteriores y rechaza ids repetidos', () => {
+    expect(FieldCipher.parsePrevious(`1:${k1}, 3:${k2}`).map((k) => k.id)).toEqual([1, 3]);
+    expect(FieldCipher.parsePrevious('')).toEqual([]);
+    expect(
+      () =>
+        new FieldCipher({
+          current: { id: 1, keyBase64: k1 },
+          previous: [{ id: 1, keyBase64: k2 }],
+        }),
+    ).toThrow(/repetido/);
+  });
+});

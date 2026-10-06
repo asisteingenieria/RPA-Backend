@@ -19,5 +19,8 @@
   },
   "dependencies": {
     "pino": "^10.4.0"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

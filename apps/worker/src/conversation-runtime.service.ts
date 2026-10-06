@@ -1,6 +1,6 @@
 import { Injectable, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { loadConfig, type AppConfig } from '@abaya/config';
-import { FieldCipher } from '@abaya/crypto';
+import { cipherFromConfig } from '@abaya/crypto';
 import { createPrismaClient, type PrismaClient } from '@abaya/db';
 import { QUEUES, type AlertPort, type InboundJob, type LlmPort } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
@@ -56,7 +56,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
   async onModuleInit() {
     const cfg = loadConfig();
     this.prisma = createPrismaClient(cfg.DATABASE_URL);
-    const cipher = new FieldCipher(cfg.FIELD_ENCRYPTION_KEY);
+    const cipher = cipherFromConfig(cfg);
     const catalog = new PrismaCatalog(this.prisma);
     const alerts: AlertPort = alertsFromConfig(cfg, createLogger('worker.alerts'));
     const turns = new TurnService({

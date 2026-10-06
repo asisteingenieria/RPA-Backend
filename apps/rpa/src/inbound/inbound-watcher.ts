@@ -7,7 +7,25 @@ import {
   parseWsFrame,
 } from '../abaya/network/parsers.js';
 import { sel } from '../abaya/selectors.js';
+import { z } from 'zod';
 import type { InboundProcessor } from './inbound-processor.js';
+
+/**
+ * La función expuesta a la página la puede invocar cualquier script de Abaya: lo que llega
+ * se valida como cualquier entrada externa (F8).
+ */
+const domRowsSchema = z
+  .array(
+    z.object({
+      kind: z.enum(['message', 'chat']),
+      chatId: z.string().max(200).nullable(),
+      id: z.string().max(200).nullable().optional(),
+      sender: z.string().max(40).nullable().optional(),
+      ts: z.string().max(60).nullable().optional(),
+      text: z.string().max(10_000).optional(),
+    }),
+  )
+  .max(2_000);
 
 const DOM_BINDING = '__abayaInboundDom';
 
@@ -41,7 +59,7 @@ export class InboundWatcher {
     page.on('response', (r) => void this.onResponse(r));
     page.on('websocket', (ws) => this.onWebSocket(ws));
 
-    await page.exposeFunction(DOM_BINDING, (rows: DomRow[]) => this.onDomRows(rows));
+    await page.exposeFunction(DOM_BINDING, (rows: unknown) => this.onDomRows(rows));
     await page.addInitScript(installDomObserver, {
       binding: DOM_BINDING,
       messageItem: sel.dom.messageItem,
@@ -76,7 +94,10 @@ export class InboundWatcher {
     });
   }
 
-  private onDomRows(rows: DomRow[]) {
+  private onDomRows(raw: unknown) {
+    const parsed = domRowsSchema.safeParse(raw);
+    if (!parsed.success) return this.parseFailed('dom', 'filas del DOM con forma inválida');
+    const rows: DomRow[] = parsed.data;
     for (const row of rows) {
       if (!row.chatId) continue;
       if (row.kind === 'chat') {
@@ -84,7 +105,7 @@ export class InboundWatcher {
         continue;
       }
       const sender = (sel.dom.senders as Record<string, SenderType>)[row.sender ?? ''];
-      if (!sender || !row.ts) continue;
+      if (!sender || !row.ts || Number.isNaN(Date.parse(row.ts))) continue;
       const msg: InboundMessage = {
         abayaChatId: row.chatId,
         ...(row.id ? { messageId: row.id } : {}),
@@ -96,7 +117,7 @@ export class InboundWatcher {
     }
   }
 
-  private parseFailed(source: 'xhr' | 'ws', error: string) {
+  private parseFailed(source: 'xhr' | 'ws' | 'dom', error: string) {
     this.parseFailures++;
     this.logger.warn({ source, error }, 'payload de Abaya no reconocido');
   }

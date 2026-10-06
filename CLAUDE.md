@@ -124,7 +124,7 @@ abaya-rpa/
 - [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
 - [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
-- [ ] F8 Seguridad, despliegue y piloto
+- [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; falta despliegue y piloto con Claro
 
 ## Abaya simulado
 

@@ -111,10 +111,12 @@ describe('PrismaConversationStore + TurnService', () => {
     expect(consents).toHaveLength(1);
     const ce = consents[0]!;
     expect(ce.prevHash).toBe(GENESIS_HASH);
+    expect(ce.templateVersion).toBe(T.TEMPLATE_VERSION);
     expect(ce.hash).toBe(
       chainHash(GENESIS_HASH, {
         conversationId: conv.id,
         textShownHash: ce.textShownHash,
+        templateVersion: ce.templateVersion,
         customerReplyHash: sha256('SÍ AUTORIZO'),
         acceptedAt: ce.acceptedAt.toISOString(),
       }),

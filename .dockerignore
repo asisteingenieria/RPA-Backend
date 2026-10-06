@@ -1,8 +1,14 @@
+# Nada de secretos, sesiones, trazas ni datos locales en el contexto de build (F8).
+.env
+.env.*
+**/.secrets
+**/traces
+**/storage-state*
+**/test-results
+**/playwright-report
+evals/reports
+.git
+.turbo
 node_modules
 **/node_modules
 **/dist
-.turbo
-.env
-.git
-**/traces
-**/test-results
