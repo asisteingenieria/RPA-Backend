@@ -83,6 +83,8 @@ model Sale {
   summaryEncrypted Bytes // resumen estructurado para el backoffice
   transferredAt    DateTime?
   backofficeNoteOk Boolean      @default(false)
+  /// v1.9: versión del Brain de catálogo de la que salió el plan aceptado (trazabilidad del precio).
+  catalogVersionId String?
   createdAt        DateTime     @default(now())
   conversation     Conversation @relation(fields: [conversationId], references: [id])
 }
@@ -134,7 +136,8 @@ model RpaActionLog {
 }
 
 model Plan {
-  // catálogo: ÚNICA fuente de planes y precios
+  // OBSOLETO desde v1.9: el catálogo vive en un Brain (CatalogRecord de la versión publicada).
+  // Se conserva como histórico; se elimina en una migración posterior.
   code         String    @id // p. ej. M1, L2, P1
   process      String // PORTABILIDAD | MIGRACION | LINEA_NUEVA
   name         String
@@ -224,6 +227,8 @@ model AdminAuditLog {
   actor     String
   action    String // KILL_SWITCH_ON | KILL_SWITCH_OFF | SESSION_RESET | ...
   target    String?
+  /// v1.9: detalle estructurado (p. ej. diff del catálogo al publicar un Brain).
+  detail    Json?
   createdAt DateTime @default(now())
 
   @@index([createdAt])
@@ -299,4 +304,157 @@ model Robot {
   createdBy              String?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
+}
+
+// ---------- Brains: bases de conocimiento (v1.9, docs/DECISIONS.md D-001) ----------
+
+enum BrainVersionStatus {
+  DRAFT
+  EVALUATING
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum KnowledgeUse {
+  CATALOG // registros estructurados (catálogo de planes)
+  FULL_CONTEXT // contenido pequeño inyectado completo (K3)
+  SEARCH // búsqueda híbrida (K4)
+}
+
+enum KnowledgeSourceKind {
+  TEXT
+  FILE
+  WEB
+}
+
+enum KnowledgeSourceStatus {
+  PROCESSING
+  READY
+  ERROR
+}
+
+model Brain {
+  id               String            @id @default(cuid())
+  name             String            @unique
+  createdBy        String
+  /// Último cambio de fuentes (agregar, quitar, ingesta): el borrador se rearma si cambió durante una evaluación.
+  sourcesChangedAt DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  versions         BrainVersion[]
+  sources          KnowledgeSource[]
+  agents           AgentBrain[]
+}
+
+model BrainVersion {
+  // Cada cambio crea un borrador; el agente usa solo la PUBLISHED (una por Brain, Serializable).
+  id          String             @id @default(cuid())
+  brainId     String
+  version     Int
+  status      BrainVersionStatus @default(DRAFT)
+  /// Versión de la que se partió (restaurar) o la publicada al crear el borrador.
+  basedOn     Int?
+  /// Diferencias contra la publicada, calculadas al pedir publicar.
+  diff        Json?
+  evalSummary Json?
+  createdBy   String
+  publishedBy String?
+  publishedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  brain       Brain              @relation(fields: [brainId], references: [id], onDelete: Cascade)
+  records     CatalogRecord[]
+
+  @@unique([brainId, version])
+  @@index([brainId, status])
+}
+
+model KnowledgeSource {
+  id             String                @id @default(cuid())
+  brainId        String
+  kind           KnowledgeSourceKind
+  use            KnowledgeUse
+  name           String
+  mime           String?
+  sizeBytes      Int
+  /// sha256 del contenido original: detecta duplicados dentro del Brain.
+  contentHash    String
+  /// Archivo original cifrado (KnowledgeBlob).
+  blobRef        String?
+  url            String?
+  status         KnowledgeSourceStatus @default(PROCESSING)
+  errorReason    String?
+  /// Problemas de validación con fila y columna (lista).
+  issues         Json?
+  /// Registros validados del catálogo (uso CATALOG): el borrador se arma con ellos.
+  parsed         Json?
+  lastIngestedAt DateTime?
+  createdBy      String
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  brain          Brain                 @relation(fields: [brainId], references: [id], onDelete: Cascade)
+
+  @@unique([brainId, contentHash])
+  @@index([brainId])
+}
+
+model KnowledgeBlob {
+  // Archivos originales cifrados con FieldCipher (no hay S3; puerto BlobStore).
+  id            String   @id
+  dataEncrypted Bytes
+  createdAt     DateTime @default(now())
+}
+
+model CatalogRecord {
+  // Un plan de una versión del Brain. Precios y textos LITERALES (regla 11).
+  id                String       @id @default(cuid())
+  brainVersionId    String
+  process           String // PORTABILIDAD | MIGRACION | LINEA_NUEVA
+  code              String
+  name              String?
+  dataText          String
+  sharedDataText    String?
+  includesText      String?
+  extrasText        String?
+  unlimitedAppsText String?
+  callsText         String?
+  priceCop          Int
+  discountText      String?
+  /// sha256 de los campos normalizados.
+  hash              String
+  version           BrainVersion @relation(fields: [brainVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([brainVersionId, code])
+  @@index([brainVersionId, process])
+}
+
+model AgentBrain {
+  // Brains conectados a un agente (hoy un solo agente: "default").
+  agentKey    String
+  brainId     String
+  connectedBy String
+  connectedAt DateTime @default(now())
+  brain       Brain    @relation(fields: [brainId], references: [id], onDelete: Cascade)
+
+  @@id([agentKey, brainId])
+}
+
+model KnowledgeUsage {
+  // Qué Brain, versión y registros usó cada turno: de dónde salió cada precio (D7).
+  id             String       @id @default(cuid())
+  conversationId String
+  /// Primera respuesta del turno (si hubo).
+  messageId      String?
+  brainId        String
+  brainVersionId String
+  brainVersion   Int
+  kind           KnowledgeUse
+  provided       String[]
+  rendered       String[]
+  recordHash     String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([brainVersionId])
 }

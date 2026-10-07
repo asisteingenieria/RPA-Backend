@@ -1,8 +1,9 @@
 # Plan del proyecto: Agente RPA de ventas en Abaya
 
-> Proyecto nuevo · Versión 1.8 · Octubre 2026
+> Proyecto nuevo · Versión 1.9 · Octubre 2026
 > Cambio v1.1: motor de conversación propio con API directa de LLM (reemplaza a Retell)
 > Cambio v1.8: configuración del agente en el panel (guion en un bloque de texto, estilo Dapta/Retell), sección 6.3.8
+> Cambio v1.9: Brains (bases de conocimiento); fase K1 = catálogo de planes versionado y publicado con evaluación, sección 6.3.9 y docs/DECISIONS.md (D-001)
 > Herramienta de desarrollo: Claude Code
 > Estado: listo para iniciar
 
@@ -622,6 +623,17 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
 - El worker usa la versión publicada (la relee cada 30 s); cada `LlmCall` guarda el id de la versión usada. Sin versión publicada se usa la v1 del código.
 - **Probar agente** (como en Dapta/Retell): chat de simulación en el panel que corre turnos del motor real (máquina de estados, catálogo, plantillas y validadores) en el worker, por la cola `abaya.agent-test`. Muestra las respuestas, su origen (plantilla, modelo validado, regenerado, respuesta segura), los eventos (consentimiento, transferencia, cierre, escalado) y el estado (etapa y datos extraídos). No toca Abaya ni guarda la conversación. Un `ADMIN` prueba lo que hay en el editor (revisado, aunque no esté guardado); un `OPERADOR`, la versión publicada.
 - Permisos: ver y probar la versión publicada, ambos roles; guardar, publicar, restaurar y probar el editor, solo `ADMIN`. Los cambios quedan en `AdminAuditLog`.
+
+#### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
+
+Diseño completo y decisiones en `docs/DECISIONS.md` (D-001). Resumen de lo que cambia en K1:
+
+- El catálogo deja de cargarse directo en `Plan`: vive en un **Brain** (`Brain`, `BrainVersion`, `KnowledgeSource`, `CatalogRecord`) cargado desde **Excel o CSV** con el esquema de columnas de Claro (Proceso, ID, Datos, GB para compartir, Incluye, Servicios adicionales, Apps ilimitadas, Llamadas y mensajes, Precio, Descuento; Nombre opcional). El archivo se valida al cargarlo y se guarda **como registros**, no como texto. `Plan` queda obsoleto (solo histórico).
+- Cada cambio de fuentes crea un **borrador**; el agente usa solo la versión **publicada**. Publicar = pasar la suite de evaluación (regla 13) con el agente publicado + el catálogo borrador; se audita con el **diff** de registros. Revertir = borrador copia de una versión anterior.
+- La consulta del catálogo (`consultar_planes(proceso)`) la hace el **código**, no el modelo (reglas 11 y 12): filtro exacto por proceso; sin planes para el proceso → plantilla de escalado a un asesor, sin llamar al modelo.
+- Trazabilidad: `KnowledgeUsage` por turno (Brain, versión, códigos entregados y mostrados, hash) y `Sale.catalogVersionId`.
+- Solo `ADMIN` edita y publica (permiso `publicarConocimiento` en el código). Archivos cifrados en PostgreSQL detrás del puerto `BlobStore` (no hay S3).
+- Fases siguientes (K2 panel, K3 contexto completo, K4 RAG con pgvector, K5 páginas web) en `docs/DECISIONS.md`.
 
 ### 6.4 Envío
 

@@ -9,7 +9,8 @@ import { STAGES } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
-import { MemoryCatalog, type Plan } from '../catalog/catalog.js';
+import type { CatalogRecordData } from '@abaya/knowledge';
+import { MemoryCatalog, toPlan, type Plan } from '../catalog/catalog.js';
 import { MemoryConversationStore } from '../conversation/memory.store.js';
 import { TurnService } from '../conversation/turn.service.js';
 import { ConversationEngine } from '../engine/conversation-engine.js';
@@ -26,6 +27,8 @@ const caseSchema = z.object({
       process: z.enum(['PORTABILIDAD', 'MIGRACION', 'LINEA_NUEVA']).optional(),
       sale: z.boolean().optional(),
       forbidden: z.array(z.string()).optional(),
+      /** v1.9: el bot mostró al menos una ficha con precio (y todos los precios son del catálogo). */
+      pricesShown: z.boolean().optional(),
     })
     .strict(),
 });
@@ -83,13 +86,20 @@ function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentCon
     T.NO_SALE_GOODBYE,
     T.ESCALATE,
     T.authorization(now),
-    T.offerList(plans.filter((p) => p.process === 'PORTABILIDAD' && p.active)),
-    T.offerList(plans.filter((p) => p.process === 'MIGRACION' && p.active)),
-    T.offerList(plans.filter((p) => p.process === 'LINEA_NUEVA' && p.active)),
+    T.offerList(plans.filter((p) => p.process === 'PORTABILIDAD')),
+    T.offerList(plans.filter((p) => p.process === 'MIGRACION')),
+    T.offerList(plans.filter((p) => p.process === 'LINEA_NUEVA')),
     ...plans.map(T.offer),
   ];
   for (const f of fixed) t = t.split(f).join(' ');
   return t;
+}
+
+/** Precios en pesos que aparecen en un texto ("$59.900"). */
+export function pricesIn(text: string): string[] {
+  return [...text.matchAll(/\$\s?\d{1,3}(?:\.\d{3})+|\$\s?\d+/g)].map((m) =>
+    m[0].replace(/\s/g, ''),
+  );
 }
 
 function globalChecks(
@@ -98,9 +108,21 @@ function globalChecks(
   now: Date,
   plans: Plan[],
   agent?: AgentConfig,
+  process?: string,
 ): string[] {
   const errs: string[] = [];
+  // v1.9: todo precio mostrado es LITERAL del catálogo publicado y del proceso del cliente.
+  const allowed = new Set(
+    plans.filter((p) => p.process === process).map((p) => T.formatCop(p.priceCop)),
+  );
   for (const m of transcript.filter((x) => x.role === 'bot')) {
+    for (const price of pricesIn(m.text)) {
+      if (!allowed.has(price)) {
+        errs.push(
+          `INVENTADO: precio ${price} no está en el catálogo de ${process ?? 'ningún proceso'}`,
+        );
+      }
+    }
     if (m.text.includes('{{')) errs.push('INVENTADO: marcador sin reemplazar');
     const free = stripTemplates(m.text, now, plans, agent);
     if (/\d|[$%]|\b(gb|gigas?|megas?)\b/i.test(free))
@@ -121,7 +143,8 @@ export interface RunOptions {
   /** Nombre del proveedor en el reporte. */
   provider: string;
   llm: () => LlmPort;
-  plans: Plan[];
+  /** Registros del catálogo a evaluar (publicado o borrador del Brain). */
+  plans: readonly CatalogRecordData[];
   /** Versión del agente a evaluar; sin ella, la v1 del código. */
   agent?: AgentConfig;
   concurrency?: number;
@@ -176,7 +199,17 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
       failures.push(`frase prohibida: "${f}"`);
     }
   }
-  const global = globalChecks(transcript, sale, now, o.plans, agent);
+  if (e.pricesShown && !transcript.some((m) => m.role === 'bot' && pricesIn(m.text).length)) {
+    failures.push('no se mostró ninguna ficha con precio');
+  }
+  const global = globalChecks(
+    transcript,
+    sale,
+    now,
+    o.plans.map(toPlan),
+    agent,
+    conv.profile.process,
+  );
   failures.push(...global);
 
   return {

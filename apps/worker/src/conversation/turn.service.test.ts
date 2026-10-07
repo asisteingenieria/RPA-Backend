@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs';
 import type { LlmRequest } from '@abaya/domain';
 import { sha256 } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
-import { MemoryCatalog, catalogFileSchema } from '../catalog/catalog.js';
+import { MemoryCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { ConversationEngine } from '../engine/conversation-engine.js';
 import type { TurnOutput } from '../engine/output-schema.js';
 import * as T from '../engine/templates/templates.js';
@@ -12,11 +11,7 @@ import { MemoryConversationStore } from './memory.store.js';
 import { TurnScheduler } from './turn-scheduler.js';
 import { TurnService } from './turn.service.js';
 
-const catalog = new MemoryCatalog(
-  catalogFileSchema.parse(
-    JSON.parse(readFileSync(new URL('../catalog/plans.synthetic.json', import.meta.url), 'utf8')),
-  ).plans,
-);
+const catalog = new MemoryCatalog(await readCatalogFile(SYNTHETIC_CATALOG));
 const silent = createLogger('t', { level: 'silent' });
 const alerts = {
   raised: [] as string[],

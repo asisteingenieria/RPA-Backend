@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { FieldCipher, GENESIS_HASH, chainHash, sha256 } from '@abaya/crypto';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
 import { inboundAad, type LlmRequest } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { PrismaCatalog, catalogFileSchema } from '../catalog/catalog.js';
+import { createPublishedCatalog, DEFAULT_CATALOG_BRAIN } from '@abaya/knowledge';
+import { PublishedBrainCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { ConversationEngine } from '../engine/conversation-engine.js';
 import type { TurnOutput } from '../engine/output-schema.js';
 import * as T from '../engine/templates/templates.js';
@@ -18,9 +18,7 @@ import { TurnService } from './turn.service.js';
 // hashes del consentimiento.
 
 const cipher = new FieldCipher(randomBytes(32).toString('base64'));
-const plans = catalogFileSchema.parse(
-  JSON.parse(readFileSync(new URL('../catalog/plans.synthetic.json', import.meta.url), 'utf8')),
-).plans;
+const plans = await readCatalogFile(SYNTHETIC_CATALOG);
 let db: TestDatabase;
 
 beforeAll(async () => {
@@ -31,11 +29,14 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.reset();
-  for (const p of plans) {
-    await db.prisma.plan.create({
-      data: { ...p, discountText: p.discountText ?? null, validTo: p.validTo ?? null },
-    });
-  }
+  // Catálogo sintético publicado como v1 del Brain conectado al agente (v1.9).
+  await createPublishedCatalog(db.prisma, {
+    name: DEFAULT_CATALOG_BRAIN,
+    records: plans,
+    actor: 'seed',
+    action: 'BRAIN_SEEDED',
+    note: 'prueba',
+  });
 });
 
 const out = (over: Partial<TurnOutput>): TurnOutput => ({
@@ -63,8 +64,14 @@ function brain(req: LlmRequest): TurnOutput {
   return out({});
 }
 
+async function publishedCatalog() {
+  const c = new PublishedBrainCatalog(db.prisma, createLogger('t', { level: 'silent' }));
+  await c.refresh();
+  return c;
+}
+
 async function setup(abayaChatId = 'CH-77') {
-  const catalog = new PrismaCatalog(db.prisma);
+  const catalog = await publishedCatalog();
   const store = new PrismaConversationStore(db.prisma, cipher);
   const svc = new TurnService({
     store,
@@ -106,6 +113,20 @@ describe('PrismaConversationStore + TurnService', () => {
     const sale = await db.prisma.sale.findUniqueOrThrow({ where: { conversationId: conv.id } });
     expect(sale).toMatchObject({ process: 'LINEA_NUEVA', planCode: 'L1', transferredAt: null });
     expect(cipher.decryptString(sale.summaryEncrypted, `sale:${conv.id}`)).toContain('Plan: L1');
+    // v1.9: de qué versión del catálogo salió el plan vendido y qué vio el cliente en cada turno.
+    const published = await db.prisma.brainVersion.findFirstOrThrow({
+      where: { status: 'PUBLISHED' },
+    });
+    expect(sale.catalogVersionId).toBe(published.id);
+    const usage = await db.prisma.knowledgeUsage.findMany({
+      where: { conversationId: conv.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(usage.map((u) => [u.brainVersion, u.rendered])).toEqual([
+      [1, ['L1']], // oferta
+      [1, []], // aceptación
+    ]);
+    expect(usage[0]!.messageId).not.toBeNull();
 
     const consents = await db.prisma.consentEvidence.findMany();
     expect(consents).toHaveLength(1);
@@ -154,7 +175,7 @@ describe('PrismaConversationStore + TurnService', () => {
 
   it('tiempo de respuesta: la primera respuesta guarda cuándo se detectó el inicio de la ráfaga', async () => {
     const store = new PrismaConversationStore(db.prisma, cipher);
-    const catalog = new PrismaCatalog(db.prisma);
+    const catalog = await publishedCatalog();
     const svc = new TurnService({
       store,
       engine: new ConversationEngine({ llm: new ScriptedLlmAdapter(brain), catalog }),
@@ -264,11 +285,23 @@ describe('OutboxPublisher', () => {
   });
 });
 
-describe('PrismaCatalog', () => {
-  it('solo devuelve planes activos y vigentes del proceso, ordenados por precio', async () => {
-    const catalog = new PrismaCatalog(db.prisma);
-    expect((await catalog.plansFor('PORTABILIDAD')).map((p) => p.code)).toEqual(['P1', 'P2']);
-    expect((await catalog.plansFor('LINEA_NUEVA')).map((p) => p.code)).toEqual(['L1']);
-    expect((await catalog.get('L9'))?.active).toBe(false);
+describe('PublishedBrainCatalog', () => {
+  it('consultar_planes: solo planes del proceso de la versión publicada, ordenados por precio', async () => {
+    const catalog = await publishedCatalog();
+    const porta = await catalog.query('PORTABILIDAD');
+    expect(porta.plans.map((p) => p.code)).toEqual(['P1', 'P2']);
+    expect(porta.source).toMatchObject({ brainName: DEFAULT_CATALOG_BRAIN, version: 1 });
+    expect((await catalog.query('LINEA_NUEVA')).plans.map((p) => p.code)).toEqual(['L1']);
+  });
+
+  it('sin Brain de catálogo conectado: SIN_PLANES explícito', async () => {
+    await db.prisma.agentBrain.deleteMany();
+    const catalog = await publishedCatalog();
+    expect(await catalog.query('MIGRACION')).toEqual({
+      status: 'SIN_PLANES',
+      process: 'MIGRACION',
+      plans: [],
+      source: null,
+    });
   });
 });

@@ -15,7 +15,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentConfig, LlmPort } from '@abaya/domain';
-import { catalogFileSchema } from '../apps/worker/src/catalog/catalog.js';
+import { readCatalogFile, SYNTHETIC_CATALOG } from '../apps/worker/src/catalog/catalog.js';
 import {
   gateFailures,
   loadCases,
@@ -31,9 +31,13 @@ import { heuristicBrain } from '../apps/worker/src/llm/adapters/heuristic-brain.
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 
-const catalogPlans = catalogFileSchema.parse(
-  JSON.parse(readFileSync(join(HERE, '../apps/worker/src/catalog/plans.synthetic.json'), 'utf8')),
-).plans;
+// Catálogo SINTÉTICO por defecto; --catalogo <archivo.xlsx|.csv> evalúa otro (p. ej. el de Claro).
+const catalogArg = process.argv.indexOf('--catalogo');
+const catalogPlans = await readCatalogFile(
+  catalogArg >= 0 && process.argv[catalogArg + 1]
+    ? process.argv[catalogArg + 1]!
+    : SYNTHETIC_CATALOG,
+);
 
 function adapterFor(provider: string): LlmPort {
   switch (provider) {

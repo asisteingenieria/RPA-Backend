@@ -3,7 +3,7 @@ import type { EvalJob, LlmPort } from '@abaya/domain';
 import { withSerializableRetry, type Prisma, type PrismaClient } from '@abaya/db';
 import type { Logger } from '@abaya/logger';
 import { agentConfigFromRow } from '../catalog/agent-config.js';
-import { planSchema } from '../catalog/catalog.js';
+import { loadAgentCatalog } from '@abaya/knowledge';
 import { gateFailures, loadCases, runSuite, summarize } from './suite.js';
 
 export const DEFAULT_CASES_DIR = fileURLToPath(
@@ -66,7 +66,10 @@ export async function evaluateAgentVersion(
   let results;
   let plans;
   try {
-    plans = (await d.prisma.plan.findMany()).map((p) => planSchema.parse(p));
+    // El agente se evalúa con el catálogo PUBLICADO que va a usar (v1.9).
+    const catalog = await loadAgentCatalog(d.prisma);
+    if (!catalog) return reject(['no hay un catálogo publicado conectado al agente']);
+    plans = catalog.records;
     const cases = loadCases(d.casesDir ?? DEFAULT_CASES_DIR);
     results = await runSuite(cases, { provider: d.provider, llm: d.llm, plans, agent });
   } catch (err) {

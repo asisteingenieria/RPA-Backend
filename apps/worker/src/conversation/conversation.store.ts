@@ -1,4 +1,5 @@
 import type { ConversationStatus } from '@abaya/domain';
+import type { KnowledgeUsageRecord } from '@abaya/knowledge';
 import type { ConversationState, LlmCallRecord, Profile } from '../engine/types.js';
 
 export interface PendingInbound {
@@ -44,7 +45,9 @@ export interface TurnCommit {
     customerReply: string;
     acceptedAt: Date;
   };
-  sale?: { process: string; planCode: string; summary: string };
+  sale?: { process: string; planCode: string; summary: string; catalogVersionId?: string };
+  /** v1.9: qué Brains, versiones y registros usó el turno (KnowledgeUsage, D-001 D7). */
+  knowledge?: KnowledgeUsageRecord[];
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */
   events: OutboxEventInput[];
 }

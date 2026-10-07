@@ -1,4 +1,5 @@
 import type { Stage } from '@abaya/domain';
+import type { KnowledgeUsageRecord } from '@abaya/knowledge';
 
 export type SaleProcess = 'PORTABILIDAD' | 'MIGRACION' | 'LINEA_NUEVA';
 
@@ -32,6 +33,9 @@ export interface Profile {
   /** Versión de la plantilla legal y hash del texto exacto mostrado (evidencia, sección 8). */
   authorizationTemplateVersion?: string;
   authorizationTextHash?: string;
+  /** v1.9: versión del catálogo (Brain) y hash del registro del plan aceptado (trazabilidad). */
+  planCatalogVersionId?: string;
+  planRecordHash?: string;
 }
 
 export interface ChatTurnMessage {
@@ -80,4 +84,8 @@ export interface TurnResult {
   actions: TurnAction[];
   llmCalls: LlmCallRecord[];
   validationResult: ValidationResult | 'NO_LLM' | 'PROVIDER_ERROR';
+  /** v1.9: qué Brains, versiones y registros usó el turno (D-001 D7). */
+  knowledge?: KnowledgeUsageRecord[];
+  /** v1.9: el catálogo publicado no tiene planes para este proceso (se escaló). */
+  catalogEmpty?: SaleProcess;
 }

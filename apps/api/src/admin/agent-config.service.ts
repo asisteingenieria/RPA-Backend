@@ -95,6 +95,8 @@ export class AgentConfigService {
     private readonly opts: AgentConfigOptions,
     private readonly queue: EvalQueuePort,
     private readonly tester?: AgentTestPort,
+    /** v1.9: catálogo publicado del Brain conectado al agente (solo lectura en el panel). */
+    private readonly catalog?: () => Promise<unknown[]>,
   ) {
     this.staleMs = opts.staleEvaluationMs ?? 30 * 60_000;
   }
@@ -111,27 +113,14 @@ export class AgentConfigService {
 
   async overview() {
     await this.expireStale();
-    const [published, working, plans] = await Promise.all([
+    const [published, working, catalog] = await Promise.all([
       this.prisma.agentConfigVersion.findFirst({
         where: { status: 'PUBLISHED' },
         orderBy: { version: 'desc' },
         select: CONTENT_SELECT,
       }),
       this.working(),
-      this.prisma.plan.findMany({
-        where: { active: true },
-        orderBy: [{ process: 'asc' }, { priceCop: 'asc' }],
-        select: {
-          code: true,
-          process: true,
-          name: true,
-          dataGb: true,
-          priceCop: true,
-          benefits: true,
-          discountText: true,
-          validTo: true,
-        },
-      }),
+      this.catalog ? this.catalog() : Promise.resolve([]),
     ]);
     return {
       published: published ?? { ...DEFAULT_AGENT_CONFIG, status: 'PUBLISHED', builtIn: true },
@@ -146,7 +135,7 @@ export class AgentConfigService {
       temperatureApplies: this.opts.provider !== 'anthropic',
       defaultModel: this.opts.defaultModel,
       models: this.models(),
-      catalog: plans,
+      catalog,
     };
   }
 
@@ -179,8 +168,8 @@ export class AgentConfigService {
     return saved;
   }
 
-  /** Por qué no se puede publicar (null = se puede). */
-  private publishBlocker(): string | null {
+  /** Por qué no se puede publicar (null = se puede). También lo usan los Brains (v1.9). */
+  publishBlocker(): string | null {
     if (this.opts.provider === 'simulado') {
       return 'Publicar requiere un proveedor de LLM real: la suite de evaluación no puede validar el guion con LLM_PROVIDER=simulado.';
     }

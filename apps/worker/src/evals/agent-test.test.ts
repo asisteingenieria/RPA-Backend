@@ -1,17 +1,12 @@
-import { readFileSync } from 'node:fs';
 import { DEFAULT_AGENT_CONFIG } from '@abaya/domain';
 import { describe, expect, it } from 'vitest';
-import { MemoryCatalog, catalogFileSchema } from '../catalog/catalog.js';
+import { MemoryCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import * as T from '../engine/templates/templates.js';
 import { heuristicBrain } from '../llm/adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from '../llm/adapters/scripted.adapter.js';
 import { runAgentTest } from './agent-test.js';
 
-const catalog = new MemoryCatalog(
-  catalogFileSchema.parse(
-    JSON.parse(readFileSync(new URL('../catalog/plans.synthetic.json', import.meta.url), 'utf8')),
-  ).plans,
-);
+const catalog = new MemoryCatalog(await readCatalogFile(SYNTHETIC_CATALOG));
 const agent = { ...DEFAULT_AGENT_CONFIG, welcome: '¡Hola! Soy Sofía.' };
 const deps = { llm: new ScriptedLlmAdapter(heuristicBrain), catalog };
 
@@ -68,5 +63,17 @@ describe('probar agente (turno simulado)', () => {
     });
     expect(r.stage).toBe('SOPORTE');
     expect(r.events).toEqual(['Chat cerrado (soporte *611)']);
+  });
+});
+
+describe('chequeo de precios de la suite (v1.9)', () => {
+  it('pricesIn reconoce los precios de la ficha', async () => {
+    const { pricesIn } = await import('./suite.js');
+    expect(pricesIn('• Valor: *$39.900* al mes y $ 1.099.900 o $500')).toEqual([
+      '$39.900',
+      '$1.099.900',
+      '$500',
+    ]);
+    expect(pricesIn('sin precios, 10 GB')).toEqual([]);
   });
 });
