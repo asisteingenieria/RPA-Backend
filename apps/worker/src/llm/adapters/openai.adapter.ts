@@ -35,8 +35,8 @@ export class OpenAiLlmAdapter implements LlmPort {
     try {
       res = await this.client.chat.completions.create(
         {
-          model: this.opts.model,
-          temperature: this.opts.temperature ?? 0.2,
+          model: req.model ?? this.opts.model,
+          temperature: req.temperature ?? this.opts.temperature ?? 0.2,
           messages: [
             { role: 'system', content: req.systemFixed },
             { role: 'system', content: req.systemDynamic },

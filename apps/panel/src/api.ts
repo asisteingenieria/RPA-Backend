@@ -186,11 +186,115 @@ export interface RobotCredentials {
   totpSecret?: string;
 }
 
+// ---------- configuración del agente (v1.8) ----------
+
+export type AgentStatus = 'DRAFT' | 'EVALUATING' | 'PUBLISHED' | 'ARCHIVED' | 'REJECTED';
+
+export interface AgentFields {
+  agentName: string;
+  companyName: string;
+  companyInfo: string;
+  welcome: string;
+  prompt: string;
+  model: string | null;
+  temperature: number;
+}
+
+export interface EvalSummary {
+  provider?: string;
+  model?: string | null;
+  cases?: number;
+  passed?: number;
+  invented?: number;
+  p95?: number;
+  regenRate?: string;
+  fallbackRate?: string;
+  problems?: string[];
+  failedCases?: { id: string; failures: string[] }[];
+  finishedAt?: string;
+}
+
+export interface AgentVersionInfo {
+  id: string;
+  version: number;
+  status: AgentStatus;
+  agentName: string;
+  model: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  evalSummary: EvalSummary | null;
+}
+
+export type AgentVersion = AgentVersionInfo & AgentFields;
+
+export interface AgentPlan {
+  code: string;
+  process: string;
+  name: string;
+  dataGb: number;
+  priceCop: number;
+  benefits: string[];
+  discountText: string | null;
+  validTo: string | null;
+}
+
+export interface AgentOverview {
+  /** Sin versiones en la base: la v1 del código (`builtIn`). */
+  published: (AgentFields & { version: number; status: AgentStatus; builtIn?: boolean }) &
+    Partial<AgentVersionInfo>;
+  working: AgentVersion | null;
+  systemRules: string;
+  menuOptions: string;
+  stages: string[];
+  limits: {
+    agentName: number;
+    companyName: number;
+    companyInfo: number;
+    welcome: number;
+    prompt: number;
+    temperatureMin: number;
+    temperatureMax: number;
+  };
+  provider: string;
+  canPublish: boolean;
+  publishBlocker: string | null;
+  temperatureApplies: boolean;
+  defaultModel: string | null;
+  models: string[];
+  catalog: AgentPlan[];
+}
+
+export interface AgentTestState {
+  stage: string;
+  profile: Record<string, string>;
+  history: { role: 'customer' | 'bot'; text: string }[];
+}
+
+export interface AgentTestResult {
+  stage: string;
+  profile: Record<string, string>;
+  replies: string[];
+  events: string[];
+  validation: string;
+  llm: { provider: string; model: string; latencyMs: number; validationResult: string }[];
+}
+
+export interface AgentIssue {
+  field: keyof AgentFields;
+  line?: number;
+  message: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly code?: string,
+    /** Problemas de revisión de la configuración del agente (400). */
+    readonly issues?: AgentIssue[],
   ) {
     super(message);
   }
@@ -207,12 +311,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: { 'content-type': 'application/json', 'x-requested-with': 'abaya-panel' },
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: unknown; code?: string };
+    const body = (await res.json().catch(() => ({}))) as {
+      message?: unknown;
+      code?: string;
+      issues?: AgentIssue[];
+    };
     const message = Array.isArray(body.message) ? body.message.join('. ') : body.message;
     throw new ApiError(
       res.status,
       typeof message === 'string' ? message : `HTTP ${res.status}`,
       body.code,
+      Array.isArray(body.issues) ? body.issues : undefined,
     );
   }
   return (await res.json()) as T;
@@ -282,6 +391,25 @@ export const api = {
       `/admin/robots/${encodeURIComponent(robotUser)}/pause`,
       send({ paused }),
     ),
+  agent: () => request<AgentOverview>('/admin/agent'),
+  agentVersions: () => request<AgentVersionInfo[]>('/admin/agent/versions'),
+  agentVersion: (id: string) =>
+    request<AgentVersion>(`/admin/agent/versions/${encodeURIComponent(id)}`),
+  reviewAgent: (fields: AgentFields) =>
+    request<{ issues: AgentIssue[] }>('/admin/agent/review', send(fields)),
+  saveAgentDraft: (fields: AgentFields) =>
+    request<AgentVersion>('/admin/agent/draft', send(fields, 'PUT')),
+  publishAgent: () =>
+    request<{ version: number; status: AgentStatus }>('/admin/agent/draft/publish', send({})),
+  testAgent: (body: {
+    source: 'editor' | 'published';
+    fields?: AgentFields;
+    state: AgentTestState;
+    message: string;
+  }) => request<AgentTestResult>('/admin/agent/test', send(body)),
+  restoreAgentVersion: (id: string) =>
+    request<AgentVersion>(`/admin/agent/versions/${encodeURIComponent(id)}/restore`, send({})),
+
   enableRobot: (robotUser: string, enabled: boolean) =>
     request<{ enabled: boolean; note?: string }>(
       `/admin/robots/${encodeURIComponent(robotUser)}/enabled`,

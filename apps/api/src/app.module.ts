@@ -6,6 +6,10 @@ import { createPrismaClient } from '@abaya/db';
 import { AdminAuthGuard } from './admin/admin-auth.guard.js';
 import { AdminController } from './admin/admin.controller.js';
 import { AdminService } from './admin/admin.service.js';
+import { AgentConfigController } from './admin/agent-config.controller.js';
+import { AgentConfigService } from './admin/agent-config.service.js';
+import { QUEUES, type AgentTestJob, type AgentTestResult, type EvalJob } from '@abaya/domain';
+import { Queue, QueueEvents } from 'bullmq';
 import { AuthController, COOKIE_SECURE } from './admin/auth.controller.js';
 import { RedisFlagStore } from './admin/flags.js';
 import { UsersController } from './admin/users.controller.js';
@@ -68,6 +72,45 @@ export const hubDeps: HubDeps = {
   logger: createLogger('api.gateway'),
   release,
 };
+// Configuración del agente (v1.8): publicar encola la suite de evaluación en el worker.
+const evalQueue = new Queue<EvalJob>(QUEUES.evals, { connection: { url: cfg.REDIS_URL } });
+const testQueue = new Queue<AgentTestJob>(QUEUES.agentTest, { connection: { url: cfg.REDIS_URL } });
+const testEvents = new QueueEvents(QUEUES.agentTest, { connection: { url: cfg.REDIS_URL } });
+const agentConfig = new AgentConfigService(
+  prisma,
+  {
+    provider: cfg.LLM_PROVIDER,
+    defaultModel: cfg.LLM_MODEL ?? null,
+    allowedModels: cfg.LLM_ALLOWED_MODELS,
+    providerReady:
+      cfg.LLM_PROVIDER === 'anthropic'
+        ? !!cfg.ANTHROPIC_API_KEY
+        : cfg.LLM_PROVIDER === 'openai'
+          ? !!cfg.OPENAI_API_KEY
+          : cfg.LLM_PROVIDER !== 'gemini',
+  },
+  {
+    enqueue: async (job) => {
+      await evalQueue.add('evaluate', job, {
+        jobId: `agent-${job.versionId}-${Date.now()}`,
+        attempts: 1,
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      });
+    },
+  },
+  {
+    // "Probar agente": el worker corre el turno y la API espera su resultado.
+    run: async (job) => {
+      const j = await testQueue.add('turn', job, {
+        attempts: 1,
+        removeOnComplete: { age: 60 },
+        removeOnFail: { age: 60 },
+      });
+      return (await j.waitUntilFinished(testEvents, 45_000)) as AgentTestResult;
+    },
+  },
+);
 const traceCleanup = setInterval(() => void gateway.cleanupTraces(), 6 * 3_600_000);
 traceCleanup.unref();
 
@@ -77,12 +120,14 @@ traceCleanup.unref();
     AuthController,
     AdminController,
     UsersController,
+    AgentConfigController,
     RobotsController,
     RobotGatewayController,
   ],
   providers: [
     { provide: AdminService, useValue: new AdminService(prisma, flags) },
     { provide: UsersService, useValue: new UsersService(prisma) },
+    { provide: AgentConfigService, useValue: agentConfig },
     { provide: RobotsService, useValue: robots },
     { provide: RobotGateway, useValue: gateway },
     { provide: ReleaseService, useValue: release },
@@ -95,6 +140,9 @@ export class AppModule implements OnApplicationShutdown {
   async onApplicationShutdown() {
     clearInterval(traceCleanup);
     await gateway.close();
+    await evalQueue.close();
+    await testQueue.close();
+    await testEvents.close();
     await flags.close();
     await prisma.$disconnect();
   }

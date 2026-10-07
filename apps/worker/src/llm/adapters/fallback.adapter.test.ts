@@ -1,4 +1,9 @@
-import { LlmProviderError, type LlmPort, type LlmResponse } from '@abaya/domain';
+import {
+  LlmProviderError,
+  type LlmPort,
+  type LlmRequest,
+  type LlmResponse,
+} from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import { FallbackLlmAdapter } from './fallback.adapter.js';
@@ -40,6 +45,24 @@ describe('FallbackLlmAdapter', () => {
     const b = port('openai', async () => ok('m2'));
     const r = await new FallbackLlmAdapter(a, b, silent).complete(req);
     expect(r).toMatchObject({ model: 'm2', provider: 'openai' });
+  });
+
+  it('el modelo elegido en el panel es del principal: el respaldo usa el suyo', async () => {
+    let seen: LlmRequest | undefined;
+    const a = port('anthropic', async () => {
+      throw new LlmProviderError('timeout', 'anthropic', true);
+    });
+    const b: LlmPort = {
+      provider: 'openai',
+      complete: async (r) => {
+        seen = r;
+        return ok('m2');
+      },
+    };
+    await new FallbackLlmAdapter(a, b, silent).complete({ ...req, model: 'm1', temperature: 0.1 });
+    expect(seen).toBeDefined();
+    expect(seen!.model).toBeUndefined();
+    expect(seen!.temperature).toBe(0.1);
   });
 
   it('si ambos fallan, el error sube (la conversación irá a revisión)', async () => {

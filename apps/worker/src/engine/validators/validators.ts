@@ -1,4 +1,4 @@
-import type { Stage } from '@abaya/domain';
+import { FORBIDDEN_PROMISES as DOMAIN_FORBIDDEN_PROMISES, type Stage } from '@abaya/domain';
 import type { Plan } from '../../catalog/catalog.js';
 import { turnOutputSchema, type TurnOutput } from '../output-schema.js';
 import { isIntentAllowed } from '../state-machine.js';
@@ -12,28 +12,8 @@ import type { SaleProcess } from '../types.js';
 
 export const MAX_REPLY_CHARS = 600;
 
-/** Frases que el modelo no puede prometer (solo pueden venir de una plantilla). */
-export const FORBIDDEN_PROMISES = [
-  'gratis',
-  'sin costo',
-  'sin cargo',
-  'garantizado',
-  'garantizada',
-  'garantizamos',
-  'te garantizo',
-  'te regalo',
-  'de regalo',
-  'regalamos',
-  'ilimitado',
-  'ilimitada',
-  'descuento',
-  'promoción',
-  'promocion',
-  'precio especial',
-  'sin permanencia',
-  'sin cláusula',
-  '100%',
-];
+/** Frases que el modelo no puede prometer (lista compartida con la revisión del guion). */
+export const FORBIDDEN_PROMISES = DOMAIN_FORBIDDEN_PROMISES;
 
 export interface ValidationContext {
   stage: Stage;

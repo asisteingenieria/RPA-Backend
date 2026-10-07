@@ -49,6 +49,22 @@ export const envSchema = z.object({
   LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini', 'simulado']).default('anthropic'),
   /** Modelo fijado (sección 13: versión de modelo fijada). Lo elige la suite de evaluación. */
   LLM_MODEL: optionalString,
+  /**
+   * Modelos del proveedor principal que se pueden elegir en la configuración del agente
+   * (v1.8), separados por coma. Vacío = solo el de LLM_MODEL. Cambiar de modelo también pasa
+   * por la suite de evaluación al publicar (regla 13).
+   */
+  LLM_ALLOWED_MODELS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  /** Carpeta de los casos YAML de la suite de evaluación (por defecto `evals/conversations`). */
+  EVALS_DIR: optionalString,
   /** Espera sin mensajes nuevos antes de procesar una ráfaga (sección 6.3.1). */
   BURST_QUIET_MS: z.coerce.number().int().positive().default(4_000),
   /** Webhook entrante (Slack/Teams) para alertas; vacío = solo logs. */

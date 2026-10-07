@@ -140,6 +140,11 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   consentimiento; el modelo nunca puede darlo por hecho.
 - Catálogo y textos legales son **sintéticos** (`plans.synthetic.json`, `templates.ts`) hasta
   recibir los oficiales de Claro. Cargar catálogo: `pnpm --filter @abaya/worker seed -- <archivo>`.
+- Configuración del agente en el panel (v1.8, sección 6.3.8): guion en Markdown + ajustes en
+  `AgentConfigVersion`; reglas del sistema, revisión y armado del prompt en
+  `packages/domain/src/agent-config.ts`. Publicar corre la suite en el worker (cola
+  `abaya.evals`, `apps/worker/src/evals/agent-evaluation.ts`); "Probar agente" usa la cola
+  `abaya.agent-test`. Núcleo de la suite: `apps/worker/src/evals/suite.ts`.
 - Suite de evaluación: `pnpm evals` (línea base sin red) o
   `pnpm evals -- --provider anthropic,openai` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
 

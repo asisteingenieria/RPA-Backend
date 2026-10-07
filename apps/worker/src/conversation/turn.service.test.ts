@@ -41,7 +41,7 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
  */
 function fakeBrain(req: LlmRequest): TurnOutput {
   const last = req.messages.at(-1)!.content.toLowerCase();
-  const stage = /Estado: (\w+)/.exec(req.systemDynamic)?.[1];
+  const stage = /Etapa actual: (\w+)/.exec(req.systemDynamic)?.[1];
   if (stage === 'PERFIL') {
     if (last.startsWith('soy '))
       return base({

@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_CONFIG, menuText } from '@abaya/domain';
 import type { Plan } from '../../catalog/catalog.js';
 
 /**
@@ -9,13 +10,10 @@ import type { Plan } from '../../catalog/catalog.js';
  */
 export const TEMPLATE_VERSION = 'borrador-2026-10-05';
 
-export const MENU =
-  '¡Hola! 👋 Soy el asistente virtual de ventas. ¿En qué te puedo ayudar hoy?\n\n' +
-  '*A.* Traer tu número desde otro operador (portabilidad)\n' +
-  '*B.* Pasar tu línea prepago a un plan pospago (migración)\n' +
-  '*C.* Adquirir una línea nueva\n' +
-  '*D.* Soporte o consultas sobre tu servicio actual\n\n' +
-  'Responde con la letra de la opción.';
+/** Menú inicial (v1.8): saludo de la configuración del agente + opciones A–D fijas. */
+export const menu = menuText;
+
+export const MENU = menu(DEFAULT_AGENT_CONFIG.welcome);
 
 export const SUPPORT =
   'Para soporte o consultas sobre tu servicio actual, comunícate con nuestra línea de ' +

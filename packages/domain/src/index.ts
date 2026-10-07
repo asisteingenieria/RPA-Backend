@@ -1,5 +1,6 @@
 // Dominio: sin dependencias externas (sección 2.5). Se completa en F2–F6.
 
+export * from './agent-config.js';
 export * from './fingerprint.js';
 export * from './inbound.js';
 export * from './outbound.js';
@@ -77,6 +78,10 @@ export interface LlmRequest {
   schemaName: string;
   jsonSchema: Record<string, unknown>;
   timeoutMs?: number;
+  /** Modelo de la versión publicada del agente (v1.8); si falta, el del adaptador. */
+  model?: string;
+  /** 0–0.3 (sección 6.3.6). Los modelos Claude no la aceptan y la ignoran. */
+  temperature?: number;
 }
 
 export interface LlmResponse {

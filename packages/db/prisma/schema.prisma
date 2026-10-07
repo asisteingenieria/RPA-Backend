@@ -148,7 +148,7 @@ model Plan {
 }
 
 model PromptVersion {
-  // prompts versionados, nunca editados en caliente
+  // prompts v1 por estado; histórico desde v1.8 (ver AgentConfigVersion)
   id         String   @id @default(cuid())
   stage      String
   version    Int
@@ -158,6 +158,37 @@ model PromptVersion {
   createdAt  DateTime @default(now())
 
   @@unique([stage, version])
+}
+
+enum AgentConfigStatus {
+  DRAFT
+  EVALUATING
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+model AgentConfigVersion {
+  // configuración y guion del agente editados en el panel (v1.8, sección 6.3.8).
+  // Una sola PUBLISHED a la vez (transacción Serializable al publicar).
+  id          String            @id @default(cuid())
+  version     Int               @unique
+  status      AgentConfigStatus @default(DRAFT)
+  agentName   String
+  companyName String
+  companyInfo String
+  welcome     String // saludo antes del menú A–D (fijo en código)
+  prompt      String // bloque grande en Markdown
+  model       String? // null = el de la configuración del worker
+  temperature Float // 0–0.3
+  evalSummary Json? // resultado de la suite al publicar
+  createdBy   String
+  publishedBy String?
+  publishedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status])
 }
 
 model LlmCall {

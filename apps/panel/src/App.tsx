@@ -11,6 +11,7 @@ import {
   type TemporaryPassword,
 } from './api.js';
 import { message, time } from './format.js';
+import { AgentView } from './Agent.js';
 import { RobotsView } from './Robots.js';
 
 const REFRESH_MS = 10_000;
@@ -22,7 +23,7 @@ const SESSION_TONE: Record<string, string> = {
   DOWN: 'bad',
 };
 
-type View = 'operacion' | 'robots' | 'usuarios' | 'contrasena';
+type View = 'operacion' | 'robots' | 'agente' | 'usuarios' | 'contrasena';
 
 export function App() {
   // undefined = comprobando la sesión; null = sin sesión.
@@ -318,6 +319,9 @@ function Dashboard({
         <button className={view === 'robots' ? '' : 'ghost'} onClick={() => setView('robots')}>
           Robots
         </button>
+        <button className={view === 'agente' ? '' : 'ghost'} onClick={() => setView('agente')}>
+          Agente
+        </button>
         {isAdmin && (
           <button
             className={view === 'usuarios' ? '' : 'ghost'}
@@ -337,6 +341,7 @@ function Dashboard({
       {error && <p className="notice">{error}</p>}
 
       {view === 'robots' && <RobotsView isAdmin={isAdmin} onExpired={onExpired} />}
+      {view === 'agente' && <AgentView isAdmin={isAdmin} onExpired={onExpired} />}
       {view === 'usuarios' && isAdmin && <UsersAdmin me={me} onExpired={onExpired} />}
       {view === 'contrasena' && (
         <ChangePassword

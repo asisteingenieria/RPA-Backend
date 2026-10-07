@@ -27,7 +27,9 @@ export class FallbackLlmAdapter implements LlmPort {
         { primary: this.primary.provider, backup: this.backup.provider, err: err.message },
         'proveedor principal falló: usando el respaldo',
       );
-      const res = await this.backup.complete(req);
+      // El modelo elegido en el panel es del proveedor principal: el respaldo usa el suyo.
+      const { model: _primaryModel, ...forBackup } = req;
+      const res = await this.backup.complete(forBackup);
       return { ...res, provider: res.provider ?? this.backup.provider };
     }
   }

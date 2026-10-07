@@ -9,7 +9,12 @@ import { sha256 } from '@abaya/crypto';
 import { scrubText } from '@abaya/logger';
 import type { Catalog, Plan } from '../catalog/catalog.js';
 import { turnOutputJsonSchema, type TurnOutput } from './output-schema.js';
-import { BASE_PROMPT, PROMPT_VERSION, STAGE_PROMPTS } from './prompts/prompts.js';
+import {
+  DEFAULT_AGENT_CONFIG,
+  buildSystemPrompt,
+  stageHint,
+  type AgentConfig,
+} from './prompts/prompts.js';
 import {
   OPTION_PROCESS,
   TERMINAL_STAGES,
@@ -32,8 +37,8 @@ export interface EngineDeps {
   llm: LlmPort;
   catalog: Catalog;
   now?: () => Date;
-  /** Id del PromptVersion activo por estado (para LlmCall). */
-  promptVersionId?: (stage: Stage) => string;
+  /** Versión publicada del agente (guion y ajustes, v1.8); por defecto la v1 del código. */
+  agentConfig?: () => AgentConfig;
   historyLimit?: number;
   timeoutMs?: number;
 }
@@ -63,14 +68,16 @@ export class ConversationEngine {
     const text = customerMessages.join('\n').trim();
     const stage = state.stage;
     const profile = { ...state.profile };
+    // Un turno usa una sola versión del agente, aunque se publique otra a mitad de turno.
+    const agent = this.d.agentConfig?.() ?? DEFAULT_AGENT_CONFIG;
 
     if (TERMINAL_STAGES.has(stage) || !text) return result(stage, profile, [], [], 'NO_LLM');
 
-    // Primer contacto: el menú es una plantilla fija.
+    // Primer contacto: el menú es una plantilla (saludo revisado + opciones fijas).
     const botSpoke = state.history.some((m) => m.role === 'bot');
     const menuOption = stage === 'MENU' ? parseMenuOption(text) : undefined;
     if (stage === 'MENU' && !botSpoke && !menuOption) {
-      return result('MENU', profile, [{ type: 'SEND', text: T.MENU }], [], 'NO_LLM');
+      return result('MENU', profile, [send(T.menu(agent.welcome))], [], 'NO_LLM');
     }
 
     // Menú: elección clara → decide el código.
@@ -125,10 +132,10 @@ export class ConversationEngine {
     const calls: LlmCallRecord[] = [];
     let output: TurnOutput | undefined;
     let validation: ValidationResult = 'OK';
-    const request = this.buildRequest(state, profile, plans, text);
+    const request = this.buildRequest(agent, state, profile, plans, text);
 
     try {
-      let res = await this.call(request, stage, calls);
+      let res = await this.call(request, stage, agent, calls);
       let check = this.check(res.json, stage, profile, plans);
       if (!check.ok) {
         // Regenerar UNA vez explicando el error (sección 6.3.5).
@@ -149,6 +156,7 @@ export class ConversationEngine {
             ],
           },
           stage,
+          agent,
           calls,
         );
         check = this.check(res.json, stage, profile, plans);
@@ -276,13 +284,18 @@ export class ConversationEngine {
 
   // ---------- llamada al modelo ----------
 
-  private async call(req: LlmRequest, stage: Stage, calls: LlmCallRecord[]): Promise<LlmResponse> {
+  private async call(
+    req: LlmRequest,
+    stage: Stage,
+    agent: AgentConfig,
+    calls: LlmCallRecord[],
+  ): Promise<LlmResponse> {
     const res = await this.d.llm.complete(req);
     calls.push({
       stage,
       provider: res.provider ?? this.d.llm.provider,
       model: res.model,
-      promptVersionId: this.d.promptVersionId?.(stage) ?? `v${PROMPT_VERSION}:${stage}`,
+      promptVersionId: agent.id,
       latencyMs: res.latencyMs,
       inputTokens: res.inputTokens,
       outputTokens: res.outputTokens,
@@ -292,6 +305,7 @@ export class ConversationEngine {
   }
 
   private buildRequest(
+    agent: AgentConfig,
     state: ConversationState,
     profile: Profile,
     plans: Plan[],
@@ -307,7 +321,7 @@ export class ConversationEngine {
           .join('\n')
       : '(aún no aplica: el cliente no ha elegido proceso)';
     const dynamic = [
-      STAGE_PROMPTS[state.stage] ?? '',
+      stageHint(state.stage),
       `Proceso: ${profile.process ?? 'sin elegir'}`,
       `Datos del cliente ya conocidos: ${JSON.stringify({
         name: profile.name ?? null,
@@ -322,7 +336,7 @@ export class ConversationEngine {
     const history = state.history.slice(-(this.d.historyLimit ?? 10));
     while (history[0]?.role === 'bot') history.shift();
     return {
-      systemFixed: BASE_PROMPT,
+      systemFixed: buildSystemPrompt(agent),
       systemDynamic: dynamic,
       messages: [
         ...history.map((m) => ({
@@ -335,6 +349,8 @@ export class ConversationEngine {
       schemaName: 'turno_conversacion',
       jsonSchema: turnOutputJsonSchema,
       timeoutMs: this.d.timeoutMs ?? 8_000,
+      ...(agent.model ? { model: agent.model } : {}),
+      temperature: agent.temperature,
     };
   }
 }

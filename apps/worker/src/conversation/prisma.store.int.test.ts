@@ -50,7 +50,7 @@ const out = (over: Partial<TurnOutput>): TurnOutput => ({
 
 function brain(req: LlmRequest): TurnOutput {
   const last = req.messages.at(-1)!.content;
-  const stage = /Estado: ([A-ZÁÉÍÓÚÑ]+)/.exec(req.systemDynamic)?.[1];
+  const stage = /Etapa actual: ([A-Z_]+)/.exec(req.systemDynamic)?.[1];
   if (stage === 'PERFIL') {
     return out({
       intent: 'DA_DATO',

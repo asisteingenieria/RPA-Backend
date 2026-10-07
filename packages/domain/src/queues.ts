@@ -1,10 +1,47 @@
+import type { AgentConfig } from './agent-config.js';
+import type { Stage } from './index.js';
+
 /** Nombres de colas BullMQ (sección 2.2). */
 export const QUEUES = {
   inbound: 'abaya.inbound',
   outbound: 'abaya.outbound',
   transfer: 'abaya.transfer',
   close: 'abaya.close',
+  /** Evaluación de un borrador del agente antes de publicarlo (v1.8, regla 13). */
+  evals: 'abaya.evals',
+  /** "Probar agente" del panel: turno simulado con respuesta inmediata (v1.8). */
+  agentTest: 'abaya.agent-test',
 } as const;
+
+export interface EvalJob {
+  versionId: string;
+  requestedBy: string;
+}
+
+/**
+ * "Probar agente" del panel (v1.8): un turno del motor real contra una conversación simulada.
+ * No toca Abaya ni guarda nada; el panel conserva el estado entre turnos.
+ */
+export interface AgentTestJob {
+  agent: AgentConfig;
+  state: {
+    stage: Stage;
+    profile: Record<string, string>;
+    history: { role: 'customer' | 'bot'; text: string }[];
+  };
+  message: string;
+}
+
+export interface AgentTestResult {
+  stage: Stage;
+  profile: Record<string, string>;
+  /** Mensajes que el robot enviaría, en orden. */
+  replies: string[];
+  /** Acciones que no son mensajes (transferir, cerrar, escalar, revisión, consentimiento). */
+  events: string[];
+  validation: string;
+  llm: { provider: string; model: string; latencyMs: number; validationResult: string }[];
+}
 
 export interface InboundJob {
   conversationId: string;

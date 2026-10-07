@@ -1,6 +1,7 @@
 /* eslint-disable no-console -- script de línea de comandos */
 /**
- * Carga el catálogo de planes y los prompts v1 en la base de datos, con validación.
+ * Carga el catálogo de planes en la base de datos, con validación, y la v1 de la configuración
+ * del agente si todavía no hay ninguna.
  *
  *   pnpm --filter @abaya/worker seed -- src/catalog/plans.synthetic.json
  *
@@ -10,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '@abaya/config';
 import { createPrismaClient } from '@abaya/db';
-import { BASE_PROMPT, PROMPT_VERSION, STAGE_PROMPTS } from '../engine/prompts/prompts.js';
+import { DEFAULT_AGENT_CONFIG } from '../engine/prompts/prompts.js';
 import { catalogFileSchema } from './catalog.js';
 
 async function main() {
@@ -18,6 +19,7 @@ async function main() {
   if (!file) throw new Error('Uso: seed <archivo-catalogo.json>');
   const catalog = catalogFileSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
   const prisma = createPrismaClient(loadConfig().DATABASE_URL);
+  let agentCreated = false;
   try {
     await prisma.$transaction(async (tx) => {
       for (const p of catalog.plans) {
@@ -28,16 +30,27 @@ async function main() {
         where: { code: { notIn: catalog.plans.map((p) => p.code) } },
         data: { active: false },
       });
-      for (const [stage, content] of Object.entries({ BASE: BASE_PROMPT, ...STAGE_PROMPTS })) {
-        await tx.promptVersion.upsert({
-          where: { stage_version: { stage, version: PROMPT_VERSION } },
-          create: { stage, version: PROMPT_VERSION, content: content!, active: true },
-          update: {},
+      // Configuración del agente (v1.8): si no hay ninguna versión, la v1 del código publicada.
+      // Nunca pisa versiones creadas desde el panel.
+      if (!(await tx.agentConfigVersion.count())) {
+        const { id: _id, ...v1 } = DEFAULT_AGENT_CONFIG;
+        await tx.agentConfigVersion.create({
+          data: {
+            ...v1,
+            status: 'PUBLISHED',
+            createdBy: 'seed',
+            publishedBy: 'seed',
+            publishedAt: new Date(),
+          },
         });
+        agentCreated = true;
       }
     });
     console.log(
-      `Catálogo: ${catalog.plans.length} planes. Prompts v${PROMPT_VERSION} registrados.`,
+      `Catálogo: ${catalog.plans.length} planes. ` +
+        (agentCreated
+          ? 'Agente v1 publicado.'
+          : 'Configuración del agente sin cambios (ya existe).'),
     );
   } finally {
     await prisma.$disconnect();

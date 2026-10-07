@@ -1,7 +1,8 @@
 # Plan del proyecto: Agente RPA de ventas en Abaya
 
-> Proyecto nuevo · Versión 1.1 · Octubre 2026
+> Proyecto nuevo · Versión 1.8 · Octubre 2026
 > Cambio v1.1: motor de conversación propio con API directa de LLM (reemplaza a Retell)
+> Cambio v1.8: configuración del agente en el panel (guion en un bloque de texto, estilo Dapta/Retell), sección 6.3.8
 > Herramienta de desarrollo: Claude Code
 > Estado: listo para iniciar
 
@@ -410,6 +411,27 @@ model LlmCall {                  // trazabilidad de cada llamada al modelo
   createdAt       DateTime @default(now())
 }
 
+enum AgentConfigStatus { DRAFT EVALUATING PUBLISHED ARCHIVED REJECTED }
+
+model AgentConfigVersion {       // configuración y guion del agente (v1.8, sección 6.3.8)
+  id           String            @id @default(cuid())
+  version      Int               @unique
+  status       AgentConfigStatus @default(DRAFT)
+  agentName    String
+  companyName  String
+  companyInfo  String
+  welcome      String            // saludo antes del menú A–D (fijo en código)
+  prompt       String            // bloque grande en Markdown
+  model        String?           // null = el de la configuración del worker
+  temperature  Float             // 0–0.3
+  evalSummary  Json?             // resultado de la suite al publicar
+  createdBy    String
+  publishedBy  String?
+  publishedAt  DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
 model OutboxEvent {
   id          String    @id @default(cuid())
   type        String
@@ -582,11 +604,24 @@ Si falla: **regenerar una vez** con el error explicado al modelo. Si vuelve a fa
 - Contexto mínimo: instrucciones del estado actual, perfil extraído, catálogo filtrado al proceso y últimos N mensajes (con resumen si la conversación es larga).
 - *Prompt caching* de la parte fija del prompt para bajar latencia y costo.
 - Timeout de 8 s y 1 reintento *(v1.5; antes 15 s)*; si el proveedor falla y hay proveedor de respaldo (`LLM_FALLBACK_PROVIDER`), se usa el respaldo; si también falla, conversación a `NEEDS_REVIEW` y alerta.
-- Prompts versionados en `PromptVersion`; ningún cambio sale a producción sin pasar la suite de evaluación (sección 12).
+- Prompts versionados en `AgentConfigVersion` *(v1.8; antes `PromptVersion`, que queda como histórico)* y editados desde el panel (sección 6.3.8); ningún cambio sale a producción sin pasar la suite de evaluación (sección 12).
 
 #### 6.3.7 Elección del proveedor
 
 Se implementan al menos dos adaptadores y se elige con la suite de evaluación comparando: cumplimiento de reglas (%), tasa de regeneración, latencia p50/p95 y costo por conversación. Un modelo de gama media rápida suele bastar. Si Claro tiene nube contratada (Azure, Google Cloud o AWS), se prioriza el modelo disponible ahí por contratos y transferencia internacional de datos (Ley 1581).
+
+#### 6.3.8 Configuración del agente en el panel *(cambio v1.8)*
+
+Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel como **un bloque de texto grande en Markdown** (rol, conocimiento general, flujo por etapa, objeciones, estilo), junto a un **apartado de configuración**: nombre del agente, nombre y descripción de la empresa, modelo (de una lista permitida, `LLM_ALLOWED_MODELS`), temperatura (0–0.3; los modelos Claude no la usan) y mensaje de bienvenida.
+
+- **Lo que no cambia:** el bloque define *cómo* habla el agente; la máquina de estados sigue decidiendo el flujo (regla 12), el menú A–D, la autorización y los textos legales siguen siendo plantillas del código, y los validadores de 6.3.5 aplican igual (regla 10).
+- **Precios y planes fuera del bloque (regla 11):** a diferencia de Retell, el catálogo no se pega en el prompt. El panel lo muestra al lado en solo lectura (como el *Brain* de Dapta) y el guion lo nombra con `{{OFERTA:CODIGO}}`. Al guardar, el bloque y la bienvenida se revisan: se rechazan precios, gigas, porcentajes y, en la bienvenida, promesas prohibidas.
+- **Reglas del sistema:** una parte fija del prompt (intenciones, esquema de salida, marcadores, prohibición de cifras y textos legales, anti-manipulación) va siempre antes del guion y no se edita; el panel la muestra en solo lectura.
+- **Etapas:** el guion organiza las instrucciones por etapa con títulos `## MENU`, `## PERFIL`, `## OFERTA`, `## OBJECIONES`, `## AUTORIZACION`; en cada turno el código le indica al modelo la etapa actual.
+- **Versiones:** cada guardado es un borrador (`AgentConfigVersion`, estado `DRAFT`). **Publicar** corre la suite de evaluación (sección 12.1) con el borrador contra el proveedor real; solo si da 0 datos inventados y ≥ 95 % pasa a `PUBLISHED` (la anterior queda `ARCHIVED`); si no, `REJECTED` con el reporte (regla 13). Con el proveedor `simulado` no se puede publicar. Una sola versión publicada a la vez; historial con "restaurar como borrador".
+- El worker usa la versión publicada (la relee cada 30 s); cada `LlmCall` guarda el id de la versión usada. Sin versión publicada se usa la v1 del código.
+- **Probar agente** (como en Dapta/Retell): chat de simulación en el panel que corre turnos del motor real (máquina de estados, catálogo, plantillas y validadores) en el worker, por la cola `abaya.agent-test`. Muestra las respuestas, su origen (plantilla, modelo validado, regenerado, respuesta segura), los eventos (consentimiento, transferencia, cierre, escalado) y el estado (etapa y datos extraídos). No toca Abaya ni guarda la conversación. Un `ADMIN` prueba lo que hay en el editor (revisado, aunque no esté guardado); un `OPERADOR`, la versión publicada.
+- Permisos: ver y probar la versión publicada, ambos roles; guardar, publicar, restaurar y probar el editor, solo `ADMIN`. Los cambios quedan en `AdminAuditLog`.
 
 ### 6.4 Envío
 
@@ -678,7 +713,7 @@ El robot lee y escribe datos personales. Aplican la Ley 1581 de 2012 (protecció
 | Derechos de titulares | Procedimiento para consulta, rectificación y supresión. |
 | Retención | Política de borrado de conversaciones definida con Claro. |
 | Usuarios del panel | Cuentas nominales con contraseña (scrypt con sal, mínimo 12 caracteres), roles `ADMIN` y `OPERADOR`, contraseña temporal generada por el sistema y cambio obligatorio en el primer ingreso, bloqueo de 15 min tras 5 intentos fallidos, sesión en el servidor con cookie `httpOnly`/`SameSite=Strict` (8 h máximo, 30 min de inactividad). El primer administrador se crea por consola. Todo queda en `AdminAuditLog` con el usuario autenticado. *(Cambio v1.3: reemplaza el token compartido `ADMIN_TOKEN`.)* |
-| Robots hijos | Credenciales de Abaya cifradas en la base del servidor (ingresadas en el panel por un ADMIN, nunca devueltas). Instalación con código de un solo uso (24 h, guardado como hash); token por equipo guardado como hash y revocable. La configuración del hijo se descarga por HTTPS en cada arranque y no se escribe en disco. Riesgo aceptado: cada equipo robot recibe la conexión a la base de datos, a Redis y la clave de cifrado de campos (igual que con `.env`, pero centralizado y revocable); mitigación futura: pasarela de API para los hijos. *(Cambio v1.4.)* |
+| Robots hijos | Credenciales de Abaya cifradas en la base del servidor (ingresadas en el panel por un ADMIN, nunca devueltas). Instalación con código de un solo uso (24 h, guardado como hash); token por equipo guardado como hash y revocable. *(Cambio v1.4.)* Desde v1.6 ("hijo delgado", sección 2.8) el equipo solo habla con la pasarela por HTTPS y no recibe la base de datos, Redis ni la clave de cifrado de campos. |
 
 ---
 
@@ -886,6 +921,8 @@ LLM simulados.
   | Ver la auditoría | ✅ | ❌ |
   | Crear usuarios, cambiar rol, activar/desactivar, restablecer contraseña | ✅ | ❌ |
   | Cambiar su propia contraseña | ✅ | ✅ |
+  | Ver la configuración del agente (v1.8) | ✅ | ✅ |
+  | Guardar, publicar o restaurar la configuración del agente (v1.8) | ✅ | ❌ |
 
   Salvaguardas: nadie se desactiva ni se quita el rol a sí mismo y siempre queda al menos un `ADMIN` activo; desactivar o restablecer la contraseña cierra las sesiones abiertas del usuario.
 - Robots padre/hijo (v1.4, sección 2.6): registro de robots, instalador para Windows con código de instalación, presencia y detección de duplicados, pausa por robot y vista "Robots" con rendimiento por equipo. Permisos: ver robots y su rendimiento, ambos roles; crear, pausar, deshabilitar, generar códigos y cambiar credenciales, solo `ADMIN`.

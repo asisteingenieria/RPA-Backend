@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { sha256 } from '@abaya/crypto';
-import { LlmProviderError } from '@abaya/domain';
+import { DEFAULT_AGENT_CONFIG, LlmProviderError, SYSTEM_RULES } from '@abaya/domain';
 import { describe, expect, it } from 'vitest';
 import { MemoryCatalog, catalogFileSchema } from '../catalog/catalog.js';
 import { ScriptedLlmAdapter, type ScriptStep } from '../llm/adapters/scripted.adapter.js';
@@ -329,5 +329,59 @@ describe('otros caminos', () => {
     await e.runTurn({ ...st, stage: 'OBJECIONES' }, ['b']);
     expect(llm.requests[0]!.systemFixed).toBe(llm.requests[1]!.systemFixed);
     expect(llm.requests[0]!.systemDynamic).not.toBe(llm.requests[1]!.systemDynamic);
+  });
+});
+
+describe('configuración del agente desde el panel (v1.8)', () => {
+  const agent = {
+    ...DEFAULT_AGENT_CONFIG,
+    id: 'ver-7',
+    version: 7,
+    agentName: 'Sofía',
+    welcome: '¡Hola! Con nosotros lo puedes todo. Soy Sofía.',
+    prompt: '# Rol\n- Eres Sofía.\n\n## OFERTA\n- Resalta los beneficios del plan.',
+    model: 'modelo-elegido',
+    temperature: 0.1,
+  };
+  const withAgent = (steps: ScriptStep[]) => {
+    const llm = new ScriptedLlmAdapter(steps);
+    return {
+      llm,
+      e: new ConversationEngine({ llm, catalog, now: () => NOW, agentConfig: () => agent }),
+    };
+  };
+
+  it('el primer mensaje es la bienvenida configurada + el menú fijo', async () => {
+    const { e } = withAgent([]);
+    const r = await e.runTurn(state({ history: [] }), ['Hola']);
+    expect(sent(r)).toEqual([T.menu(agent.welcome)]);
+    expect(sent(r)[0]).toContain('*A.* Traer tu número');
+  });
+
+  it('el guion va detrás de las reglas del sistema, con modelo, temperatura y versión', async () => {
+    const { e, llm } = withAgent([out()]);
+    const r = await e.runTurn(
+      state({ stage: 'OFERTA', profile: { process: 'MIGRACION', name: 'A', usage: 'x' } }),
+      ['¿qué incluye?'],
+    );
+    const req = llm.requests[0]!;
+    expect(req.systemFixed.startsWith(SYSTEM_RULES)).toBe(true);
+    expect(req.systemFixed).toContain('Resalta los beneficios del plan.');
+    expect(req.systemDynamic).toContain('Etapa actual: OFERTA.');
+    expect(req).toMatchObject({ model: 'modelo-elegido', temperature: 0.1 });
+    expect(r.llmCalls[0]!.promptVersionId).toBe('ver-7');
+  });
+
+  it('aunque el guion pida cifras, los validadores siguen frenando la respuesta (regla 10)', async () => {
+    const { e } = withAgent([
+      out({ reply: 'Ese plan cuesta $50.000' }),
+      out({ reply: 'Te lo dejo en 30 mil pesos' }),
+    ]);
+    const r = await e.runTurn(
+      state({ stage: 'OFERTA', profile: { process: 'MIGRACION', name: 'A', usage: 'x' } }),
+      ['¿cuánto vale?'],
+    );
+    expect(sent(r)).toEqual([T.SAFE_FALLBACK]);
+    expect(r.validationResult).toBe('FALLBACK');
   });
 });

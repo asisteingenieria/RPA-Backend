@@ -17,7 +17,8 @@ export interface AnthropicAdapterOptions {
  * - Salida estructurada con JSON Schema (`output_config.format`).
  * - Prompt caching de la parte fija del system prompt.
  * - Timeout de 8 s y 1 reintento (SDK, v1.5).
- * Los modelos Claude actuales no aceptan `temperature`; el control equivalente es `effort`.
+ * Los modelos Claude actuales no aceptan `temperature` (se ignora `req.temperature`); el control
+ * equivalente es `effort`.
  */
 export class AnthropicLlmAdapter implements LlmPort {
   readonly provider = 'anthropic';
@@ -39,7 +40,7 @@ export class AnthropicLlmAdapter implements LlmPort {
     try {
       res = await this.client.beta.messages.create(
         {
-          model: this.model,
+          model: req.model ?? this.model,
           max_tokens: 2_000,
           ...(this.opts.serverFallback !== false
             ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }

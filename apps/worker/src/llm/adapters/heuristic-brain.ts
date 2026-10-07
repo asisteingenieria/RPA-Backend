@@ -28,7 +28,7 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
 export function heuristicBrain(req: LlmRequest): TurnOutput {
   const text = req.messages.at(-1)!.content.trim();
   const lower = text.toLowerCase();
-  const stage = /Estado: ([A-ZÁÉÍÓÚÑ]+)/.exec(req.systemDynamic)?.[1] ?? '';
+  const stage = /Etapa actual: ([A-Z_]+)/.exec(req.systemDynamic)?.[1] ?? '';
   const codes = [...req.systemDynamic.matchAll(/^- ([A-Z][A-Z0-9]*):/gm)].map((m) => m[1]!);
   const offered = /"offeredPlanCode":"([A-Z0-9]+)"/.exec(req.systemDynamic)?.[1];
   const missing = /Datos que faltan: (.*)/.exec(req.systemDynamic)?.[1] ?? '';
@@ -37,7 +37,7 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
     return base({ intent: 'FUERA_DE_ALCANCE', reply: 'Te comunico con un asesor.' });
 
   switch (stage) {
-    case 'MENÚ': {
+    case 'MENU': {
       const option = /prepago|pospago/.test(lower)
         ? 'B'
         : /portar|traer|cambiarme/.test(lower)
@@ -109,7 +109,7 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
         reply: 'Con gusto te cuento: todo lo que incluye el plan está en la ficha que te compartí.',
       });
     }
-    case 'AUTORIZACIÓN':
+    case 'AUTORIZACION':
       return base({ reply: 'La autorización es necesaria para estudiar tu solicitud.' });
     default:
       return base({});

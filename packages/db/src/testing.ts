@@ -45,6 +45,8 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     port,
     // La carpeta se borra aquí: en Windows el borrado interno falla con EBUSY.
     persistent: true,
+    // UTF-8 como en producción: en Windows initdb toma WIN1252 por defecto y rechaza emojis.
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
     onLog: () => undefined,
     onError: () => undefined,
   });
