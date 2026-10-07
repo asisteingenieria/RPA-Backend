@@ -10,7 +10,7 @@ import {
   ingestSource,
   PgBlobStore,
   replaceDraft,
-  versionRecords,
+  versionContent,
   type CatalogDiff,
 } from '@abaya/knowledge';
 import { createLogger } from '@abaya/logger';
@@ -254,7 +254,7 @@ describe('Brain de catálogo: del archivo a la conversación', () => {
     const restored = await replaceDraft(
       db.prisma,
       brainId,
-      await versionRecords(db.prisma, v1.id),
+      await versionContent(db.prisma, v1.id),
       'jefe',
       1,
     );

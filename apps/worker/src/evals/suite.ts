@@ -13,7 +13,7 @@ import type { CatalogRecordData } from '@abaya/knowledge';
 import { MemoryCatalog, toPlan, type Plan } from '../catalog/catalog.js';
 import { MemoryConversationStore } from '../conversation/memory.store.js';
 import { TurnService } from '../conversation/turn.service.js';
-import { ConversationEngine } from '../engine/conversation-engine.js';
+import { ConversationEngine, type TurnKnowledge } from '../engine/conversation-engine.js';
 import * as T from '../engine/templates/templates.js';
 import { FORBIDDEN_PROMISES } from '../engine/validators/validators.js';
 
@@ -147,6 +147,8 @@ export interface RunOptions {
   plans: readonly CatalogRecordData[];
   /** Versión del agente a evaluar; sin ella, la v1 del código. */
   agent?: AgentConfig;
+  /** v1.9: documentos de los Brains (contexto completo y búsqueda) que ve el modelo. */
+  knowledge?: TurnKnowledge;
   concurrency?: number;
 }
 
@@ -160,6 +162,7 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     catalog,
     now: () => now,
     ...(agent ? { agentConfig: () => agent } : {}),
+    ...(o.knowledge ? { knowledge: o.knowledge } : {}),
   });
   const svc = new TurnService({
     store,

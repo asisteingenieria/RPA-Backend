@@ -249,6 +249,8 @@ model AdminUser {
   mustChangePassword Boolean        @default(true)
   failedAttempts     Int            @default(0)
   lockedUntil        DateTime?
+  /// v1.9: permiso `publicarConocimiento` (publicar, revertir y conectar Brains). Requiere ADMIN.
+  knowledgePublisher Boolean        @default(false)
   lastLoginAt        DateTime?
   createdBy          String?
   createdAt          DateTime       @default(now())
@@ -365,35 +367,43 @@ model BrainVersion {
   updatedAt   DateTime           @updatedAt
   brain       Brain              @relation(fields: [brainId], references: [id], onDelete: Cascade)
   records     CatalogRecord[]
+  chunks      VersionChunk[]
 
   @@unique([brainId, version])
   @@index([brainId, status])
 }
 
 model KnowledgeSource {
-  id             String                @id @default(cuid())
-  brainId        String
-  kind           KnowledgeSourceKind
-  use            KnowledgeUse
-  name           String
-  mime           String?
-  sizeBytes      Int
+  id              String                @id @default(cuid())
+  brainId         String
+  kind            KnowledgeSourceKind
+  use             KnowledgeUse
+  name            String
+  mime            String?
+  sizeBytes       Int
   /// sha256 del contenido original: detecta duplicados dentro del Brain.
-  contentHash    String
+  contentHash     String
   /// Archivo original cifrado (KnowledgeBlob).
-  blobRef        String?
-  url            String?
-  status         KnowledgeSourceStatus @default(PROCESSING)
-  errorReason    String?
+  blobRef         String?
+  url             String?
+  /// WEB: actualizar cada N horas (null = solo manual).
+  refreshHours    Int?
+  /// Hash del último contenido leído (WEB: detecta cambios al actualizar).
+  lastContentHash String?
+  /// Metadatos para filtrar la búsqueda (p. ej. { "proceso": "PORTABILIDAD" }).
+  metadata        Json?
+  status          KnowledgeSourceStatus @default(PROCESSING)
+  errorReason     String?
   /// Problemas de validación con fila y columna (lista).
-  issues         Json?
+  issues          Json?
   /// Registros validados del catálogo (uso CATALOG): el borrador se arma con ellos.
-  parsed         Json?
-  lastIngestedAt DateTime?
-  createdBy      String
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  brain          Brain                 @relation(fields: [brainId], references: [id], onDelete: Cascade)
+  parsed          Json?
+  lastIngestedAt  DateTime?
+  createdBy       String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  brain           Brain                 @relation(fields: [brainId], references: [id], onDelete: Cascade)
+  chunks          SourceChunk[]
 
   @@unique([brainId, contentHash])
   @@index([brainId])
@@ -457,4 +467,38 @@ model KnowledgeUsage {
 
   @@index([conversationId])
   @@index([brainVersionId])
+}
+
+model SourceChunk {
+  // Fragmentos de texto de una fuente (contexto completo o búsqueda), con su embedding.
+  id             String          @id @default(cuid())
+  sourceId       String
+  ord            Int
+  text           String
+  tokens         Int
+  /// Vector como double precision[] (patrón documentado por pgvector: se consulta con ::vector).
+  embedding      Float[]
+  embeddingModel String?
+  source         KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, ord])
+}
+
+model VersionChunk {
+  // Fragmentos congelados en una versión del Brain (lo que usa el agente al publicarse).
+  id             String       @id @default(cuid())
+  brainVersionId String
+  use            KnowledgeUse
+  sourceName     String
+  /// Hash del contenido de la fuente (diff de documentos entre versiones).
+  sourceHash     String
+  ord            Int
+  text           String
+  tokens         Int
+  embedding      Float[]
+  embeddingModel String?
+  metadata       Json?
+  version        BrainVersion @relation(fields: [brainVersionId], references: [id], onDelete: Cascade)
+
+  @@index([brainVersionId, use])
 }

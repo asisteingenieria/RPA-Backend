@@ -1,11 +1,13 @@
 import type { AgentTestJob, AgentTestResult, LlmPort } from '@abaya/domain';
 import type { Catalog } from '../catalog/catalog.js';
-import { ConversationEngine } from '../engine/conversation-engine.js';
+import { ConversationEngine, type TurnKnowledge } from '../engine/conversation-engine.js';
 import type { Profile } from '../engine/types.js';
 
 export interface AgentTestDeps {
   llm: LlmPort;
   catalog: Catalog;
+  /** v1.9: documentos publicados de los Brains del agente. */
+  knowledge?: TurnKnowledge;
   timeoutMs?: number;
 }
 
@@ -25,6 +27,7 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
     llm: d.llm,
     catalog: d.catalog,
     agentConfig: () => job.agent,
+    ...(d.knowledge ? { knowledge: d.knowledge } : {}),
     ...(d.timeoutMs ? { timeoutMs: d.timeoutMs } : {}),
   });
   const r = await engine.runTurn(

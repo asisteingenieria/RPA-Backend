@@ -3,13 +3,14 @@ import { Prisma, type PrismaClient } from '@abaya/db';
 import type { EvalJob } from '@abaya/domain';
 import {
   checkPlanQuery,
+  checkWebUrl,
   DEFAULT_AGENT_KEY,
   detectFile,
-  diffCatalogs,
   diffAgainstPublished,
+  diffContent,
   FileRejected,
   isCatalogBrain,
-  isEmptyDiff,
+  isEmptyBrainDiff,
   KNOWLEDGE_LIMITS,
   KnowledgeError,
   loadAgentCatalog,
@@ -18,12 +19,17 @@ import {
   rebuildDraftFromSources,
   replaceDraft,
   SALE_PROCESSES,
+  versionChunks,
+  versionContent,
   versionRecords,
   versionRecordsFor,
+  WebFetchError,
   workingVersion,
   type BlobStore,
-  type CatalogDiff,
+  type BrainDiff,
+  type FileKind,
   type KnowledgeIngestJob,
+  type KnowledgeRetriever,
   type KnowledgeUse,
   type SaleProcess,
 } from '@abaya/knowledge';
@@ -39,6 +45,17 @@ export interface KnowledgeOptions {
   publishBlocker: () => string | null;
   /** Una evaluación sin respuesta en este tiempo se da por fallida (worker caído). */
   staleEvaluationMs?: number;
+  /** Tamaño máximo de un documento (los catálogos tienen su propio límite). */
+  maxFileBytes?: number;
+  /** Prueba de búsqueda (K4): mismo recuperador que usa el motor. */
+  retriever?: KnowledgeRetriever;
+}
+
+/** Quién pide el cambio: el permiso `publicarConocimiento` es ADMIN + `knowledgePublisher`. */
+export interface KnowledgeActor {
+  username: string;
+  role: 'ADMIN' | 'OPERADOR';
+  knowledgePublisher: boolean;
 }
 
 /** Archivo recibido por multipart (multer en memoria). */
@@ -48,12 +65,22 @@ export interface UploadedFileInput {
   size: number;
 }
 
+export const PUBLISH_REASON =
+  'Requiere el permiso «Publicar conocimiento» (un ADMIN lo asigna en Usuarios)';
+
+const MAX_TEXT_CHARS = 200_000;
+const DOC_KINDS: FileKind[] = ['pdf', 'docx', 'txt', 'md'];
+const USES: KnowledgeUse[] = ['CATALOG', 'FULL_CONTEXT', 'SEARCH'];
+
 const SOURCE_SELECT = {
   id: true,
   kind: true,
   use: true,
   name: true,
   mime: true,
+  url: true,
+  refreshHours: true,
+  metadata: true,
   sizeBytes: true,
   contentHash: true,
   status: true,
@@ -62,6 +89,7 @@ const SOURCE_SELECT = {
   lastIngestedAt: true,
   createdBy: true,
   createdAt: true,
+  _count: { select: { chunks: true } },
 } as const;
 
 const VERSION_SELECT = {
@@ -76,15 +104,15 @@ const VERSION_SELECT = {
   updatedAt: true,
   publishedBy: true,
   publishedAt: true,
-  _count: { select: { records: true } },
+  _count: { select: { records: true, chunks: true } },
 } as const;
 
 const AGENT_KEYS = new Set([DEFAULT_AGENT_KEY]);
 
 /**
- * Brains en el panel (v1.9, docs/DECISIONS.md D-001). Ver: ambos roles. Crear, cargar
- * fuentes, publicar, revertir y conectar: solo ADMIN (permiso `publicarConocimiento`).
- * Todo cambio queda en AdminAuditLog; publicar pasa por la suite de evaluación.
+ * Brains en el panel (v1.9, docs/DECISIONS.md D-001). Ver y probar: ambos roles. Crear y
+ * cargar o quitar fuentes: ADMIN. Publicar (con la suite), revertir y conectar a agentes:
+ * permiso `publicarConocimiento` (ADMIN con la marca `knowledgePublisher`). Todo se audita.
  */
 export class KnowledgeService {
   private readonly staleMs: number;
@@ -107,6 +135,7 @@ export class KnowledgeService {
       include: {
         agents: { select: { agentKey: true } },
         _count: { select: { sources: true } },
+        sources: { select: { use: true, status: true } },
         versions: { orderBy: { version: 'desc' }, take: 5, select: VERSION_SELECT },
       },
     });
@@ -116,6 +145,9 @@ export class KnowledgeService {
       createdBy: b.createdBy,
       createdAt: b.createdAt,
       sources: b._count.sources,
+      uses: [...new Set(b.sources.map((s) => s.use))],
+      processing: b.sources.filter((s) => s.status === 'PROCESSING').length,
+      errors: b.sources.filter((s) => s.status === 'ERROR').length,
       agents: b.agents.map((a) => a.agentKey),
       published: summary(b.versions.find((v) => v.status === 'PUBLISHED')),
       working: summary(
@@ -156,9 +188,13 @@ export class KnowledgeService {
       createdBy: b.createdBy,
       createdAt: b.createdAt,
       agents: b.agents,
-      sources: b.sources,
+      sources: b.sources.map(({ _count, ...s }) => ({ ...s, chunks: _count.chunks })),
       versions: b.versions.map(summary),
-      limits: { catalogMaxBytes: KNOWLEDGE_LIMITS.catalogMaxBytes },
+      limits: {
+        catalogMaxBytes: KNOWLEDGE_LIMITS.catalogMaxBytes,
+        documentMaxBytes: this.maxFileBytes(),
+        textMaxChars: MAX_TEXT_CHARS,
+      },
     };
   }
 
@@ -193,28 +229,21 @@ export class KnowledgeService {
 
   // ---------- fuentes ----------
 
-  async addFile(actor: string, id: string, file: UploadedFileInput | undefined, useRaw: unknown) {
+  /** Archivos: catálogo (Excel/CSV) o documento (PDF, DOCX, TXT, MD). */
+  async addFile(actor: string, id: string, file: UploadedFileInput | undefined, body: unknown) {
     const b = await this.brain(id);
-    const use = (useRaw ?? 'CATALOG') as KnowledgeUse;
-    if (use !== 'CATALOG') {
-      throw new ServiceError(
-        400,
-        'Por ahora solo se cargan catálogos (Excel o CSV); los demás usos llegan en las fases K3 y K4.',
-      );
-    }
+    const { use, metadata } = this.sourceOptions(body);
     if (!file?.buffer?.length)
       throw new ServiceError(400, 'Adjunta un archivo en el campo "file".');
-    if (file.size > KNOWLEDGE_LIMITS.catalogMaxBytes) {
-      throw new ServiceError(
-        400,
-        `El archivo supera ${KNOWLEDGE_LIMITS.catalogMaxBytes / 1024 / 1024} MB.`,
-      );
-    }
+    const catalog = use === 'CATALOG';
+    const max = catalog ? KNOWLEDGE_LIMITS.catalogMaxBytes : this.maxFileBytes();
+    if (file.size > max)
+      throw new ServiceError(400, `El archivo supera ${Math.round(max / 1024 / 1024)} MB.`);
     const name = sanitizeFilename(file.originalname);
     const bytes = new Uint8Array(file.buffer);
     let detected;
     try {
-      detected = await detectFile(bytes, name, ['xlsx', 'csv']);
+      detected = await detectFile(bytes, name, catalog ? ['xlsx', 'csv'] : DOC_KINDS);
     } catch (err) {
       if (err instanceof FileRejected)
         throw new ServiceError(400, `Archivo rechazado: ${err.message}.`);
@@ -222,13 +251,7 @@ export class KnowledgeService {
     }
     await this.assertNotEvaluating(id);
     const contentHash = sha256(Buffer.from(bytes));
-    if (
-      await this.prisma.knowledgeSource.findUnique({
-        where: { brainId_contentHash: { brainId: id, contentHash } },
-      })
-    ) {
-      throw new ServiceError(409, 'Ese archivo ya está cargado en este Brain.');
-    }
+    await this.assertNotDuplicate(id, contentHash, 'Ese archivo ya está cargado en este Brain.');
     const blobRef = await this.blobs.put(bytes);
     const source = await this.prisma.knowledgeSource.create({
       data: {
@@ -241,6 +264,7 @@ export class KnowledgeService {
         contentHash,
         blobRef,
         createdBy: actor,
+        ...(metadata ? { metadata } : {}),
         issues: detected.warnings.map((message) => ({ message })) as Prisma.InputJsonValue,
       },
       select: SOURCE_SELECT,
@@ -248,11 +272,117 @@ export class KnowledgeService {
     await this.audit(actor, 'BRAIN_SOURCE_ADDED', `${b.name} · ${name}`, {
       brainId: id,
       sourceId: source.id,
+      kind: 'FILE',
+      use,
       sizeBytes: bytes.length,
       contentHash,
     });
     await this.enqueueIngest(source.id, actor);
-    return source;
+    return withChunks(source);
+  }
+
+  /** Texto escrito en el editor del panel (K3). */
+  async addText(actor: string, id: string, body: unknown) {
+    const b = await this.brain(id);
+    const { use, metadata } = this.sourceOptions(body);
+    if (use === 'CATALOG')
+      throw new ServiceError(400, 'El catálogo se carga desde Excel o CSV, no como texto.');
+    const raw = body as { name?: unknown; text?: unknown };
+    const name =
+      typeof raw.name === 'string' ? raw.name.trim().slice(0, KNOWLEDGE_LIMITS.sourceNameMax) : '';
+    const text = typeof raw.text === 'string' ? raw.text.replace(/\r\n/g, '\n').trim() : '';
+    if (!name) throw new ServiceError(400, 'name: ponle un nombre a la fuente');
+    if (!text || text.length > MAX_TEXT_CHARS) {
+      throw new ServiceError(400, `text: entre 1 y ${MAX_TEXT_CHARS} caracteres`);
+    }
+    await this.assertNotEvaluating(id);
+    const bytes = new TextEncoder().encode(text);
+    const contentHash = sha256(Buffer.from(bytes));
+    await this.assertNotDuplicate(id, contentHash, 'Ese texto ya está cargado en este Brain.');
+    const source = await this.prisma.knowledgeSource.create({
+      data: {
+        brainId: id,
+        kind: 'TEXT',
+        use,
+        name,
+        mime: 'text/markdown',
+        sizeBytes: bytes.length,
+        contentHash,
+        blobRef: await this.blobs.put(bytes),
+        createdBy: actor,
+        ...(metadata ? { metadata } : {}),
+      },
+      select: SOURCE_SELECT,
+    });
+    await this.audit(actor, 'BRAIN_SOURCE_ADDED', `${b.name} · ${name}`, {
+      brainId: id,
+      sourceId: source.id,
+      kind: 'TEXT',
+      use,
+      sizeBytes: bytes.length,
+      contentHash,
+    });
+    await this.enqueueIngest(source.id, actor);
+    return withChunks(source);
+  }
+
+  /** Página web (K5): https público, con actualización manual o cada N horas. */
+  async addWeb(actor: string, id: string, body: unknown) {
+    const b = await this.brain(id);
+    const { use, metadata } = this.sourceOptions(body);
+    if (use === 'CATALOG')
+      throw new ServiceError(400, 'El catálogo se carga desde Excel o CSV, no desde una página.');
+    const raw = body as { url?: unknown; refreshHours?: unknown };
+    let url: URL;
+    try {
+      url = checkWebUrl(typeof raw.url === 'string' ? raw.url : '');
+    } catch (err) {
+      if (err instanceof WebFetchError) throw new ServiceError(400, `url: ${err.message}`);
+      throw err;
+    }
+    const refreshHours =
+      raw.refreshHours === undefined || raw.refreshHours === null ? null : Number(raw.refreshHours);
+    if (
+      refreshHours !== null &&
+      (!Number.isInteger(refreshHours) || refreshHours < 1 || refreshHours > 24 * 30)
+    ) {
+      throw new ServiceError(
+        400,
+        'refreshHours: entre 1 y 720 horas, o vacío para actualizar a mano',
+      );
+    }
+    await this.assertNotEvaluating(id);
+    url.hash = '';
+    const contentHash = sha256(`web:${url.toString()}`);
+    await this.assertNotDuplicate(id, contentHash, 'Esa página ya está en este Brain.');
+    const name = `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`.slice(
+      0,
+      KNOWLEDGE_LIMITS.sourceNameMax,
+    );
+    const source = await this.prisma.knowledgeSource.create({
+      data: {
+        brainId: id,
+        kind: 'WEB',
+        use,
+        name,
+        url: url.toString(),
+        refreshHours,
+        sizeBytes: 0,
+        contentHash,
+        createdBy: actor,
+        ...(metadata ? { metadata } : {}),
+      },
+      select: SOURCE_SELECT,
+    });
+    await this.audit(actor, 'BRAIN_SOURCE_ADDED', `${b.name} · ${url.toString()}`, {
+      brainId: id,
+      sourceId: source.id,
+      kind: 'WEB',
+      use,
+      refreshHours,
+    });
+    await this.enqueueIngest(source.id, actor);
+    return withChunks(source);
   }
 
   async removeSource(actor: string, id: string, sourceId: string) {
@@ -272,6 +402,7 @@ export class KnowledgeService {
     return { draftVersion: draft.version, diff: draft.diff };
   }
 
+  /** Reprocesar (y, en páginas web, volver a descargar ahora). */
   async reprocess(actor: string, id: string, sourceId: string) {
     const b = await this.brain(id);
     await this.assertNotEvaluating(id);
@@ -297,30 +428,39 @@ export class KnowledgeService {
     return vs.map(summary);
   }
 
-  /** Vista previa del catálogo de una versión, opcionalmente filtrada por proceso. */
+  /** Vista previa de una versión: catálogo (filtrable por proceso) y fragmentos de documentos. */
   async version(id: string, version: number, processRaw?: unknown) {
     const v = await this.versionRow(id, version);
     const process = processRaw ? this.process(processRaw) : undefined;
     const records = process
       ? await versionRecordsFor(this.prisma, v.id, process)
       : await versionRecords(this.prisma, v.id);
-    return { ...summary(v), records: records.map((r) => ({ ...r, title: planTitle(r) })) };
+    const chunks = await versionChunks(this.prisma, v.id);
+    return {
+      ...summary(v),
+      records: records.map((r) => ({ ...r, title: planTitle(r) })),
+      documents: groupChunks(chunks),
+    };
   }
 
   /** Diferencias de la versión contra otra (`against`) o contra la publicada. */
   async diff(id: string, version: number, againstRaw?: unknown) {
     const v = await this.versionRow(id, version);
-    const records = await versionRecords(this.prisma, v.id);
+    const content = await versionContent(this.prisma, v.id);
     if (againstRaw !== undefined && againstRaw !== '' && againstRaw !== 'published') {
       const other = await this.versionRow(id, Number(againstRaw));
-      const before = await versionRecords(this.prisma, other.id);
-      return { version, against: other.version, diff: diffCatalogs(before, records) };
+      return {
+        version,
+        against: other.version,
+        diff: diffContent(await versionContent(this.prisma, other.id), content),
+      };
     }
-    const { diff, publishedVersion: pub } = await diffAgainstPublished(this.prisma, id, records);
+    const { diff, publishedVersion: pub } = await diffAgainstPublished(this.prisma, id, content);
     return { version, against: pub, diff };
   }
 
-  async publish(actor: string, id: string) {
+  async publish(me: KnowledgeActor, id: string) {
+    this.assertPublisher(me);
     const blocker = this.opts.publishBlocker();
     if (blocker) throw new ServiceError(409, blocker);
     const b = await this.brain(id);
@@ -332,9 +472,12 @@ export class KnowledgeService {
     if (working?.status !== 'DRAFT') {
       throw new ServiceError(409, 'No hay un borrador para publicar.');
     }
-    const records = await versionRecords(this.prisma, working.id);
-    const { diff } = await diffAgainstPublished(this.prisma, id, records);
-    if (isEmptyDiff(diff))
+    const { diff } = await diffAgainstPublished(
+      this.prisma,
+      id,
+      await versionContent(this.prisma, working.id),
+    );
+    if (isEmptyBrainDiff(diff))
       throw new ServiceError(409, 'El borrador es igual a la versión publicada.');
     const r = await this.prisma.brainVersion.updateMany({
       where: { id: working.id, status: 'DRAFT' },
@@ -346,7 +489,11 @@ export class KnowledgeService {
     });
     if (!r.count) throw new ServiceError(409, 'El borrador cambió: vuelve a intentarlo.');
     try {
-      await this.queues.evaluate({ versionId: working.id, requestedBy: actor, kind: 'brain' });
+      await this.queues.evaluate({
+        versionId: working.id,
+        requestedBy: me.username,
+        kind: 'brain',
+      });
     } catch {
       await this.prisma.brainVersion.update({
         where: { id: working.id },
@@ -354,7 +501,7 @@ export class KnowledgeService {
       });
       throw new ServiceError(503, 'No se pudo encolar la evaluación (Redis no disponible).');
     }
-    await this.audit(actor, 'BRAIN_PUBLISH_REQUESTED', `${b.name} v${working.version}`, {
+    await this.audit(me.username, 'BRAIN_PUBLISH_REQUESTED', `${b.name} v${working.version}`, {
       brainId: id,
       version: working.version,
       diff,
@@ -363,13 +510,16 @@ export class KnowledgeService {
   }
 
   /** Revertir: borrador copia de una versión anterior (se publica con la suite, como todo). */
-  async restore(actor: string, id: string, version: number) {
+  async restore(me: KnowledgeActor, id: string, version: number) {
+    this.assertPublisher(me);
     const b = await this.brain(id);
     const src = await this.versionRow(id, version);
-    const records = await versionRecords(this.prisma, src.id);
-    const draft = await this.knowledge(replaceDraft(this.prisma, id, records, actor, src.version));
+    const content = await versionContent(this.prisma, src.id);
+    const draft = await this.knowledge(
+      replaceDraft(this.prisma, id, content, me.username, src.version),
+    );
     if (draft.version === null) throw new ServiceError(409, 'Esa versión es igual a la publicada.');
-    await this.audit(actor, 'BRAIN_RESTORED', `${b.name} v${src.version}→v${draft.version}`, {
+    await this.audit(me.username, 'BRAIN_RESTORED', `${b.name} v${src.version}→v${draft.version}`, {
       brainId: id,
       from: src.version,
       draftVersion: draft.version,
@@ -380,13 +530,14 @@ export class KnowledgeService {
 
   // ---------- agentes ----------
 
-  async connect(actor: string, agentKey: string, brainId: string) {
+  async connect(me: KnowledgeActor, agentKey: string, brainId: string) {
+    this.assertPublisher(me);
     this.agentKey(agentKey);
     const b = await this.brain(brainId);
+    if (!(await publishedVersion(this.prisma, brainId))) {
+      throw new ServiceError(409, 'Publica el Brain antes de conectarlo a un agente.');
+    }
     if (await isCatalogBrain(this.prisma, brainId)) {
-      if (!(await publishedVersion(this.prisma, brainId))) {
-        throw new ServiceError(409, 'Publica el catálogo antes de conectarlo a un agente.');
-      }
       const others = await this.prisma.agentBrain.findMany({
         where: { agentKey, brainId: { not: brainId } },
         select: { brainId: true, brain: { select: { name: true } } },
@@ -402,19 +553,26 @@ export class KnowledgeService {
     }
     await this.prisma.agentBrain.upsert({
       where: { agentKey_brainId: { agentKey, brainId } },
-      create: { agentKey, brainId, connectedBy: actor },
+      create: { agentKey, brainId, connectedBy: me.username },
       update: {},
     });
-    await this.audit(actor, 'BRAIN_CONNECTED', `${b.name} → ${agentKey}`, { brainId, agentKey });
+    await this.audit(me.username, 'BRAIN_CONNECTED', `${b.name} → ${agentKey}`, {
+      brainId,
+      agentKey,
+    });
     return { ok: true as const };
   }
 
-  async disconnect(actor: string, agentKey: string, brainId: string) {
+  async disconnect(me: KnowledgeActor, agentKey: string, brainId: string) {
+    this.assertPublisher(me);
     this.agentKey(agentKey);
     const b = await this.brain(brainId);
     const r = await this.prisma.agentBrain.deleteMany({ where: { agentKey, brainId } });
     if (!r.count) throw new ServiceError(404, 'El Brain no está conectado a ese agente.');
-    await this.audit(actor, 'BRAIN_DISCONNECTED', `${b.name} → ${agentKey}`, { brainId, agentKey });
+    await this.audit(me.username, 'BRAIN_DISCONNECTED', `${b.name} → ${agentKey}`, {
+      brainId,
+      agentKey,
+    });
     return { ok: true as const };
   }
 
@@ -434,27 +592,51 @@ export class KnowledgeService {
   // ---------- prueba ----------
 
   /**
-   * Lo que devolvería `consultar_planes(proceso)` con la versión publicada (o el borrador):
-   * el mismo filtro exacto y la misma verificación que usa el motor.
+   * Lo que recibiría el agente, con la versión publicada (o el borrador):
+   * - `{ process }` → `consultar_planes(proceso)`: mismo filtro exacto y misma verificación.
+   * - `{ question, process? }` → contexto completo + fragmentos de la búsqueda híbrida.
    */
   async test(id: string, body: unknown) {
     const b = (body ?? {}) as Record<string, unknown>;
-    const process = this.process(b.process);
+    const brain = await this.brain(id);
     const target =
       b.version === 'draft'
         ? await workingVersion(this.prisma, id)
         : await publishedVersion(this.prisma, id);
-    await this.brain(id);
     if (!target) {
       throw new ServiceError(
         404,
         b.version === 'draft' ? 'No hay borrador.' : 'El Brain no tiene versión publicada.',
       );
     }
+    if (typeof b.question === 'string') {
+      const question = b.question.trim().slice(0, 2_000);
+      if (!question) throw new ServiceError(400, 'question: escribe una pregunta');
+      if (!this.opts.retriever)
+        throw new ServiceError(503, 'La prueba de búsqueda no está disponible.');
+      const process = b.process ? this.process(b.process) : undefined;
+      const ctx = await this.opts.retriever.forTurn(
+        [{ brainId: id, brainName: brain.name, versionId: target.id, version: target.version }],
+        { query: question, process },
+      );
+      return {
+        version: target.version,
+        mode: 'documents' as const,
+        question,
+        blocks: ctx.blocks.map((x) => ({
+          kind: x.kind,
+          chunkId: x.chunkId,
+          sourceName: x.sourceName,
+          text: x.text,
+        })),
+      };
+    }
+    const process = this.process(b.process);
     const records = await versionRecordsFor(this.prisma, target.id, process);
     const result = checkPlanQuery(records, process);
     return {
       version: target.version,
+      mode: 'catalog' as const,
       status: result.status,
       process,
       plans: result.plans.map((r) => ({ ...r, title: planTitle(r) })),
@@ -484,6 +666,40 @@ export class KnowledgeService {
   }
 
   // ---------- internos ----------
+
+  private assertPublisher(me: KnowledgeActor) {
+    if (me.role !== 'ADMIN' || !me.knowledgePublisher) throw new ServiceError(403, PUBLISH_REASON);
+  }
+
+  private maxFileBytes() {
+    return this.opts.maxFileBytes ?? 10 * 1024 * 1024;
+  }
+
+  private sourceOptions(body: unknown): {
+    use: KnowledgeUse;
+    metadata: { proceso: SaleProcess } | null;
+  } {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const use = (b.use ?? 'CATALOG') as KnowledgeUse;
+    if (!USES.includes(use)) throw new ServiceError(400, `use: uno de ${USES.join(', ')}`);
+    const proceso =
+      b.proceso === undefined || b.proceso === null || b.proceso === ''
+        ? null
+        : this.process(b.proceso);
+    if (proceso && use === 'CATALOG')
+      throw new ServiceError(400, 'proceso: el catálogo ya trae el proceso en cada fila');
+    return { use, metadata: proceso ? { proceso } : null };
+  }
+
+  private async assertNotDuplicate(brainId: string, contentHash: string, message: string) {
+    if (
+      await this.prisma.knowledgeSource.findUnique({
+        where: { brainId_contentHash: { brainId, contentHash } },
+      })
+    ) {
+      throw new ServiceError(409, message);
+    }
+  }
 
   private async enqueueIngest(sourceId: string, actor: string) {
     try {
@@ -603,13 +819,14 @@ type VersionRow = {
   updatedAt: Date;
   publishedBy: string | null;
   publishedAt: Date | null;
-  _count: { records: number };
+  _count: { records: number; chunks: number };
 };
 
 type VersionSummary = Omit<VersionRow, '_count' | 'diff'> & {
   records: number;
-  diff: CatalogDiff | null;
-  changes: { added: number; removed: number; changed: number } | null;
+  chunks: number;
+  diff: BrainDiff | null;
+  changes: { added: number; removed: number; changed: number; documents: number } | null;
 };
 
 function summary(v: VersionRow): VersionSummary;
@@ -617,15 +834,44 @@ function summary(v: VersionRow | undefined): VersionSummary | null;
 function summary(v: VersionRow | undefined): VersionSummary | null {
   if (!v) return null;
   const { _count, diff, ...rest } = v;
-  const d = (diff ?? null) as CatalogDiff | null;
+  const d = (diff ?? null) as BrainDiff | null;
+  const docs = d?.documents;
   return {
     ...rest,
     records: _count.records,
+    chunks: _count.chunks,
     diff: d,
     changes: d
-      ? { added: d.added.length, removed: d.removed.length, changed: d.changed.length }
+      ? {
+          added: d.added.length,
+          removed: d.removed.length,
+          changed: d.changed.length,
+          documents: docs ? docs.added.length + docs.removed.length + docs.changed.length : 0,
+        }
       : null,
   };
+}
+
+function withChunks<T extends { _count: { chunks: number } }>(s: T) {
+  const { _count, ...rest } = s;
+  return { ...rest, chunks: _count.chunks };
+}
+
+/** Fragmentos agrupados por fuente para la vista previa. */
+function groupChunks(chunks: { use: string; sourceName: string; text: string; tokens: number }[]) {
+  const m = new Map<
+    string,
+    { source: string; use: string; chunks: number; tokens: number; preview: string[] }
+  >();
+  for (const c of chunks) {
+    const key = `${c.use}:${c.sourceName}`;
+    const g = m.get(key) ?? { source: c.sourceName, use: c.use, chunks: 0, tokens: 0, preview: [] };
+    g.chunks++;
+    g.tokens += c.tokens;
+    if (g.preview.length < 3) g.preview.push(c.text.slice(0, 400));
+    m.set(key, g);
+  }
+  return [...m.values()];
 }
 
 /** Solo el nombre base, sin rutas ni caracteres de control. */

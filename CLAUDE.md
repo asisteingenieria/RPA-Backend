@@ -125,7 +125,7 @@ abaya-rpa/
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
 - [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
 - [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; falta despliegue y piloto con Claro
-- [~] v1.9 Brains: K1 catálogo (backend) hecho; K2 panel, K3 contexto completo, K4 RAG y K5 web pendientes
+- [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
 
 ## Abaya simulado
 
@@ -145,6 +145,9 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   el motor usa la versión PUBLICADA (`PublishedBrainCatalog`), la consulta por proceso la hace el
   código, publicar un catálogo pasa por la suite (cola `abaya.evals`, `kind: 'brain'`) y cada turno
   deja `KnowledgeUsage`. API en `/admin/knowledge/*`; ingesta por la cola `abaya.knowledge-ingest`.
+  Documentos: contexto completo y búsqueda híbrida (`PgHybridSearch`, embeddings por
+  `EMBEDDINGS_PROVIDER`), páginas web con `SafeWebFetcher` (SSRF). Publicar exige ADMIN con
+  `knowledgePublisher`.
 - Configuración del agente en el panel (v1.8, sección 6.3.8): guion en Markdown + ajustes en
   `AgentConfigVersion`; reglas del sistema, revisión y armado del prompt en
   `packages/domain/src/agent-config.ts`. Publicar corre la suite en el worker (cola

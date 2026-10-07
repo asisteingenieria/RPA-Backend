@@ -10,11 +10,19 @@ import {
   type SaleProcess,
 } from '../domain/catalog.js';
 import type { BrainVersionPublishedPayload } from '../domain/brain.js';
+import {
+  diffDocuments,
+  isEmptyDocumentDiff,
+  type DocumentDiff,
+  type DocumentUse,
+  type VersionChunkData,
+} from '../domain/documents.js';
 
 /**
- * Versiones del catálogo de un Brain (D-001 D3): cada cambio de fuentes arma un BORRADOR con
- * los registros de las fuentes listas; publicar lo deja como la única versión PUBLISHED.
- * Lo usan la API (quitar fuente, restaurar, publicar) y el worker (ingesta, evaluación).
+ * Versiones de un Brain (D-001 D3): cada cambio de fuentes arma un BORRADOR con lo que dan las
+ * fuentes listas — registros del catálogo y fragmentos de documentos —; publicar lo deja como la
+ * única versión PUBLISHED. Lo usan la API (quitar fuente, restaurar, publicar) y el worker
+ * (ingesta, evaluación).
  */
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -26,6 +34,26 @@ export class KnowledgeError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Lo que contiene una versión. */
+export interface VersionContent {
+  records: CatalogRecordData[];
+  chunks: VersionChunkData[];
+}
+
+/** Diferencias de una versión: catálogo (registro por registro) y documentos (por fuente). */
+export type BrainDiff = CatalogDiff & { documents: DocumentDiff };
+
+export function diffContent(before: VersionContent, after: VersionContent): BrainDiff {
+  return {
+    ...diffCatalogs(before.records, after.records),
+    documents: diffDocuments(before.chunks, after.chunks),
+  };
+}
+
+export function isEmptyBrainDiff(d: BrainDiff): boolean {
+  return isEmptyDiff(d) && isEmptyDocumentDiff(d.documents);
 }
 
 const RECORD_SELECT = {
@@ -96,6 +124,37 @@ export async function versionRecordsFor(
   return rows.map(toStoredRecord);
 }
 
+export interface StoredChunk extends VersionChunkData {
+  id: string;
+}
+
+export async function versionChunks(db: Db, versionId: string): Promise<StoredChunk[]> {
+  const rows = await db.versionChunk.findMany({
+    where: { brainVersionId: versionId },
+    orderBy: [{ sourceName: 'asc' }, { ord: 'asc' }],
+  });
+  return rows.map((c) => ({
+    id: c.id,
+    use: c.use as DocumentUse,
+    sourceName: c.sourceName,
+    sourceHash: c.sourceHash,
+    ord: c.ord,
+    text: c.text,
+    tokens: c.tokens,
+    embedding: c.embedding,
+    embeddingModel: c.embeddingModel,
+    metadata: (c.metadata ?? null) as Record<string, string> | null,
+  }));
+}
+
+export async function versionContent(db: Db, versionId: string): Promise<VersionContent> {
+  const [records, chunks] = await Promise.all([
+    versionRecords(db, versionId),
+    versionChunks(db, versionId),
+  ]);
+  return { records, chunks };
+}
+
 export function publishedVersion(db: Db, brainId: string) {
   return db.brainVersion.findFirst({
     where: { brainId, status: 'PUBLISHED' },
@@ -113,32 +172,60 @@ export async function workingVersion(db: Db, brainId: string) {
   return latest;
 }
 
-function recordRows(versionId: string, records: CatalogRecordData[]) {
-  return records.map((r) => ({ ...pickData(r), brainVersionId: versionId, hash: recordHash(r) }));
-}
-
-/** Diferencias de una versión contra la publicada (sin publicada = todo agregado). */
+/** Diferencias de un contenido contra la versión publicada (sin publicada = todo agregado). */
 export async function diffAgainstPublished(
   db: Db,
   brainId: string,
-  records: CatalogRecordData[],
-): Promise<{ diff: CatalogDiff; publishedVersion: number | null }> {
+  content: VersionContent,
+): Promise<{ diff: BrainDiff; publishedVersion: number | null }> {
   const pub = await publishedVersion(db, brainId);
-  const before = pub ? await versionRecords(db, pub.id) : [];
-  return { diff: diffCatalogs(before, records), publishedVersion: pub?.version ?? null };
+  const before = pub ? await versionContent(db, pub.id) : { records: [], chunks: [] };
+  return { diff: diffContent(before, content), publishedVersion: pub?.version ?? null };
+}
+
+async function writeContent(
+  tx: Prisma.TransactionClient,
+  versionId: string,
+  content: VersionContent,
+) {
+  if (content.records.length) {
+    await tx.catalogRecord.createMany({
+      data: content.records.map((r) => ({
+        ...pickData(r),
+        brainVersionId: versionId,
+        hash: recordHash(r),
+      })),
+    });
+  }
+  if (content.chunks.length) {
+    await tx.versionChunk.createMany({
+      data: content.chunks.map((c) => ({
+        brainVersionId: versionId,
+        use: c.use,
+        sourceName: c.sourceName,
+        sourceHash: c.sourceHash,
+        ord: c.ord,
+        text: c.text,
+        tokens: c.tokens,
+        embedding: c.embedding,
+        embeddingModel: c.embeddingModel,
+        metadata: (c.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      })),
+    });
+  }
 }
 
 /**
- * Deja como borrador exactamente estos registros. Si son iguales a los publicados, no hay
- * borrador (se borra el que hubiera). Con una versión en evaluación no se toca nada.
+ * Deja como borrador exactamente este contenido. Si es igual al publicado, no hay borrador (se
+ * borra el que hubiera). Con una versión en evaluación no se toca nada.
  */
 export async function replaceDraft(
   prisma: PrismaClient,
   brainId: string,
-  records: CatalogRecordData[],
+  content: VersionContent,
   actor: string,
   basedOn?: number,
-): Promise<{ version: number | null; diff: CatalogDiff }> {
+): Promise<{ version: number | null; diff: BrainDiff }> {
   return withSerializableRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -149,9 +236,9 @@ export async function replaceDraft(
         const { diff, publishedVersion: pubVersion } = await diffAgainstPublished(
           tx,
           brainId,
-          records,
+          content,
         );
-        if (isEmptyDiff(diff)) {
+        if (isEmptyBrainDiff(diff)) {
           if (working?.status === 'DRAFT') {
             await tx.brainVersion.delete({ where: { id: working.id } });
           }
@@ -161,6 +248,7 @@ export async function replaceDraft(
         let version: number;
         if (working?.status === 'DRAFT') {
           await tx.catalogRecord.deleteMany({ where: { brainVersionId: working.id } });
+          await tx.versionChunk.deleteMany({ where: { brainVersionId: working.id } });
           await tx.brainVersion.update({
             where: { id: working.id },
             data: {
@@ -189,26 +277,56 @@ export async function replaceDraft(
           });
           versionId = created.id;
         }
-        if (records.length) {
-          await tx.catalogRecord.createMany({ data: recordRows(versionId, records) });
-        }
+        await writeContent(tx, versionId, content);
         return { version, diff };
       },
-      { isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable', timeout: 30_000 },
     ),
   );
 }
 
-/** Registros de las fuentes de catálogo listas del Brain (base del borrador). */
-export async function recordsFromSources(db: Db, brainId: string): Promise<CatalogRecordData[]> {
+/** Contenido de las fuentes listas del Brain (base del borrador). */
+export async function contentFromSources(db: Db, brainId: string): Promise<VersionContent> {
   const sources = await db.knowledgeSource.findMany({
-    where: { brainId, use: 'CATALOG', status: 'READY' },
+    where: { brainId, status: 'READY' },
     orderBy: { createdAt: 'asc' },
-    select: { parsed: true },
+    select: {
+      use: true,
+      name: true,
+      contentHash: true,
+      lastContentHash: true,
+      metadata: true,
+      parsed: true,
+      chunks: { orderBy: { ord: 'asc' } },
+    },
   });
-  return sources.flatMap((s) =>
-    Array.isArray(s.parsed) ? (s.parsed as unknown as CatalogRecordData[]) : [],
-  );
+  const records: CatalogRecordData[] = [];
+  const chunks: VersionChunkData[] = [];
+  for (const s of sources) {
+    if (s.use === 'CATALOG') {
+      if (Array.isArray(s.parsed)) records.push(...(s.parsed as unknown as CatalogRecordData[]));
+      continue;
+    }
+    for (const c of s.chunks) {
+      chunks.push({
+        use: s.use,
+        sourceName: s.name,
+        sourceHash: s.lastContentHash ?? s.contentHash,
+        ord: c.ord,
+        text: c.text,
+        tokens: c.tokens,
+        embedding: c.embedding,
+        embeddingModel: c.embeddingModel,
+        metadata: (s.metadata ?? null) as Record<string, string> | null,
+      });
+    }
+  }
+  return { records, chunks };
+}
+
+/** Registros del catálogo de las fuentes listas (compatibilidad con K1). */
+export async function recordsFromSources(db: Db, brainId: string): Promise<CatalogRecordData[]> {
+  return (await contentFromSources(db, brainId)).records;
 }
 
 /** Rearma el borrador a partir de las fuentes (después de agregar, quitar o reprocesar). */
@@ -217,8 +335,7 @@ export async function rebuildDraftFromSources(
   brainId: string,
   actor: string,
 ) {
-  const records = await recordsFromSources(prisma, brainId);
-  return replaceDraft(prisma, brainId, records, actor);
+  return replaceDraft(prisma, brainId, await contentFromSources(prisma, brainId), actor);
 }
 
 /**
@@ -237,8 +354,8 @@ export async function publishEvaluatedVersion(
           include: { brain: { select: { name: true } } },
         });
         if (v?.status !== 'EVALUATING') return false;
-        const records = await versionRecords(tx, v.id);
-        const { diff } = await diffAgainstPublished(tx, v.brainId, records);
+        const content = await versionContent(tx, v.id);
+        const { diff } = await diffAgainstPublished(tx, v.brainId, content);
         await tx.brainVersion.updateMany({
           where: { brainId: v.brainId, status: 'PUBLISHED' },
           data: { status: 'ARCHIVED' },
@@ -280,7 +397,7 @@ export async function publishEvaluatedVersion(
         });
         return true;
       },
-      { isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable', timeout: 30_000 },
     ),
   );
 }

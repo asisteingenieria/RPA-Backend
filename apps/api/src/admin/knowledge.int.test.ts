@@ -9,7 +9,10 @@ import {
   CatalogTableParser,
   createPublishedCatalog,
   ingestSource,
+  KnowledgeRetriever,
   PgBlobStore,
+  PgHybridSearch,
+  TextExtractor,
   publishEvaluatedVersion,
   type KnowledgeIngestJob,
 } from '@abaya/knowledge';
@@ -18,6 +21,7 @@ import { AdminAuthGuard } from './admin-auth.guard.js';
 import { AuthController, COOKIE_SECURE } from './auth.controller.js';
 import { KnowledgeController } from './knowledge.controller.js';
 import { KnowledgeService } from './knowledge.service.js';
+import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
 // API de Brains (v1.9, D-001) contra PostgreSQL real. La cola de ingesta se procesa en línea
@@ -45,14 +49,27 @@ beforeAll(async () => {
     blobs,
     {
       ingest: async (job: KnowledgeIngestJob) => {
-        await ingestSource({ prisma: db.prisma, blobs, parser: new CatalogTableParser() }, job);
+        await ingestSource(
+          {
+            prisma: db.prisma,
+            blobs,
+            parser: new CatalogTableParser(),
+            documents: new TextExtractor(),
+          },
+          job,
+        );
       },
       evaluate: async (job) => void evals.push(job),
     },
-    { publishBlocker: () => blocker },
+    {
+      publishBlocker: () => blocker,
+      retriever: new KnowledgeRetriever(db.prisma, new PgHybridSearch(db.prisma), null, {
+        topK: 3,
+      }),
+    },
   );
   @Module({
-    controllers: [AuthController, KnowledgeController],
+    controllers: [AuthController, KnowledgeController, UsersController],
     providers: [
       { provide: UsersService, useValue: users },
       { provide: KnowledgeService, useValue: knowledge },
@@ -99,8 +116,10 @@ function upload(brainId: string, name: string, content: string | Uint8Array, coo
   return call(`/admin/knowledge/brains/${brainId}/sources`, { method: 'POST', body: form }, cookie);
 }
 
-async function ready(username: string, role: 'ADMIN' | 'OPERADOR') {
+async function ready(username: string, role: 'ADMIN' | 'OPERADOR', publisher = role === 'ADMIN') {
   const { temporaryPassword } = await users.create('prueba', { username, role });
+  if (publisher)
+    await db.prisma.adminUser.update({ where: { username }, data: { knowledgePublisher: true } });
   const r = await post('/admin/auth/login', { username, password: temporaryPassword });
   const cookie = (r.headers.get('set-cookie') ?? '').split(';')[0]!;
   await post(
@@ -201,7 +220,9 @@ describe('Brains: API (v1.9)', () => {
     expect(fake.status).toBe(400);
     expect((await json(fake)).message).toContain('no es un .xlsx válido');
     expect((await upload(id, 'planes.pdf', '%PDF-1.4', admin)).status).toBe(400);
-    expect((await upload(id, 'grande.csv', 'x'.repeat(3 * 1024 * 1024), admin)).status).toBe(413);
+    const big = await upload(id, 'grande.csv', 'x'.repeat(3 * 1024 * 1024), admin);
+    expect(big.status).toBe(400);
+    expect((await json(big)).message).toContain('supera 2 MB');
     expect((await upload(id, 'a.csv', CSV(), admin)).status).toBe(201);
     const dup = await upload(id, 'copia.csv', CSV(), admin);
     expect(dup.status).toBe(409);
@@ -286,9 +307,162 @@ describe('Brains: API (v1.9)', () => {
     const t = await json(
       await post(`/admin/knowledge/brains/${id}/test`, { process: 'LINEA_NUEVA' }, admin),
     );
-    expect(t).toEqual({ version: 1, status: 'SIN_PLANES', process: 'LINEA_NUEVA', plans: [] });
+    expect(t).toEqual({
+      version: 1,
+      mode: 'catalog',
+      status: 'SIN_PLANES',
+      process: 'LINEA_NUEVA',
+      plans: [],
+    });
     expect(
       (await post(`/admin/knowledge/brains/${id}/test`, { process: 'PREPAGO' }, admin)).status,
     ).toBe(400);
+  });
+});
+
+describe('Brains: permiso, documentos y web (K3–K5)', () => {
+  it('un ADMIN sin «Publicar conocimiento» carga fuentes pero no publica, revierte ni conecta', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const sinPermiso = await ready('otro.admin', 'ADMIN', false);
+    const id = await brainWithPublished(admin);
+    await db.prisma.knowledgeSource.deleteMany();
+    expect((await upload(id, 'nuevo.csv', CSV('42900'), sinPermiso)).status).toBe(201);
+    const r = await post(`/admin/knowledge/brains/${id}/draft/publish`, {}, sinPermiso);
+    expect(r.status).toBe(403);
+    expect((await json(r)).message).toContain('Publicar conocimiento');
+    expect(
+      (await call(`/admin/knowledge/agents/default/brains/${id}`, { method: 'PUT' }, sinPermiso))
+        .status,
+    ).toBe(403);
+    expect(
+      (await post(`/admin/knowledge/brains/${id}/versions/1/restore`, {}, sinPermiso)).status,
+    ).toBe(403);
+  });
+
+  it('texto con contexto completo y búsqueda: fragmentos, vista previa y prueba de pregunta', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const id = (await json(await post('/admin/knowledge/brains', { name: 'Políticas' }, admin))).id;
+    const faq = [
+      '## Portabilidad',
+      'La portabilidad conserva tu número. Se solicita con la cédula del titular.',
+      '',
+      '## Cobertura',
+      'La cobertura 5G está disponible en las principales ciudades del país.',
+    ].join('\n');
+    const t = await post(
+      `/admin/knowledge/brains/${id}/sources/text`,
+      { name: 'Preguntas frecuentes', text: faq, use: 'SEARCH', proceso: 'PORTABILIDAD' },
+      admin,
+    );
+    expect(t.status).toBe(201);
+    const full = await post(
+      `/admin/knowledge/brains/${id}/sources/text`,
+      { name: 'Horario', text: 'Atendemos todos los días.', use: 'FULL_CONTEXT' },
+      admin,
+    );
+    expect(full.status).toBe(201);
+    expect(
+      (
+        await post(
+          `/admin/knowledge/brains/${id}/sources/text`,
+          { name: 'x', text: 'y', use: 'CATALOG' },
+          admin,
+        )
+      ).status,
+    ).toBe(400);
+
+    const brain = await json(await call(`/admin/knowledge/brains/${id}`, {}, admin));
+    expect(
+      brain.sources.map((s: { status: string; chunks: number }) => [s.status, s.chunks > 0]),
+    ).toEqual([
+      ['READY', true],
+      ['READY', true],
+    ]);
+    const draft = await json(await call(`/admin/knowledge/brains/${id}/versions/1`, {}, admin));
+    expect(draft.documents.map((d: { source: string; use: string }) => [d.source, d.use])).toEqual([
+      ['Horario', 'FULL_CONTEXT'],
+      ['Preguntas frecuentes', 'SEARCH'],
+    ]);
+    const ask = await json(
+      await post(
+        `/admin/knowledge/brains/${id}/test`,
+        { question: '¿Qué cobertura 5G tienen?', version: 'draft', process: 'PORTABILIDAD' },
+        admin,
+      ),
+    );
+    expect(ask.mode).toBe('documents');
+    expect(ask.blocks.map((b: { kind: string }) => b.kind)).toEqual(['FULL_CONTEXT', 'SEARCH']);
+    expect(ask.blocks[1].text).toContain('cobertura 5G');
+    // Filtro por metadatos: con otro proceso la fuente de portabilidad no aparece.
+    const other = await json(
+      await post(
+        `/admin/knowledge/brains/${id}/test`,
+        { question: '¿Qué cobertura 5G tienen?', version: 'draft', process: 'MIGRACION' },
+        admin,
+      ),
+    );
+    expect(other.blocks.map((b: { kind: string }) => b.kind)).toEqual(['FULL_CONTEXT']);
+  });
+
+  it('contexto completo demasiado grande → ERROR que sugiere Búsqueda', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const id = (await json(await post('/admin/knowledge/brains', { name: 'Grande' }, admin))).id;
+    await post(
+      `/admin/knowledge/brains/${id}/sources/text`,
+      { name: 'Manual', text: 'palabra '.repeat(2_000), use: 'FULL_CONTEXT' },
+      admin,
+    );
+    const brain = await json(await call(`/admin/knowledge/brains/${id}`, {}, admin));
+    expect(brain.sources[0]).toMatchObject({ status: 'ERROR' });
+    expect(brain.sources[0].errorReason).toContain('cárgalo con el uso Búsqueda');
+  });
+
+  it('páginas web: solo https público; la dirección interna se rechaza al agregarla', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const id = (await json(await post('/admin/knowledge/brains', { name: 'Web' }, admin))).id;
+    for (const url of [
+      'http://claro.com.co',
+      'https://127.0.0.1/',
+      'https://localhost/x',
+      'https://claro.com.co:8080/',
+    ]) {
+      const r = await post(
+        `/admin/knowledge/brains/${id}/sources/web`,
+        { url, use: 'SEARCH' },
+        admin,
+      );
+      expect(r.status, url).toBe(400);
+    }
+    const bad = await post(
+      `/admin/knowledge/brains/${id}/sources/web`,
+      { url: 'https://www.ejemplo.com/faq', use: 'SEARCH', refreshHours: 0 },
+      admin,
+    );
+    expect(bad.status).toBe(400);
+  });
+
+  it('OPERADOR no recibe el permiso; un ADMIN se lo da a otro ADMIN y queda auditado', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    await ready('ana.ops', 'OPERADOR');
+    await ready('otro.admin', 'ADMIN', false);
+    const ops = await db.prisma.adminUser.findUniqueOrThrow({ where: { username: 'ana.ops' } });
+    const other = await db.prisma.adminUser.findUniqueOrThrow({
+      where: { username: 'otro.admin' },
+    });
+    const r = await call(
+      `/admin/users/${ops.id}`,
+      { method: 'PATCH', body: JSON.stringify({ knowledgePublisher: true }) },
+      admin,
+    );
+    expect(r.status).toBe(409);
+    const ok = await call(
+      `/admin/users/${other.id}`,
+      { method: 'PATCH', body: JSON.stringify({ knowledgePublisher: true }) },
+      admin,
+    );
+    expect((await json(ok)).knowledgePublisher).toBe(true);
+    expect(
+      await db.prisma.adminAuditLog.count({ where: { action: 'USER_KNOWLEDGE_PUBLISHER_ON' } }),
+    ).toBe(1);
   });
 });

@@ -15,17 +15,27 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { KNOWLEDGE_LIMITS } from '@abaya/knowledge';
 import { AdminAuthGuard, Roles, type AdminRequest } from './admin-auth.guard.js';
 import { toHttp } from './http-errors.js';
-import { KnowledgeService, type UploadedFileInput } from './knowledge.service.js';
+import {
+  KnowledgeService,
+  type KnowledgeActor,
+  type UploadedFileInput,
+} from './knowledge.service.js';
 
-/** Escribir en los Brains es el permiso `publicarConocimiento`: hoy, solo ADMIN. */
-const PUBLICAR_CONOCIMIENTO = ['ADMIN'] as const;
+/** Tope del multipart; el servicio aplica el límite exacto de cada uso. */
+const UPLOAD_HARD_LIMIT = 50 * 1024 * 1024;
+
+const actor = (req: AdminRequest): KnowledgeActor => ({
+  username: req.adminUser,
+  role: req.me.role,
+  knowledgePublisher: req.me.knowledgePublisher,
+});
 
 /**
- * Brains (v1.9, docs/DECISIONS.md D-001). Ver y probar: ambos roles. Crear, cargar o quitar
- * fuentes, publicar (con la suite), revertir y conectar a agentes: `publicarConocimiento`.
+ * Brains (v1.9, docs/DECISIONS.md D-001). Ver y probar: ambos roles. Crear y cargar o quitar
+ * fuentes: ADMIN. Publicar (con la suite), revertir y conectar a agentes: permiso
+ * `publicarConocimiento` (ADMIN con la marca «Publicar conocimiento», se valida en el servicio).
  */
 @Controller('admin/knowledge')
 @UseGuards(AdminAuthGuard)
@@ -38,7 +48,7 @@ export class KnowledgeController {
   }
 
   @Post('brains')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   create(@Body() body: unknown, @Req() req: AdminRequest) {
     return toHttp(this.knowledge.create(req.adminUser, body));
   }
@@ -49,23 +59,23 @@ export class KnowledgeController {
   }
 
   @Patch('brains/:id')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   rename(@Param('id') id: string, @Body() body: unknown, @Req() req: AdminRequest) {
     return toHttp(this.knowledge.rename(req.adminUser, id, body));
   }
 
   @Delete('brains/:id')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   remove(@Param('id') id: string, @Req() req: AdminRequest) {
     return toHttp(this.knowledge.remove(req.adminUser, id));
   }
 
-  /** Multipart: campo `file` (Excel o CSV) y `use` (hoy solo CATALOG). */
+  /** Multipart: `file` + `use` (CATALOG | FULL_CONTEXT | SEARCH) + `proceso` opcional. */
   @Post('brains/:id/sources')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: KNOWLEDGE_LIMITS.catalogMaxBytes, files: 1, fields: 5 },
+      limits: { fileSize: UPLOAD_HARD_LIMIT, files: 1, fields: 5 },
       // Nombres de archivo con tildes llegan en UTF-8 desde el navegador.
       defParamCharset: 'utf8',
     }),
@@ -73,14 +83,28 @@ export class KnowledgeController {
   addSource(
     @Param('id') id: string,
     @UploadedFile() file: UploadedFileInput | undefined,
-    @Body() body: { use?: unknown },
+    @Body() body: unknown,
     @Req() req: AdminRequest,
   ) {
-    return toHttp(this.knowledge.addFile(req.adminUser, id, file, body?.use));
+    return toHttp(this.knowledge.addFile(req.adminUser, id, file, body));
+  }
+
+  /** `{ name, text, use: FULL_CONTEXT | SEARCH, proceso? }` */
+  @Post('brains/:id/sources/text')
+  @Roles(['ADMIN'])
+  addText(@Param('id') id: string, @Body() body: unknown, @Req() req: AdminRequest) {
+    return toHttp(this.knowledge.addText(req.adminUser, id, body));
+  }
+
+  /** `{ url, use: FULL_CONTEXT | SEARCH, refreshHours?, proceso? }` */
+  @Post('brains/:id/sources/web')
+  @Roles(['ADMIN'])
+  addWeb(@Param('id') id: string, @Body() body: unknown, @Req() req: AdminRequest) {
+    return toHttp(this.knowledge.addWeb(req.adminUser, id, body));
   }
 
   @Delete('brains/:id/sources/:sourceId')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   removeSource(
     @Param('id') id: string,
     @Param('sourceId') sourceId: string,
@@ -90,7 +114,7 @@ export class KnowledgeController {
   }
 
   @Post('brains/:id/sources/:sourceId/reprocess')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   reprocess(
     @Param('id') id: string,
     @Param('sourceId') sourceId: string,
@@ -104,7 +128,7 @@ export class KnowledgeController {
     return toHttp(this.knowledge.versions(id));
   }
 
-  /** Vista previa del catálogo de una versión (`?process=PORTABILIDAD`). */
+  /** Vista previa de una versión (`?process=PORTABILIDAD` filtra el catálogo). */
   @Get('brains/:id/versions/:version')
   version(
     @Param('id') id: string,
@@ -125,18 +149,18 @@ export class KnowledgeController {
   }
 
   @Post('brains/:id/draft/publish')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   publish(@Param('id') id: string, @Req() req: AdminRequest) {
-    return toHttp(this.knowledge.publish(req.adminUser, id));
+    return toHttp(this.knowledge.publish(actor(req), id));
   }
 
   @Post('brains/:id/versions/:version/restore')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   restore(@Param('id') id: string, @Param('version') version: string, @Req() req: AdminRequest) {
-    return toHttp(this.knowledge.restore(req.adminUser, id, Number(version)));
+    return toHttp(this.knowledge.restore(actor(req), id, Number(version)));
   }
 
-  /** Lo que devolvería `consultar_planes(proceso)`: `{ process, version?: 'draft' }`. */
+  /** `{ process }` → consultar_planes; `{ question, process? }` → documentos. `version: 'draft'` opcional. */
   @Post('brains/:id/test')
   test(@Param('id') id: string, @Body() body: unknown) {
     return toHttp(this.knowledge.test(id, body));
@@ -148,22 +172,22 @@ export class KnowledgeController {
   }
 
   @Put('agents/:agentKey/brains/:brainId')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   connect(
     @Param('agentKey') agentKey: string,
     @Param('brainId') brainId: string,
     @Req() req: AdminRequest,
   ) {
-    return toHttp(this.knowledge.connect(req.adminUser, agentKey, brainId));
+    return toHttp(this.knowledge.connect(actor(req), agentKey, brainId));
   }
 
   @Delete('agents/:agentKey/brains/:brainId')
-  @Roles([...PUBLICAR_CONOCIMIENTO])
+  @Roles(['ADMIN'])
   disconnect(
     @Param('agentKey') agentKey: string,
     @Param('brainId') brainId: string,
     @Req() req: AdminRequest,
   ) {
-    return toHttp(this.knowledge.disconnect(req.adminUser, agentKey, brainId));
+    return toHttp(this.knowledge.disconnect(actor(req), agentKey, brainId));
   }
 }

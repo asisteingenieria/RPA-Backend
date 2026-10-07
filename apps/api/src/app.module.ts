@@ -10,7 +10,13 @@ import { AgentConfigController } from './admin/agent-config.controller.js';
 import { AgentConfigService } from './admin/agent-config.service.js';
 import { KnowledgeController } from './admin/knowledge.controller.js';
 import { KnowledgeService } from './admin/knowledge.service.js';
-import { PgBlobStore, type KnowledgeIngestJob } from '@abaya/knowledge';
+import {
+  embeddingsFromConfig,
+  KnowledgeRetriever,
+  PgBlobStore,
+  PgHybridSearch,
+  type KnowledgeIngestJob,
+} from '@abaya/knowledge';
 import { QUEUES, type AgentTestJob, type AgentTestResult, type EvalJob } from '@abaya/domain';
 import { Queue, QueueEvents } from 'bullmq';
 import { AuthController, COOKIE_SECURE } from './admin/auth.controller.js';
@@ -84,7 +90,7 @@ const ingestQueue = new Queue<KnowledgeIngestJob>(QUEUES.knowledgeIngest, {
 });
 // Brains (v1.9): fuentes cifradas en PostgreSQL, ingesta y publicación (con la suite) en el worker.
 // Mismo bloqueo de publicación que el agente (proveedor real y API key).
-const knowledge = new KnowledgeService(
+const knowledge: KnowledgeService = new KnowledgeService(
   prisma,
   new PgBlobStore(prisma, cipher),
   {
@@ -106,9 +112,22 @@ const knowledge = new KnowledgeService(
       });
     },
   },
-  { publishBlocker: () => agentConfig.publishBlocker() },
+  {
+    publishBlocker: (): string | null => agentConfig.publishBlocker(),
+    maxFileBytes: cfg.KNOWLEDGE_MAX_FILE_MB * 1024 * 1024,
+    // Prueba de búsqueda en el panel: mismo recuperador que usa el motor.
+    retriever: new KnowledgeRetriever(
+      prisma,
+      new PgHybridSearch(prisma),
+      embeddingsFromConfig(cfg),
+      {
+        topK: cfg.KNOWLEDGE_SEARCH_TOP_K,
+        fullContextBudget: cfg.KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS * 2,
+      },
+    ),
+  },
 );
-const agentConfig = new AgentConfigService(
+const agentConfig: AgentConfigService = new AgentConfigService(
   prisma,
   {
     provider: cfg.LLM_PROVIDER,

@@ -3,14 +3,21 @@
 
 export * from './domain/brain.js';
 export * from './domain/catalog.js';
+export * from './domain/documents.js';
 export * from './domain/injection.js';
 export * from './domain/ports.js';
 
 export * from './application/agent-catalog.js';
+export * from './application/agent-knowledge.js';
 export * from './application/bootstrap.js';
 export * from './application/catalog-versions.js';
 export * from './application/ingestion.js';
 
+export * from './infrastructure/document-parser.js';
+export * from './infrastructure/embeddings.js';
 export * from './infrastructure/file-detection.js';
+export * from './infrastructure/html-text.js';
 export * from './infrastructure/pg-blob-store.js';
+export * from './infrastructure/pg-search.js';
 export * from './infrastructure/table-parser.js';
+export * from './infrastructure/web-fetcher.js';

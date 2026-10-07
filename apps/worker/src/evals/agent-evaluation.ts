@@ -4,6 +4,7 @@ import { withSerializableRetry, type Prisma, type PrismaClient } from '@abaya/db
 import type { Logger } from '@abaya/logger';
 import { agentConfigFromRow } from '../catalog/agent-config.js';
 import { loadAgentCatalog } from '@abaya/knowledge';
+import type { TurnKnowledge } from '../engine/conversation-engine.js';
 import { gateFailures, loadCases, runSuite, summarize } from './suite.js';
 
 export const DEFAULT_CASES_DIR = fileURLToPath(
@@ -18,6 +19,8 @@ export interface AgentEvaluationDeps {
   llm: () => LlmPort;
   casesDir?: string;
   logger: Logger;
+  /** v1.9: documentos de los Brains publicados del agente. */
+  knowledge?: TurnKnowledge;
 }
 
 export type AgentEvaluationOutcome = 'PUBLISHED' | 'REJECTED' | 'SKIPPED';
@@ -71,7 +74,13 @@ export async function evaluateAgentVersion(
     if (!catalog) return reject(['no hay un catálogo publicado conectado al agente']);
     plans = catalog.records;
     const cases = loadCases(d.casesDir ?? DEFAULT_CASES_DIR);
-    results = await runSuite(cases, { provider: d.provider, llm: d.llm, plans, agent });
+    results = await runSuite(cases, {
+      provider: d.provider,
+      llm: d.llm,
+      plans,
+      agent,
+      ...(d.knowledge ? { knowledge: d.knowledge } : {}),
+    });
   } catch (err) {
     return reject([
       `la evaluación no pudo completarse (${err instanceof Error ? err.name : 'error'})`,

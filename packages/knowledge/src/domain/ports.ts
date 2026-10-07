@@ -7,7 +7,7 @@ import type { TableData } from './catalog.js';
  */
 
 /** Tipo REAL de un archivo (por su contenido, no por la extensión). */
-export type FileKind = 'xlsx' | 'csv' | 'pdf' | 'docx' | 'txt' | 'md';
+export type FileKind = 'xlsx' | 'csv' | 'pdf' | 'docx' | 'txt' | 'md' | 'html';
 
 export interface DetectedFile {
   kind: FileKind;
@@ -36,25 +36,33 @@ export interface BlobStore {
 
 /** Proveedor de embeddings intercambiable (K4). */
 export interface EmbeddingProvider {
+  /** `openai`, `voyage`… */
   readonly id: string;
-  readonly dimensions: number;
+  /** Modelo: los vectores solo se comparan con los del mismo modelo. */
+  readonly model: string;
   embed(texts: string[], purpose: 'document' | 'query'): Promise<number[][]>;
 }
 
-export interface VectorMatch {
+export interface SearchHit {
   chunkId: string;
+  brainVersionId: string;
+  sourceName: string;
+  text: string;
   score: number;
 }
 
-/** Búsqueda híbrida vector + texto completo (K4). */
+/** Búsqueda híbrida: texto completo de PostgreSQL en español + vectores (K4). */
 export interface VectorStore {
   search(input: {
-    brainVersionId: string;
+    versionIds: string[];
     query: string;
-    embedding: number[];
+    /** Vector de la consulta (null = solo texto completo). */
+    embedding: number[] | null;
+    embeddingModel: string | null;
     topK: number;
+    /** Filtro por metadatos de la fuente: el fragmento no tiene la clave o coincide. */
     filter?: Record<string, string>;
-  }): Promise<VectorMatch[]>;
+  }): Promise<SearchHit[]>;
 }
 
 /** Descarga de páginas web con protección SSRF (K5). */

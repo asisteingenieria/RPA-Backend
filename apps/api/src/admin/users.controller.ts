@@ -24,7 +24,7 @@ export class UsersController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() body: { role?: unknown; active?: unknown },
+    @Body() body: { role?: unknown; active?: unknown; knowledgePublisher?: unknown },
     @Req() req: AdminRequest,
   ) {
     return toHttp(this.users.update(req.me, id, body ?? {}));

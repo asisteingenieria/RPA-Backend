@@ -1,6 +1,6 @@
 # Decisiones de diseño
 
-## D-001 · Brains (bases de conocimiento) · APROBADA — K1 implementada
+## D-001 · Brains (bases de conocimiento) · APROBADA — K1 a K5 implementadas
 
 Fecha: 2026-10-07 · Estado: **aprobada**; fase K1 (catálogo, backend) implementada · Afecta: `apps/worker`,
 `apps/api`, `packages/db`, `packages/domain`, panel (`interfazRPA`).
@@ -304,9 +304,13 @@ scheduler existente.
 
 1. Archivos cifrados en PostgreSQL (`KnowledgeBlob`, `PgBlobStore`); S3 queda como otro
    adaptador de `BlobStore` cuando haya bucket.
-2. pgvector: sigue abierta, solo bloquea K4.
-3. Publicar = permiso `publicarConocimiento`, hoy asignado a `ADMIN` (constante en el
-   controlador). Separarlo en una marca por usuario queda para cuando se pida.
+2. pgvector: no está instalado. K4 se implementó con el patrón que documenta pgvector
+   (vectores en `double precision[]`, consulta con `::vector`): si la extensión existe, el orden
+   por coseno se hace en SQL (`<=>`); si no, en el proceso. No hay que migrar al instalarla; un
+   índice HNSW por modelo se agrega después si el volumen lo pide.
+3. Publicar = permiso `publicarConocimiento`: rol `ADMIN` + marca `AdminUser.knowledgePublisher`
+   (se asigna en Usuarios, queda auditado). La migración se la da a los ADMIN existentes; los
+   nuevos ADMIN la reciben solo si otro ADMIN se la asigna. Crear Brains y cargar fuentes: ADMIN.
 4. Columna `Nombre` **opcional**; sin ella la ficha usa "Plan {ID}". Vigencia = desde que se
    publica hasta que se reemplaza (no hay columnas de vigencia).
 5. `consultar_planes` es una consulta del código (D1).
@@ -324,6 +328,38 @@ scheduler existente.
 - Pendiente: K2 (pantallas del panel en `interfazRPA`); correr la suite con el proveedor real
   (la regla 8 nueva cambia el prompt del sistema: regla 13); eliminar la tabla `Plan` en una
   migración posterior; el Excel oficial de Claro.
+
+### 10.b K3–K5 (implementadas)
+
+- **K3 contexto completo**: fuentes de texto (editor del panel), TXT y MD (y PDF/DOCX); límite
+  `KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS` (2 000 por defecto; por encima la fuente queda en ERROR y se
+  sugiere Búsqueda). Van al modelo dentro de `<documento brain version fuente>`, escapadas.
+- **K4 búsqueda**: fragmentación por párrafos (~900 caracteres, solape 150), `SourceChunk` →
+  `VersionChunk` congelado por versión, búsqueda híbrida `to_tsvector('spanish')` + vectores con
+  fusión RRF, filtro por metadato `proceso` de la fuente, `KNOWLEDGE_SEARCH_TOP_K` (4).
+  Embeddings intercambiables: `EMBEDDINGS_PROVIDER=none|openai|voyage` (verificado contra la
+  referencia oficial de cada API). Sin proveedor: solo texto completo.
+- **Parsers**: `unpdf` (PDF.js) y `mammoth.extractRawText` (DOCX). `mammoth` arrastra
+  `argparse` → `sprintf-js` (GHSA-hp3w-g68c-fv3c, sin versión corregida); solo lo carga su
+  comando `bin/mammoth`, no la API que usamos: riesgo aceptado y anotado.
+- **K5 web**: `SafeWebFetcher` (https y puerto 443; resolución DNS validada contra rangos
+  privados, loopback, link-local, CGNAT, multicast y metadatos de nube; la conexión usa la IP ya
+  validada; redirecciones re-validadas, máx. 3; 2 MB; 15 s; solo HTML/texto) y extracción del
+  contenido principal sin dependencias. Actualización manual (Reprocesar) o cada N horas
+  (`refreshHours`, revisión cada 10 min en el worker).
+- **Motor**: `TurnKnowledge` por turno (si falla, el turno sigue sin documentos); los validadores
+  siguen frenando cifras y promesas aunque un documento las traiga; `KnowledgeUsage` con
+  `FULL_CONTEXT`/`SEARCH` y los ids de fragmentos.
+- **Evaluación**: publicar un Brain de documentos corre la suite con el agente publicado, el
+  catálogo publicado y los documentos del borrador.
+
+### 10.c Lo que sigue pendiente (no depende del código)
+
+- La API key del LLM real para correr la suite (regla 13) — y, si se quiere búsqueda semántica,
+  la del proveedor de embeddings.
+- El Excel oficial de Claro y la aprobación del texto de la ficha.
+- Varios agentes: el modelo lo admite (`AgentBrain.agentKey`), pero hoy existe un solo agente.
+- Eliminar la tabla `Plan` cuando todos los ambientes hayan pasado por `bootstrapLegacyCatalog`.
 
 ### 11. Preguntas que quedaron abiertas
 
