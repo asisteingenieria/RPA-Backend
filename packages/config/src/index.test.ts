@@ -37,4 +37,28 @@ describe('loadConfig', () => {
       loadConfig({ ...valid, NODE_ENV: 'production', LLM_PROVIDER: 'simulado' }),
     ).toThrow(/producción/);
   });
+
+  it('cookie del panel: Secure por defecto y obligatoria en producción', () => {
+    expect(loadConfig(valid).ADMIN_COOKIE_SECURE).toBe(true);
+    expect(loadConfig({ ...valid, ADMIN_COOKIE_SECURE: 'false' }).ADMIN_COOKIE_SECURE).toBe(false);
+    expect(() =>
+      loadConfig({ ...valid, NODE_ENV: 'production', ADMIN_COOKIE_SECURE: 'false' }),
+    ).toThrow(/ADMIN_COOKIE_SECURE/);
+  });
+
+  it('capacidad por robot (v1.5): valores por defecto y respaldo de LLM opcional', () => {
+    expect(loadConfig(valid)).toMatchObject({
+      MAX_CHATS_PER_ROBOT: 3,
+      RESPONSE_P95_ALERT_MS: 20_000,
+      LLM_TIMEOUT_MS: 8_000,
+      BROWSER_RECYCLE_HOURS: 6,
+    });
+    expect(
+      loadConfig({ ...valid, LLM_FALLBACK_PROVIDER: '' }).LLM_FALLBACK_PROVIDER,
+    ).toBeUndefined();
+    expect(loadConfig({ ...valid, LLM_FALLBACK_PROVIDER: 'openai' }).LLM_FALLBACK_PROVIDER).toBe(
+      'openai',
+    );
+    expect(() => loadConfig({ ...valid, LLM_FALLBACK_PROVIDER: 'otro' })).toThrow();
+  });
 });

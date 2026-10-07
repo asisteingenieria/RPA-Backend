@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@abaya/db';
+import { openChatsByRobot, responseTimeByRobot, type PrismaClient } from '@abaya/db';
 import type { AlertPort, AlertSeverity } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 
@@ -127,8 +127,55 @@ export class AlertMonitor {
 const minutesAgo = (now: Date, m: number) => new Date(now.getTime() - m * 60_000);
 
 /** Condiciones de la sección 11 que se pueden evaluar desde la base de datos. */
-export function databaseChecks(prisma: PrismaClient): AlertCheck[] {
+export interface CapacityLimits {
+  /** Chats simultáneos por robot (v1.5). */
+  maxChatsPerRobot: number;
+  /** p95 del tiempo de respuesta en 15 min por encima del cual se alerta. */
+  responseP95AlertMs: number;
+}
+
+const DEFAULT_LIMITS: CapacityLimits = { maxChatsPerRobot: 3, responseP95AlertMs: 20_000 };
+
+export function databaseChecks(
+  prisma: PrismaClient,
+  limits: CapacityLimits = DEFAULT_LIMITS,
+): AlertCheck[] {
   return [
+    {
+      code: 'ROBOT_OVERLOADED',
+      severity: 'ALTA',
+      async evaluate() {
+        const open = await openChatsByRobot(prisma);
+        const robots = [...open]
+          .filter(([, n]) => n > limits.maxChatsPerRobot)
+          .map(([robotUser, chats]) => ({ robotUser, chats }));
+        return {
+          active: robots.length > 0,
+          detail: { max: limits.maxChatsPerRobot, robots },
+        };
+      },
+    },
+    {
+      code: 'RESPONSE_SLOW',
+      severity: 'ALTA',
+      async evaluate(now) {
+        // Con pocas muestras el p95 no es confiable: mínimo 5 respuestas en la ventana.
+        const rows = (await responseTimeByRobot(prisma, minutesAgo(now, 15))).filter(
+          (r) => r.samples >= 5 && (r.p95Ms ?? 0) > limits.responseP95AlertMs,
+        );
+        return {
+          active: rows.length > 0,
+          detail: {
+            thresholdMs: limits.responseP95AlertMs,
+            robots: rows.map((r) => ({
+              robotUser: r.robotUser,
+              p95Ms: r.p95Ms,
+              samples: r.samples,
+            })),
+          },
+        };
+      },
+    },
     {
       code: 'SESSION_DOWN',
       severity: 'CRITICA',
@@ -148,7 +195,20 @@ export function databaseChecks(prisma: PrismaClient): AlertCheck[] {
           where: { status: 'ACTIVE', lastHeartbeat: { lt: minutesAgo(now, 2) } },
           select: { robotUser: true },
         });
-        return { active: rows.length > 0, detail: { robots: rows.map((r) => r.robotUser) } };
+        // Un robot apagado en orden (STOPPED) o deshabilitado en el panel no es una caída.
+        const off = new Set(
+          (
+            await prisma.robot.findMany({
+              where: {
+                robotUser: { in: rows.map((r) => r.robotUser) },
+                OR: [{ state: 'STOPPED' }, { enabled: false }],
+              },
+              select: { robotUser: true },
+            })
+          ).map((r) => r.robotUser),
+        );
+        const lost = rows.map((r) => r.robotUser).filter((u) => !off.has(u));
+        return { active: lost.length > 0, detail: { robots: lost } };
       },
     },
     {

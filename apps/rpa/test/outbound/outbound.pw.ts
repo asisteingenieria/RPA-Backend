@@ -1,6 +1,5 @@
-import { randomBytes, randomUUID } from 'node:crypto';
-import { FieldCipher, verifyChain } from '@abaya/crypto';
-import { outboundAad } from '@abaya/domain';
+import { randomUUID } from 'node:crypto';
+import { verifyChain } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
@@ -18,7 +17,6 @@ import { MockAbayaServer } from '../mock-abaya/mock-server.js';
 
 // E2E de F4 (sección 6.4) contra el Abaya simulado.
 
-const cipher = new FieldCipher(randomBytes(32).toString('base64'));
 const silent = createLogger('e2e', { level: 'silent' });
 
 async function boot(mock: MockAbayaServer) {
@@ -48,7 +46,6 @@ async function boot(mock: MockAbayaServer) {
     guard: new ChatIdentityGuard(),
     actionLog,
     outbound,
-    cipher,
     alerts,
     logger: silent,
     verifyTimeoutMs: 2_000,
@@ -61,7 +58,7 @@ async function boot(mock: MockAbayaServer) {
       id,
       abayaChatId,
       idempotencyKey,
-      bodyEncrypted: cipher.encrypt(text, outboundAad(idempotencyKey)),
+      text,
       status: 'PENDING',
       attempts: 0,
     });

@@ -16,7 +16,7 @@ export interface AnthropicAdapterOptions {
  * Adaptador de Claude (sección 6.3.6):
  * - Salida estructurada con JSON Schema (`output_config.format`).
  * - Prompt caching de la parte fija del system prompt.
- * - Timeout de 15 s y 1 reintento (SDK).
+ * - Timeout de 8 s y 1 reintento (SDK, v1.5).
  * Los modelos Claude actuales no aceptan `temperature`; el control equivalente es `effort`.
  */
 export class AnthropicLlmAdapter implements LlmPort {
@@ -27,7 +27,7 @@ export class AnthropicLlmAdapter implements LlmPort {
   constructor(private readonly opts: AnthropicAdapterOptions = {}) {
     this.client = new Anthropic({
       ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
-      timeout: opts.timeoutMs ?? 15_000,
+      timeout: opts.timeoutMs ?? 8_000,
       maxRetries: 1,
     });
     this.model = opts.model ?? 'claude-opus-5-5';

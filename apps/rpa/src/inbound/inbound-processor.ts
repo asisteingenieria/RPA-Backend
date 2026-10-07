@@ -1,6 +1,7 @@
-import { fingerprintInput, inboundAad, type InboundMessage } from '@abaya/domain';
+import { fingerprintInput, type InboundMessage } from '@abaya/domain';
 import { sha256, type FieldCipher } from '@abaya/crypto';
 import type { Logger } from '@abaya/logger';
+import { DirectInboundSink, type InboundSink } from '@abaya/robot-store';
 import type { InboundQueue } from './inbound-queue.js';
 import type { InboundRepository } from './inbound.repository.js';
 
@@ -48,17 +49,30 @@ export class InboundProcessor {
     }
   }
 
+  private readonly sink: InboundSink;
+
   constructor(
     private readonly deps: {
       robotUser: string;
-      repo: InboundRepository;
-      queue: InboundQueue;
-      cipher: FieldCipher;
       logger: Logger;
       /** Para medir latencia de detección en pruebas y métricas. */
       onStored?: (m: InboundMessage, via: DetectedVia) => void;
-    },
-  ) {}
+    } & (
+      | { sink: InboundSink }
+      // Modo directo (desarrollo y pruebas): guarda en la base desde el propio robot.
+      | { repo: InboundRepository; queue: InboundQueue; cipher: FieldCipher }
+    ),
+  ) {
+    this.sink =
+      'sink' in deps
+        ? deps.sink
+        : new DirectInboundSink({
+            robotUser: deps.robotUser,
+            repo: deps.repo,
+            queue: deps.queue,
+            cipher: deps.cipher,
+          });
+  }
 
   handle(m: InboundMessage, via: DetectedVia): Promise<void> {
     const prev = this.chains.get(m.abayaChatId) ?? Promise.resolve();
@@ -78,7 +92,7 @@ export class InboundProcessor {
 
   /** Chat nuevo asignado → crear Conversation (sección 6.2, paso 5). */
   async chatAssigned(abayaChatId: string): Promise<void> {
-    const c = await this.deps.repo.ensureConversation(abayaChatId, this.deps.robotUser);
+    const c = await this.sink.chatAssigned(abayaChatId);
     if (c.created) this.stats.newConversations++;
   }
 
@@ -102,25 +116,20 @@ export class InboundProcessor {
       this.stats.duplicates++;
       return;
     }
-    const conv = await this.deps.repo.ensureConversation(m.abayaChatId, this.deps.robotUser);
-    if (conv.created) this.stats.newConversations++;
-    const r = await this.deps.repo.insertInbound(conv.id, {
+    const r = await this.sink.store({
+      abayaChatId: m.abayaChatId,
       fingerprint,
-      bodyEncrypted: this.deps.cipher.encrypt(m.text, inboundAad(fingerprint)),
-      detectedVia: via,
+      text: m.text,
+      via,
       occurredAt: m.occurredAt,
     });
+    if (r.conversationCreated) this.stats.newConversations++;
     this.remember(fingerprint);
     if (!r.inserted) {
       this.stats.duplicates++;
       return;
     }
     this.stats.stored++;
-    await this.deps.queue.enqueue({
-      conversationId: conv.id,
-      abayaChatId: m.abayaChatId,
-      messageId: r.id!,
-    });
     this.deps.onStored?.(m, via);
   }
 }

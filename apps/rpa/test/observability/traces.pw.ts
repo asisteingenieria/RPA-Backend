@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryAlertAdapter } from '@abaya/alerts';
 import { FieldCipher } from '@abaya/crypto';
-import { outboundAad } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
@@ -55,7 +54,6 @@ test('trazas solo en error: cifradas, referenciadas en la auditoría; los éxito
     guard: new ChatIdentityGuard(),
     actionLog,
     outbound,
-    cipher,
     alerts: new MemoryAlertAdapter(),
     logger: silent,
     verifyTimeoutMs: 1_500,
@@ -68,7 +66,7 @@ test('trazas solo en error: cifradas, referenciadas en la auditoría; los éxito
       id,
       abayaChatId: 'CH-1001',
       idempotencyKey: key,
-      bodyEncrypted: cipher.encrypt(text, outboundAad(key)),
+      text,
       status: 'PENDING',
       attempts: 0,
     });

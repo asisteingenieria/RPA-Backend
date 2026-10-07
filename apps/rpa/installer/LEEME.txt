@@ -1,0 +1,42 @@
+ROBOT DE VENTAS DE ABAYA - INSTALACIÓN EN UN EQUIPO
+====================================================
+
+Cada equipo es un robot independiente, con su propio usuario de Abaya.
+El servidor (padre) guarda las credenciales y los datos; este equipo (hijo)
+solo guarda la dirección del servidor y su token, protegidos con el usuario
+de Windows (DPAPI). El robot habla con el servidor solo por HTTPS.
+
+ANTES DE EMPEZAR (lo hace un ADMIN en el panel, pestaña Robots)
+  1. "Agregar robot": usuario y contraseña de Abaya de ESTE equipo.
+  2. Copiar el código de instalación que muestra el panel (sirve una vez, 24 h).
+
+INSTALAR
+  1. Descomprimir este paquete en cualquier carpeta.
+  2. Doble clic en instalar.cmd
+  3. Escribir la dirección del servidor y el código de instalación.
+  El robot queda instalado en %LOCALAPPDATA%\AbayaRobot, arranca solo al
+  iniciar sesión en Windows y aparece "En línea" en el panel.
+
+  Sin ventana del navegador:  instalar.cmd -SinVentana
+  Sin preguntas:              instalar.cmd -Servidor https://... -Codigo XXXX-XXXX-XXXX
+
+USO DIARIO
+  - Detener: cerrar la ventana "Robot Abaya".
+  - Iniciar: %LOCALAPPDATA%\AbayaRobot\iniciar.cmd (o cerrar y abrir sesión).
+  - Pausar sin apagar el equipo: desde el panel (botón Pausar).
+  - No usar el navegador del robot para otras tareas.
+  - Actualizaciones: llegan desde el panel; el robot se actualiza solo cuando no
+    tiene chats y vuelve a la versión anterior si la nueva no arranca.
+    Para pedirla desde este equipo: actualizar.cmd
+  - Revisión del equipo (suspensión, Windows Update, antivirus): preparacion.txt
+
+REGLAS
+  - El robot debe correr con el MISMO usuario de Windows que lo instaló.
+  - Un usuario de Abaya = un equipo a la vez. Si se instala el mismo robot en
+    otro equipo mientras está en línea, el segundo se niega a trabajar.
+  - Para cambiar de equipo: en el panel "Reinstalar" (código nuevo) e instalar
+    en el equipo nuevo. El anterior debe estar apagado.
+
+DESINSTALAR
+  %LOCALAPPDATA%\AbayaRobot\desinstalar.cmd
+  y deshabilitar el robot en el panel si el equipo deja de usarse.

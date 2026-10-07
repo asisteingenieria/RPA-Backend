@@ -24,7 +24,7 @@ export class OpenAiLlmAdapter implements LlmPort {
     this.client = new OpenAI({
       ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
-      timeout: opts.timeoutMs ?? 15_000,
+      timeout: opts.timeoutMs ?? 8_000,
       maxRetries: 1,
     });
   }

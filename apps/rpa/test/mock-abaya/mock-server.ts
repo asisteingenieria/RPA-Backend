@@ -90,7 +90,15 @@ export class MockAbayaServer {
     this.sessions.clear();
   }
 
-  addCustomerMessage(chatId: string, text: string): MockMessage {
+  /**
+   * `broadcast: false` simula un corte del WebSocket: el mensaje existe en Abaya (y la bandeja
+   * lo cuenta como no leído al recargar) pero el navegador no recibe el aviso.
+   */
+  addCustomerMessage(
+    chatId: string,
+    text: string,
+    opts: { broadcast?: boolean } = {},
+  ): MockMessage {
     const chat = this.chat(chatId) ?? this.assignChat(chatId);
     const m: MockMessage = {
       id: `m-${chatId}-${++this.seq}`,
@@ -100,7 +108,7 @@ export class MockAbayaServer {
     };
     chat.messages.push(m);
     chat.unread++;
-    this.broadcast('message.created', { chatId, ...wireMessage(m) });
+    if (opts.broadcast !== false) this.broadcast('message.created', { chatId, ...wireMessage(m) });
     return m;
   }
 

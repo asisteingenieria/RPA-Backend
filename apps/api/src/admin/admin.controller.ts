@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ForbiddenException,
   Controller,
   Get,
   Inject,
@@ -9,12 +10,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AdminAuthGuard } from './admin-auth.guard.js';
+import { AdminAuthGuard, Roles, type AdminRequest } from './admin-auth.guard.js';
 import { AdminService } from './admin.service.js';
-
-interface AdminRequest {
-  adminUser: string;
-}
 
 @Controller('admin')
 @UseGuards(AdminAuthGuard)
@@ -32,6 +29,7 @@ export class AdminController {
   }
 
   @Get('audit')
+  @Roles(['ADMIN'])
   audit() {
     return this.admin.auditLog();
   }
@@ -45,10 +43,14 @@ export class AdminController {
   setKillSwitch(@Body() body: { active?: unknown }, @Req() req: AdminRequest) {
     if (typeof body?.active !== 'boolean')
       throw new BadRequestException('active debe ser booleano');
+    // Cualquiera puede detener el robot; reanudarlo es decisión de un ADMIN.
+    if (!body.active && req.me.role !== 'ADMIN')
+      throw new ForbiddenException('Solo un ADMIN puede reanudar el robot');
     return this.admin.setKillSwitch(body.active, req.adminUser);
   }
 
   @Post('sessions/:robotUser/reset')
+  @Roles(['ADMIN'])
   resetSession(@Param('robotUser') robotUser: string, @Req() req: AdminRequest) {
     return this.admin.resetSession(robotUser, req.adminUser);
   }

@@ -63,11 +63,16 @@ model Message {
   detectedVia    String? // "network" | "dom"
   attempts       Int             @default(0)
   processedAt    DateTime? // entrantes: turno del motor que ya los atendió
+  /// salientes (v1.5): primera respuesta de un turno → cuándo el robot detectó el primer
+  /// mensaje de la ráfaga; y cuándo Abaya confirmó el envío. Ambas con el reloj del robot.
+  respondsToAt   DateTime?
+  sentAt         DateTime?
   occurredAt     DateTime
   createdAt      DateTime        @default(now())
   conversation   Conversation    @relation(fields: [conversationId], references: [id])
 
   @@index([conversationId, occurredAt])
+  @@index([sentAt])
 }
 
 model Sale {
@@ -191,4 +196,76 @@ model AdminAuditLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+enum AdminRole {
+  ADMIN
+  OPERADOR
+}
+
+model AdminUser {
+  // usuarios del panel de administración (v1.3, sección 8)
+  id                 String         @id @default(cuid())
+  username           String         @unique
+  passwordHash       String // scrypt con sal; nunca la contraseña
+  role               AdminRole
+  active             Boolean        @default(true)
+  mustChangePassword Boolean        @default(true)
+  failedAttempts     Int            @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdBy          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  sessions           AdminSession[]
+}
+
+model AdminSession {
+  // sesión del panel en el servidor; el token solo viaja en una cookie httpOnly
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  expiresAt  DateTime
+  lastSeenAt DateTime
+  createdAt  DateTime  @default(now())
+  user       AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Robot {
+  // registro de robots hijos (v1.4, sección 2.6): un usuario de Abaya = un equipo a la vez
+  robotUser              String    @id
+  enabled                Boolean   @default(true)
+  paused                 Boolean   @default(false)
+  abayaPasswordEncrypted Bytes? // cifrada; nunca se devuelve al panel
+  mfaMode                String    @default("none")
+  totpSecretEncrypted    Bytes?
+  enrollmentCodeHash     String?   @unique // código de instalación de un solo uso
+  enrollmentExpiresAt    DateTime?
+  agentTokenHash         String?   @unique // token de renovación vigente del equipo (hash)
+  /// v1.6: token de renovación anterior (rotación) y cuándo se rotó; versión que invalida
+  /// todos los tokens de acceso emitidos al subirla (deshabilitar, reinstalar, robo).
+  previousTokenHash      String?   @unique
+  tokenRotatedAt         DateTime?
+  tokenVersion           Int       @default(0)
+  enrolledAt             DateTime?
+  host                   String? // nombre del equipo
+  instanceId             String? // instancia en línea (evita duplicados)
+  version                String?
+  state                  String    @default("STOPPED") // ONLINE | STOPPED
+  startedAt              DateTime?
+  lastSeenAt             DateTime?
+  stoppedAt              DateTime?
+  lastRejectedHost       String?
+  lastRejectedAt         DateTime?
+  /// v1.7: actualización pedida desde el panel y lo que reportó el robot.
+  updateRequested        Boolean   @default(false)
+  updateStatus           String? // PENDING | WAITING_IDLE | DOWNLOADING | STAGED | APPLIED | FAILED | ROLLED_BACK
+  updateVersion          String?
+  updateMessage          String?
+  updateAt               DateTime?
+  createdBy              String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 }

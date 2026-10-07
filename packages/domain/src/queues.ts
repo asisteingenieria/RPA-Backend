@@ -46,3 +46,8 @@ export function robotQueue(
 
 /** Bandera del apagado de emergencia en Redis (la activa el panel, la lee el rpa). */
 export const KILL_SWITCH_KEY = 'abaya:killswitch';
+
+/** Pausa de un solo robot (panel → ese rpa); se revisa junto con el kill switch global. */
+export function robotPauseKey(robotUser: string): string {
+  return `abaya:pause:${robotUser.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+}

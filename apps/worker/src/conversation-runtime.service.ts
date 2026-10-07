@@ -11,6 +11,7 @@ import { TurnScheduler } from './conversation/turn-scheduler.js';
 import { TurnService } from './conversation/turn.service.js';
 import { ConversationEngine } from './engine/conversation-engine.js';
 import { AnthropicLlmAdapter } from './llm/adapters/anthropic.adapter.js';
+import { FallbackLlmAdapter } from './llm/adapters/fallback.adapter.js';
 import { OpenAiLlmAdapter } from './llm/adapters/openai.adapter.js';
 import { heuristicBrain } from './llm/adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from './llm/adapters/scripted.adapter.js';
@@ -23,25 +24,39 @@ import {
 } from './maintenance/maintenance.js';
 import { alertsFromConfig } from '@abaya/alerts';
 
-function llmFromConfig(cfg: AppConfig): LlmPort {
-  switch (cfg.LLM_PROVIDER) {
+function providerAdapter(
+  cfg: AppConfig,
+  provider: AppConfig['LLM_PROVIDER'],
+  model: string | undefined,
+): LlmPort {
+  switch (provider) {
     case 'anthropic':
       return new AnthropicLlmAdapter({
         ...(cfg.ANTHROPIC_API_KEY ? { apiKey: cfg.ANTHROPIC_API_KEY } : {}),
-        ...(cfg.LLM_MODEL ? { model: cfg.LLM_MODEL } : {}),
+        ...(model ? { model } : {}),
+        timeoutMs: cfg.LLM_TIMEOUT_MS,
       });
     case 'openai':
-      if (!cfg.LLM_MODEL) throw new Error('LLM_MODEL es obligatorio con LLM_PROVIDER=openai');
+      if (!model) throw new Error('Falta el modelo de OpenAI (LLM_MODEL o LLM_FALLBACK_MODEL)');
       return new OpenAiLlmAdapter({
-        model: cfg.LLM_MODEL,
+        model,
         ...(cfg.OPENAI_API_KEY ? { apiKey: cfg.OPENAI_API_KEY } : {}),
+        timeoutMs: cfg.LLM_TIMEOUT_MS,
       });
     case 'simulado':
       // Solo desarrollo (la configuración lo rechaza en producción): sin red ni API key.
-      return new ScriptedLlmAdapter(heuristicBrain);
+      return new ScriptedLlmAdapter(heuristicBrain, cfg.LLM_SIMULATED_DELAY_MS);
     default:
-      throw new Error(`LLM_PROVIDER ${cfg.LLM_PROVIDER} sin adaptador todavía`);
+      throw new Error(`LLM_PROVIDER ${provider} sin adaptador todavía`);
   }
+}
+
+/** Proveedor principal y, si está configurado, uno de respaldo (v1.5). */
+function llmFromConfig(cfg: AppConfig): LlmPort {
+  const primary = providerAdapter(cfg, cfg.LLM_PROVIDER, cfg.LLM_MODEL);
+  if (!cfg.LLM_FALLBACK_PROVIDER || cfg.LLM_PROVIDER === 'simulado') return primary;
+  const backup = providerAdapter(cfg, cfg.LLM_FALLBACK_PROVIDER, cfg.LLM_FALLBACK_MODEL);
+  return new FallbackLlmAdapter(primary, backup, createLogger('worker.llm'));
 }
 
 /**
@@ -66,7 +81,11 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     const alerts: AlertPort = alertsFromConfig(cfg, createLogger('worker.alerts'));
     const turns = new TurnService({
       store: new PrismaConversationStore(this.prisma, cipher),
-      engine: new ConversationEngine({ llm: llmFromConfig(cfg), catalog }),
+      engine: new ConversationEngine({
+        llm: llmFromConfig(cfg),
+        catalog,
+        timeoutMs: cfg.LLM_TIMEOUT_MS,
+      }),
       catalog,
       alerts,
       logger: createLogger('worker.turn'),
@@ -96,7 +115,10 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
 
     const prisma = this.prisma;
     const monitor = new AlertMonitor(
-      databaseChecks(prisma),
+      databaseChecks(prisma, {
+        maxChatsPerRobot: cfg.MAX_CHATS_PER_ROBOT,
+        responseP95AlertMs: cfg.RESPONSE_P95_ALERT_MS,
+      }),
       alerts,
       createLogger('worker.monitor'),
     );

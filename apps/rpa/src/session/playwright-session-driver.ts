@@ -18,8 +18,14 @@ export class PlaywrightSessionDriver implements SessionDriver {
   private browser?: Browser;
   private context?: BrowserContext;
   private _page?: Page;
+  private launchedAt?: number;
 
   constructor(private readonly opts: PlaywrightSessionDriverOptions) {}
+
+  /** Milisegundos desde que se lanzó el proceso del navegador (0 si no está abierto). */
+  get browserAgeMs(): number {
+    return this.launchedAt ? Date.now() - this.launchedAt : 0;
+  }
 
   /** Contexto actual del navegador (para las trazas). */
   get currentContext(): BrowserContext | undefined {
@@ -36,7 +42,10 @@ export class PlaywrightSessionDriver implements SessionDriver {
   onPage?: (page: Page) => Promise<void> | void;
 
   async open(state?: StorageState): Promise<void> {
-    this.browser ??= await chromium.launch({ headless: this.opts.headless });
+    if (!this.browser) {
+      this.browser = await chromium.launch({ headless: this.opts.headless });
+      this.launchedAt = Date.now();
+    }
     await this.context?.close().catch(() => undefined);
     this.context = await this.browser.newContext({
       ...(state ? { storageState: state } : {}),
@@ -80,5 +89,6 @@ export class PlaywrightSessionDriver implements SessionDriver {
     this.context = undefined;
     this.browser = undefined;
     this._page = undefined;
+    this.launchedAt = undefined;
   }
 }

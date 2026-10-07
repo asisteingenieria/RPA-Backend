@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FieldCipher } from '@abaya/crypto';
+import { traceAad } from '@abaya/robot-store';
 import type { BrowserContext } from 'playwright';
 
 /**
@@ -26,7 +27,8 @@ export class NoopTraceRecorder implements TraceRecorder {
   async discard() {}
 }
 
-export const traceAad = (ref: string) => `trace:${ref}`;
+// Misma AAD en el robot y en el servidor (v1.6).
+export { traceAad } from '@abaya/robot-store';
 
 export class PlaywrightTraceRecorder implements TraceRecorder {
   private tracedContext?: BrowserContext;

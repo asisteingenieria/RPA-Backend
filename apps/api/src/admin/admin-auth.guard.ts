@@ -1,23 +1,26 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
-  ServiceUnavailableException,
   UnauthorizedException,
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { AdminRole } from '@abaya/db';
+import { UsersService, type AuthenticatedUser } from './users.service.js';
 
-/** Token de inyección del ADMIN_TOKEN (null si no está configurado). */
-export const ADMIN_TOKEN = Symbol('ADMIN_TOKEN');
+export const SESSION_COOKIE = 'abaya_admin';
+/** Cabecera obligatoria en peticiones que cambian algo: un formulario de otro sitio no la puede poner. */
+export const CSRF_HEADER = 'x-requested-with';
+export const CSRF_VALUE = 'abaya-panel';
 
 const MAX_FAILS = 10;
 const WINDOW_MS = 15 * 60_000;
 
-/** Bloqueo por IP tras intentos fallidos (frena la fuerza bruta del token). */
+/** Bloqueo por IP tras intentos fallidos (frena la fuerza bruta contra el login). */
 export class FailedAuthLimiter {
   private readonly fails = new Map<
     string,
@@ -47,48 +50,68 @@ export class FailedAuthLimiter {
   }
 }
 
-const digest = (s: string) => createHash('sha256').update(s).digest();
+/** Roles que pueden usar una ruta (sin decorador: cualquier usuario autenticado). */
+export const Roles = Reflector.createDecorator<AdminRole[]>();
+/** Ruta permitida aunque el usuario tenga pendiente cambiar su contraseña temporal. */
+export const AllowPendingPassword = Reflector.createDecorator<true>();
+
+export interface AdminRequest {
+  method: string;
+  headers: Record<string, string | undefined>;
+  ip?: string;
+  adminUser: string;
+  me: AuthenticatedUser;
+}
+
+export function readCookie(header: string | undefined, name: string): string | undefined {
+  for (const part of (header ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || undefined;
+  }
+  return undefined;
+}
+
+export function requireCsrfHeader(req: Pick<AdminRequest, 'method' | 'headers'>): void {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers[CSRF_HEADER] !== CSRF_VALUE) {
+    throw new ForbiddenException('Petición sin la cabecera del panel');
+  }
+}
 
 /**
- * Autenticación del panel/API de administración: `Authorization: Bearer <ADMIN_TOKEN>`.
- * Sin ADMIN_TOKEN configurado, /admin queda deshabilitado (503), nunca abierto.
- * El operador se identifica con `X-Admin-User` para la auditoría.
+ * Autenticación del panel/API de administración (sección 8): sesión en el servidor con
+ * cookie httpOnly, roles por ruta y cambio obligatorio de la contraseña temporal.
+ * Sin sesión válida responde 401; nunca hay acceso anónimo.
  */
 @Injectable()
 export class AdminAuthGuard implements CanActivate {
-  private readonly limiter = new FailedAuthLimiter();
+  constructor(
+    @Inject(UsersService) private readonly users: UsersService,
+    @Inject(Reflector) private readonly reflector: Reflector,
+  ) {}
 
-  constructor(@Inject(ADMIN_TOKEN) private readonly token: string | null | undefined) {}
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<AdminRequest>();
+    requireCsrfHeader(req);
+    const me = await this.users.authenticate(readCookie(req.headers.cookie, SESSION_COOKIE));
+    if (!me) throw new UnauthorizedException('Sesión no válida o vencida');
 
-  canActivate(ctx: ExecutionContext): boolean {
-    if (!this.token || this.token.length < 24) {
-      throw new ServiceUnavailableException(
-        'Administración deshabilitada: ADMIN_TOKEN no configurado',
+    const targets = [ctx.getHandler(), ctx.getClass()];
+    if (me.mustChangePassword && !this.reflector.getAllAndOverride(AllowPendingPassword, targets)) {
+      throw new HttpException(
+        {
+          statusCode: 403,
+          message: 'Debe cambiar su contraseña temporal',
+          code: 'PASSWORD_CHANGE_REQUIRED',
+        },
+        HttpStatus.FORBIDDEN,
       );
     }
-    const req = ctx.switchToHttp().getRequest<{
-      headers: Record<string, string | undefined>;
-      adminUser?: string;
-      ip?: string;
-    }>();
-    const ip = req.ip ?? 'desconocida';
-    if (this.limiter.isBlocked(ip)) {
-      throw new HttpException('Demasiados intentos fallidos', HttpStatus.TOO_MANY_REQUESTS);
+    const roles = this.reflector.getAllAndOverride(Roles, targets);
+    if (roles?.length && !roles.includes(me.role)) {
+      throw new ForbiddenException('Su rol no permite esta acción');
     }
-    const header = req.headers.authorization ?? '';
-    const given = header.startsWith('Bearer ') ? header.slice(7) : '';
-    if (!given) {
-      this.limiter.fail(ip);
-      throw new UnauthorizedException();
-    }
-    // Comparación en tiempo constante sobre digests de igual longitud.
-    if (!timingSafeEqual(digest(given), digest(this.token))) {
-      this.limiter.fail(ip);
-      throw new ForbiddenException();
-    }
-    this.limiter.success(ip);
-    const user = (req.headers['x-admin-user'] ?? 'admin').replace(/[^\w.@-]/g, '').slice(0, 60);
-    req.adminUser = user || 'admin';
+    req.me = me;
+    req.adminUser = me.username;
     return true;
   }
 }

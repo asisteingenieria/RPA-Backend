@@ -48,7 +48,11 @@ export class PrismaConversationStore implements ConversationStore {
       abayaChatId: c.abayaChatId,
       robotUser: c.robotUser,
       status: c.status,
-      pending: pending.map((m) => ({ id: m.id, text: this.decryptBody(m) })),
+      pending: pending.map((m) => ({
+        id: m.id,
+        text: this.decryptBody(m),
+        detectedAt: m.createdAt,
+      })),
     };
   }
 
@@ -87,6 +91,7 @@ export class PrismaConversationStore implements ConversationStore {
                 status: 'PENDING',
                 // Orden estable entre respuestas del mismo turno.
                 occurredAt: new Date(now.getTime() + i),
+                ...(i === 0 && t.respondsToAt ? { respondsToAt: t.respondsToAt } : {}),
               },
             });
             ids.push(m.id);

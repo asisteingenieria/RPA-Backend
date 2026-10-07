@@ -55,6 +55,7 @@ export class TurnService {
       status: statusFor(result.stage),
       processedMessageIds: input.pending.map((p) => p.id),
       outbound: [],
+      respondsToAt: new Date(Math.min(...input.pending.map((p) => p.detectedAt.getTime()))),
       llmCalls: result.llmCalls,
       events: [],
     };

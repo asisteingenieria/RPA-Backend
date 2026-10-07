@@ -22,8 +22,8 @@ class FakeDriver implements SessionDriver {
 
   async open(state?: StorageState) {
     this.opens.push(state);
-    if (state && this.stateValid) this.loggedIn = true;
-    else if (!state) this.loggedIn = false;
+    // Un navegador nuevo solo tiene sesión si el storageState sigue siendo válido.
+    this.loggedIn = !!state && this.stateValid;
   }
   async isInboxVisible() {
     return this.loggedIn;
@@ -37,7 +37,9 @@ class FakeDriver implements SessionDriver {
   async exportState() {
     return STATE;
   }
-  async close() {}
+  async close() {
+    this.loggedIn = false;
+  }
 }
 
 function setup(over: Partial<{ driver: FakeDriver; store: MemoryStorageStateStore }> = {}) {
@@ -202,5 +204,36 @@ describe('SessionManager', () => {
     await t.mgr.start();
     expect(t.logs.join('')).not.toContain(SECRET);
     expect(JSON.stringify(t.alerts.raised)).not.toContain(SECRET);
+  });
+
+  it('reciclar el navegador: guarda la sesión, reabre con ella y no hace login', async () => {
+    const t = setup();
+    await t.mgr.start(); // login inicial
+    const logins = t.driver.loginCalls;
+    t.driver.opens = [];
+    expect(await t.mgr.recycle()).toBe('ACTIVE');
+    expect(t.driver.opens).toEqual([STATE]);
+    expect(t.driver.loginCalls).toBe(logins);
+    expect(t.gate.isOpen()).toBe(true);
+    expect(await t.store.load()).toEqual(STATE);
+  });
+
+  it('reciclar sin sesión válida: relogin y la fila del robot vuelve a abrirse', async () => {
+    const t = setup();
+    await t.mgr.start();
+    t.driver.stateValid = false;
+    const logins = t.driver.loginCalls;
+    expect(await t.mgr.recycle()).toBe('ACTIVE');
+    expect(t.driver.loginCalls).toBe(logins + 1);
+    expect(t.gate.isOpen()).toBe(true);
+  });
+
+  it('no recicla si la sesión no está activa', async () => {
+    const t = setup();
+    t.driver.loginResults = ['INVALID_CREDENTIALS', 'INVALID_CREDENTIALS', 'INVALID_CREDENTIALS'];
+    await t.mgr.start();
+    t.driver.opens = [];
+    expect(await t.mgr.recycle()).toBe('DOWN');
+    expect(t.driver.opens).toEqual([]);
   });
 });

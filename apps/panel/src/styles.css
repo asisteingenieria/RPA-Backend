@@ -234,11 +234,134 @@ label {
   color: var(--muted);
 }
 
-input {
+input,
+select {
   font: inherit;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.narrow {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+form.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.secret {
+  border-color: var(--warn);
+}
+
+.secret code {
+  font-size: 20px;
+  letter-spacing: 1px;
+  user-select: all;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.row h2 {
+  margin: 0;
+}
+
+th.num,
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bad-text {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.pill.muted {
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.pill + .pill {
+  margin-left: 6px;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+a.button {
+  display: inline-block;
+  font: inherit;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+a {
+  color: var(--accent);
+}
+
+.warning-row td {
+  background: var(--warn-bg);
+  color: var(--warn);
+  white-space: normal;
+}
+
+.steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+code.big {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  user-select: all;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
 }

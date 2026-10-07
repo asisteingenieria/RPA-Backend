@@ -280,7 +280,7 @@ export class ConversationEngine {
     const res = await this.d.llm.complete(req);
     calls.push({
       stage,
-      provider: this.d.llm.provider,
+      provider: res.provider ?? this.d.llm.provider,
       model: res.model,
       promptVersionId: this.d.promptVersionId?.(stage) ?? `v${PROMPT_VERSION}:${stage}`,
       latencyMs: res.latencyMs,
@@ -334,7 +334,7 @@ export class ConversationEngine {
       ],
       schemaName: 'turno_conversacion',
       jsonSchema: turnOutputJsonSchema,
-      timeoutMs: this.d.timeoutMs ?? 15_000,
+      timeoutMs: this.d.timeoutMs ?? 8_000,
     };
   }
 }

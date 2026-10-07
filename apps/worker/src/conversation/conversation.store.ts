@@ -4,6 +4,8 @@ import type { ConversationState, LlmCallRecord, Profile } from '../engine/types.
 export interface PendingInbound {
   id: string;
   text: string;
+  /** Cuándo lo detectó el robot (Message.createdAt, reloj del robot). */
+  detectedAt: Date;
 }
 
 export interface TurnInput {
@@ -33,6 +35,8 @@ export interface TurnCommit {
   processedMessageIds: string[];
   /** Respuestas a enviar, en orden. El store crea los Message salientes. */
   outbound: { text: string; idempotencyKey: string }[];
+  /** Detección del primer mensaje de la ráfaga: se guarda en la PRIMERA respuesta (v1.5). */
+  respondsToAt?: Date;
   llmCalls: LlmCallRecord[];
   consent?: {
     textShownHash: string;

@@ -37,6 +37,14 @@ export const envSchema = z.object({
   /** Trazas cifradas de errores (retención 7 días). */
   TRACE_DIR: z.string().default('.secrets/traces'),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  /** Nombre del equipo donde corre este robot (por defecto, el nombre de la máquina). */
+  ROBOT_HOST: optionalString,
+  /** Vida del token de acceso de los robots hijos (v1.6). Bajarla solo para pruebas. */
+  ROBOT_ACCESS_TTL_MS: z.coerce.number().int().min(30_000).default(3_600_000),
+  /** Clave pública de publicación (v1.7) para verificar el paquete antes de ofrecerlo. */
+  ROBOT_RELEASE_PUBLIC_KEY: optionalString,
+  /** Paquete instalador de los robots hijos que el panel ofrece para descargar. */
+  ROBOT_PACKAGE_FILE: optionalString,
   /** `simulado`: cerebro heurístico sin red, SOLO para desarrollo (rechazado en producción). */
   LLM_PROVIDER: z.enum(['anthropic', 'openai', 'gemini', 'simulado']).default('anthropic'),
   /** Modelo fijado (sección 13: versión de modelo fijada). Lo elige la suite de evaluación. */
@@ -45,10 +53,32 @@ export const envSchema = z.object({
   BURST_QUIET_MS: z.coerce.number().int().positive().default(4_000),
   /** Webhook entrante (Slack/Teams) para alertas; vacío = solo logs. */
   ALERT_WEBHOOK_URL: optionalString,
+  /** Capacidad por robot (v1.5): chats simultáneos esperados; por encima, alerta. */
+  MAX_CHATS_PER_ROBOT: z.coerce.number().int().positive().default(3),
+  /** Alerta si el p95 del tiempo de respuesta de un robot supera esto (15 min de ventana). */
+  RESPONSE_P95_ALERT_MS: z.coerce.number().int().positive().default(20_000),
+  /** Timeout por llamada al modelo (1 reintento). */
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  /** Solo con LLM_PROVIDER=simulado: latencia media simulada del modelo (pruebas de carga). */
+  LLM_SIMULATED_DELAY_MS: z.coerce.number().int().min(0).default(0),
+  /** Proveedor de respaldo si el principal falla (vacío = sin respaldo). */
+  LLM_FALLBACK_PROVIDER: z
+    .enum(['anthropic', 'openai'])
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  LLM_FALLBACK_MODEL: optionalString,
+  /** El robot recicla su navegador tras estas horas, solo con la bandeja vacía (0 = nunca). */
+  BROWSER_RECYCLE_HOURS: z.coerce.number().min(0).default(6),
   /** Cierre por inactividad del cliente (sección 6.6). */
   INACTIVITY_MINUTES: z.coerce.number().int().positive().default(120),
-  /** Token del panel/API de administración (Bearer). Obligatorio para habilitar /admin. */
-  ADMIN_TOKEN: optionalString,
+  /**
+   * Cookie de sesión del panel con `Secure` (solo viaja por HTTPS; los navegadores la aceptan
+   * también en http://localhost). `false` únicamente para desarrollo por HTTP en otra máquina.
+   */
+  ADMIN_COOKIE_SECURE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
 });
@@ -60,6 +90,9 @@ function crossChecks(cfg: AppConfig): string[] {
   const issues: string[] = [];
   if (cfg.NODE_ENV === 'production' && cfg.LLM_PROVIDER === 'simulado') {
     issues.push('LLM_PROVIDER: "simulado" no está permitido en producción');
+  }
+  if (cfg.NODE_ENV === 'production' && !cfg.ADMIN_COOKIE_SECURE) {
+    issues.push('ADMIN_COOKIE_SECURE: debe ser "true" en producción (panel solo por HTTPS)');
   }
   return issues;
 }

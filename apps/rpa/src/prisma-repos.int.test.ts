@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { FieldCipher, verifyChain } from '@abaya/crypto';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
-import { saleAad } from '@abaya/domain';
+import { outboundAad, saleAad } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaActionLog, actionLogHashInput } from './audit/action-log.js';
@@ -10,6 +10,7 @@ import { InboundProcessor } from './inbound/inbound-processor.js';
 import { MemoryInboundQueue } from './inbound/inbound-queue.js';
 import { PrismaInboundRepository } from './inbound/inbound.repository.js';
 import { PrismaOutboundRepository } from './outbound/outbound.repository.js';
+import { PrismaSweepRepository } from './inbound/missed-sweeper.js';
 import { PrismaSessionRepository } from './session/session.repository.js';
 
 // Integración de los repositorios del rpa contra PostgreSQL real (temporal).
@@ -114,20 +115,29 @@ describe('PrismaOutboundRepository y PrismaHandoffRepository', () => {
         conversationId: conv.id,
         direction: 'OUTBOUND',
         idempotencyKey: 'k1',
-        bodyEncrypted: new Uint8Array([1]),
+        bodyEncrypted: new Uint8Array(cipher.encrypt('Hola, soy el robot', outboundAad('k1'))),
         status: 'PENDING',
         occurredAt: new Date(),
       },
     });
-    const out = new PrismaOutboundRepository(db.prisma);
+    const out = new PrismaOutboundRepository(db.prisma, cipher);
     expect(await out.get(msg.id)).toMatchObject({
+      text: 'Hola, soy el robot',
       abayaChatId: 'CH-5',
       status: 'PENDING',
       attempts: 0,
     });
     await out.setStatus(msg.id, 'SENDING', true);
+    const before = Date.now();
     await out.setStatus(msg.id, 'SENT_VERIFIED');
     expect(await out.get(msg.id)).toMatchObject({ status: 'SENT_VERIFIED', attempts: 1 });
+    // Confirmación del envío con el reloj del robot (tiempo de respuesta, v1.5).
+    const sent = await db.prisma.message.findUniqueOrThrow({ where: { id: msg.id } });
+    expect(sent.sentAt!.getTime()).toBeGreaterThanOrEqual(before);
+    const convAfter = await db.prisma.conversation.findUniqueOrThrow({
+      where: { id: sent.conversationId },
+    });
+    expect(convAfter.lastOutboundAt).toEqual(sent.sentAt);
     expect(
       (await db.prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } })).lastOutboundAt,
     ).not.toBeNull();
@@ -171,5 +181,56 @@ describe('PrismaSessionRepository', () => {
     await repo.save(rec);
     await repo.save({ ...rec, consecutiveFails: 3 });
     expect(await repo.get('robot')).toMatchObject({ status: 'DOWN', consecutiveFails: 3 });
+  });
+});
+
+describe('PrismaSweepRepository (v1.5)', () => {
+  it('solo considera "sin nada en curso" los chats sin entrantes pendientes ni salientes por enviar', async () => {
+    const mk = (abayaChatId: string) =>
+      db.prisma.conversation.create({ data: { abayaChatId, robotUser: 'robot' } });
+    const pendingIn = await mk('CH-IN');
+    const pendingOut = await mk('CH-OUT');
+    const done = await mk('CH-OK');
+    await mk('CH-OTRO-ROBOT').then((c) =>
+      db.prisma.conversation.update({ where: { id: c.id }, data: { robotUser: 'otro' } }),
+    );
+    let k = 0;
+    const msg = (conversationId: string, data: Record<string, unknown>) =>
+      db.prisma.message.create({
+        data: {
+          conversationId,
+          bodyEncrypted: new Uint8Array([1]),
+          occurredAt: new Date(),
+          direction: 'INBOUND',
+          fingerprint: `f-${k++}`,
+          ...data,
+        },
+      });
+    await msg(pendingIn.id, { processedAt: null });
+    await msg(pendingOut.id, { processedAt: new Date() });
+    await msg(pendingOut.id, {
+      direction: 'OUTBOUND',
+      fingerprint: null,
+      idempotencyKey: 'k-1',
+      status: 'PENDING',
+    });
+    await msg(done.id, { processedAt: new Date() });
+    await msg(done.id, {
+      direction: 'OUTBOUND',
+      fingerprint: null,
+      idempotencyKey: 'k-2',
+      status: 'SENT_VERIFIED',
+    });
+    const repo = new PrismaSweepRepository(db.prisma);
+    expect(
+      await repo.idleChats('robot', [
+        'CH-IN',
+        'CH-OUT',
+        'CH-OK',
+        'CH-DESCONOCIDO',
+        'CH-OTRO-ROBOT',
+      ]),
+    ).toEqual(['CH-OK', 'CH-DESCONOCIDO', 'CH-OTRO-ROBOT']);
+    expect(await repo.idleChats('robot', [])).toEqual([]);
   });
 });

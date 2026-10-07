@@ -7,3 +7,4 @@ export function createPrismaClient(databaseUrl: string): PrismaClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
 }
 export * from './retry.js';
+export * from './metrics.js';

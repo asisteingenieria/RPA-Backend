@@ -6,7 +6,7 @@ FROM base AS build
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo run build --filter=@abaya/api... --filter=@abaya/panel
-RUN pnpm deploy --filter=@abaya/api --prod /out
+RUN pnpm deploy --legacy --filter=@abaya/api --prod /out
 
 FROM base AS runtime
 ENV NODE_ENV=production

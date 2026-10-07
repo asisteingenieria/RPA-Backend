@@ -152,6 +152,44 @@ describe('PrismaConversationStore + TurnService', () => {
     });
   });
 
+  it('tiempo de respuesta: la primera respuesta guarda cuándo se detectó el inicio de la ráfaga', async () => {
+    const store = new PrismaConversationStore(db.prisma, cipher);
+    const catalog = new PrismaCatalog(db.prisma);
+    const svc = new TurnService({
+      store,
+      engine: new ConversationEngine({ llm: new ScriptedLlmAdapter(brain), catalog }),
+      catalog,
+      alerts: { raise: async () => undefined },
+      logger: createLogger('t', { level: 'silent' }),
+    });
+    const conv = await db.prisma.conversation.create({
+      data: { abayaChatId: 'CH-R', robotUser: 'robot' },
+    });
+    const t0 = new Date('2026-10-06T15:00:00.000Z');
+    for (const [i, text] of ['Hola', 'quiero un plan'].entries()) {
+      const fingerprint = `r-${i}`;
+      await db.prisma.message.create({
+        data: {
+          conversationId: conv.id,
+          direction: 'INBOUND',
+          fingerprint,
+          bodyEncrypted: new Uint8Array(cipher.encrypt(text, inboundAad(fingerprint))),
+          occurredAt: new Date(t0.getTime() + i * 1500),
+          createdAt: new Date(t0.getTime() + i * 1500),
+        },
+      });
+    }
+    await svc.handle(conv.id);
+    const out = await db.prisma.message.findMany({
+      where: { conversationId: conv.id, direction: 'OUTBOUND' },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(out.length).toBeGreaterThanOrEqual(1);
+    expect(out[0]!.respondsToAt?.toISOString()).toBe(t0.toISOString());
+    expect(out.slice(1).every((m) => m.respondsToAt === null)).toBe(true);
+    expect(out[0]!.sentAt).toBeNull();
+  });
+
   it('el historial descifrado alimenta el siguiente turno', async () => {
     const { conv, say } = await setup();
     await say('Hola');

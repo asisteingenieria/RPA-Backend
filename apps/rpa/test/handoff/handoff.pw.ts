@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-import { FieldCipher } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
 import { ActorGate } from '../../src/actor/actor-gate.js';
@@ -48,7 +46,6 @@ async function boot(mock: MockAbayaServer) {
     guard: new ChatIdentityGuard(),
     actionLog,
     outbound: new MemoryOutboundRepository(),
-    cipher: new FieldCipher(randomBytes(32).toString('base64')),
     alerts,
     logger: silent,
   });

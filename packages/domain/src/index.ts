@@ -82,6 +82,8 @@ export interface LlmRequest {
 export interface LlmResponse {
   json: unknown;
   model: string;
+  /** Proveedor que respondió (con respaldo puede no ser el principal). */
+  provider?: string;
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;

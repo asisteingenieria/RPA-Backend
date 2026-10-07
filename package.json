@@ -18,7 +18,10 @@
     "db:migrate": "pnpm --filter @abaya/db run migrate:dev",
     "evals": "pnpm --filter @abaya/evals start",
     "demo": "node scripts/demo.mjs",
-    "demo:abaya": "pnpm --filter @abaya/rpa exec tsx test/mock-abaya/serve.ts"
+    "demo:abaya": "pnpm --filter @abaya/rpa exec tsx test/mock-abaya/serve.ts",
+    "robot:package": "node scripts/build-robot-package.mjs",
+    "loadtest": "pnpm --filter @abaya/rpa exec tsx test/loadtest/loadtest.ts",
+    "robot:keys": "node scripts/robot-release-keys.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -83,8 +83,19 @@ await demoClient.connect();
 await demoClient.query(`UPDATE "RpaSession" SET status = 'RELOGGING', "consecutiveFails" = 0`);
 await demoClient.end();
 
-// 2. Procesos.
-const ADMIN_TOKEN = fileEnv.ADMIN_TOKEN || 'token-demo-local-0123456789abcdef';
+// 2. Usuario ADMIN de la demo: cada corrida le da una contraseña temporal nueva.
+const adminCli = spawnSync(
+  process.execPath,
+  ['--env-file-if-exists=../../.env', 'dist/cli/create-admin.js', 'admin.demo', '--reset'],
+  { cwd: join(ROOT, 'apps/api'), encoding: 'utf8', env: { ...process.env, DATABASE_URL: DEMO_DB } },
+);
+if (adminCli.status !== 0) {
+  console.error(adminCli.stderr || adminCli.stdout);
+  process.exit(1);
+}
+const demoPassword = /temporal[^:]*: (\S+)/.exec(adminCli.stdout)?.[1] ?? '(ver arriba)';
+
+// 3. Procesos.
 const demoEnv = {
   DATABASE_URL: DEMO_DB,
   REDIS_URL: 'redis://localhost:6380/1',
@@ -98,7 +109,8 @@ const demoEnv = {
   HEARTBEAT_INTERVAL_MS: '10000',
   SESSION_STATE_DIR: '.secrets/demo',
   TRACE_DIR: '.secrets/demo/traces',
-  ADMIN_TOKEN,
+  // El panel de la demo corre por http://localhost (los navegadores aceptan la cookie Secure ahí).
+  ADMIN_COOKIE_SECURE: 'true',
 };
 
 const children = [];
@@ -134,7 +146,8 @@ setTimeout(() => {
   console.log(`
 \x1b[1mDemo lista\x1b[0m
   Cliente simulado (escribe aquí):  http://127.0.0.1:4010/__cliente
-  Panel de operación:               http://localhost:3000/panel   (token: ${fileEnv.ADMIN_TOKEN ? 'el ADMIN_TOKEN de tu .env' : ADMIN_TOKEN})
+  Panel de operación:               http://localhost:3000/panel
+    usuario admin.demo · contraseña temporal ${demoPassword} (te pedirá cambiarla)
   Base de datos (pgAdmin):          abaya_rpa_demo
   Ctrl+C para detener todo.
 `);

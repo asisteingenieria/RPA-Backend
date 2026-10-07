@@ -9,6 +9,7 @@ import type { StorageStateStore } from './storage-state.store.js';
 export const DEFAULT_BACKOFF_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 export const MAX_CONSECUTIVE_FAILS = 3;
 const GATE_REASON = 'session';
+const RECYCLE_REASON = 'browser-recycle';
 
 export interface SessionManagerDeps {
   robotUser: string;
@@ -101,6 +102,35 @@ export class SessionManager {
     clearInterval(this.timer);
     this.timer = undefined;
     await this.d.driver.close();
+  }
+
+  /**
+   * Reciclaje del navegador (v1.5): guarda la sesión, cierra el proceso de Chromium y lo
+   * vuelve a abrir con la sesión guardada; si Abaya pide login, relogin normal. Debe llamarse
+   * como acción exclusiva del BrowserActor (`recycleIfIdle`), nunca en paralelo con otra.
+   */
+  async recycle(): Promise<SessionStatus> {
+    if (this.busy || this.stopped || this.record.status !== 'ACTIVE') return this.record.status;
+    this.busy = true;
+    this.d.gate.pause(RECYCLE_REASON);
+    try {
+      const state = await this.d.driver.exportState();
+      await this.d.store.save(state);
+      await this.d.driver.close();
+      await this.d.driver.open(state);
+      if (await this.d.driver.isInboxVisible().catch(() => false)) {
+        this.record.lastHeartbeat = this.now();
+        await this.persist();
+        this.d.logger.info({ robotUser: this.d.robotUser }, 'navegador reciclado');
+      } else {
+        this.d.logger.warn({ robotUser: this.d.robotUser }, 'reciclado sin sesión; relogin');
+        await this.relogin('lost');
+      }
+    } finally {
+      this.d.gate.resume(RECYCLE_REASON);
+      this.busy = false;
+    }
+    return this.record.status;
   }
 
   /** Reset manual tras un DOWN (desde el panel en F7). */

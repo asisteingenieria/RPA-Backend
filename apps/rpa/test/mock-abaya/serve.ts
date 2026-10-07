@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- script de línea de comandos */
 /**
  * Abaya SIMULADO como servidor independiente (desarrollo y demo).
  *   pnpm demo:abaya   →  http://127.0.0.1:4010  (robot)   y   http://127.0.0.1:4010/__cliente (cliente)

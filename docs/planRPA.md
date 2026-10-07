@@ -138,6 +138,53 @@ Monolito modular con arquitectura hexagonal:
 
 Si mañana Abaya publica una API, se crea `AbayaApiAdapter` y el resto no cambia. Si se cambia de proveedor de LLM, se cambia una variable de configuración.
 
+### 2.6 Despliegue: servidor padre y robots hijos *(cambio v1.4)*
+
+- **Padre (servidor):** PostgreSQL, Redis, `worker` y `api` + panel. Guarda el registro de robots (`Robot`): usuario de Abaya, contraseña y secreto TOTP **cifrados**, estado, equipo donde corre y presencia.
+- **Hijo (cada computador):** solo el proceso `rpa`, instalado con un paquete para Windows. El instalador pide **la URL del servidor y un código de instalación de un solo uso** (generado en el panel, vence en 24 h). Con el código obtiene un token de robot, lo guarda en el equipo y, en cada arranque, descarga del padre su configuración (credenciales de Abaya, conexión a base de datos y colas, clave de cifrado), que **solo vive en memoria**.
+- **Un robot = un usuario de Abaya = un equipo a la vez.** Al arrancar, el hijo *reclama* su robot en la base de datos; si otra instancia está en línea (presencia de menos de 60 s), se niega a iniciar sesión en Abaya y queda registrado el intento. Presencia cada 15 s; al apagarse en orden queda `STOPPED` (no dispara la alerta de heartbeat perdido).
+- **Control por robot desde el panel:** pausar/reanudar (bandera `abaya:pause:<robot>` revisada antes de cada acción junto con el kill switch global), deshabilitar (revoca el token; el hijo en marcha se apaga en su siguiente presencia), nuevo código de instalación (reinstalar o cambiar de equipo) y cambio de credenciales.
+- **Trazabilidad por equipo:** cada robot registra nombre del equipo, versión, inicio y última presencia; el panel muestra el estado de cada uno y su rendimiento (conversaciones, ventas, conversión, tiempos por acción, errores) por rango de fechas, y su historial de acciones.
+- El modo por `.env` se mantiene para desarrollo, pruebas y la demo.
+
+### 2.7 Capacidad por robot: 3 chats simultáneos *(cambio v1.5)*
+
+Meta de operación: **cada robot atiende hasta 3 chats a la vez** con tiempo de respuesta p95 < 15 s.
+
+- **Tope:** se pide a Claro limitar en Abaya a 3 chats simultáneos por usuario robot. Del lado del sistema, `MAX_CHATS_PER_ROBOT` (por defecto 3): si un robot supera el tope se sigue atendiendo, pero se dispara la alerta `ROBOT_OVERLOADED` y el panel muestra los chats activos de cada robot.
+- **Prioridad en el `BrowserActor`:** la fila sigue siendo de una acción a la vez, pero en orden de urgencia: 1) enviar mensajes, 2) abrir chat, 3) transferir, 4) leer la bandeja (reconciliación, humo), 5) cerrar. Dentro de la misma prioridad, orden de llegada. Es seguro: los envíos de un chat siempre salen antes que su transferencia o cierre.
+- **Tiempo de respuesta al cliente:** desde que el robot detecta el primer mensaje de la ráfaga hasta que Abaya confirma la primera respuesta (`Message.respondsToAt` → `Message.sentAt`, ambas con el reloj del robot). p50/p95 por robot en el panel; alerta `RESPONSE_SLOW` si el p95 de los últimos 15 min supera `RESPONSE_P95_ALERT_MS` (20 s).
+- **Modelo:** timeout de 8 s con 1 reintento (antes 15 s), *prompt caching* y proveedor de respaldo opcional (`LLM_FALLBACK_PROVIDER`).
+- **Reciclaje del navegador:** el robot reinicia Chromium cada `BROWSER_RECYCLE_HOURS` (6 h) solo cuando su bandeja está vacía y no tiene acciones pendientes.
+- **Barrido de mensajes no detectados** (sección 6.2, paso 6).
+- **Prueba de carga** (`pnpm loadtest`): N robots × 3 clientes simulados escribiendo a la vez contra el Abaya simulado. Criterio: 0 mensajes en chat equivocado, 0 duplicados, 0 perdidos, p95 < 15 s y p99 < 25 s.
+
+### 2.8 Hijo delgado: el robot solo habla con el servidor por HTTPS *(cambio v1.6)*
+
+Elimina el riesgo aceptado B5 (sección 8): ningún equipo robot recibe la conexión a PostgreSQL, a Redis ni la clave de cifrado de campos.
+
+- **Pasarela de robots en el servidor** (`/robot-api/v1`, proceso `api`):
+  - `POST /token`: cambia el token de renovación del equipo por un token de acceso de 1 h firmado (HMAC con clave derivada) y un token de renovación nuevo (rotación).
+  - `GET /config`: solo lo que el robot necesita para Abaya (URL, usuario, contraseña, TOTP); nada de base de datos, Redis ni claves.
+  - `POST /rpc`: operaciones del robot validadas con zod (guardar entrantes, estado de envíos, auditoría, sesión, presencia, recuperación, barrido, transferencias, alertas). **El robot se deduce del token**: cualquier dato de otro robot se rechaza.
+  - `POST /traces`: el robot sube las trazas de error; el servidor las guarda cifradas (visibles desde el panel, solo ADMIN, auditado).
+  - WebSocket `/ws`: el servidor **empuja** al robot sus tareas (enviar, transferir, cerrar) desde sus colas de BullMQ y el estado del kill switch y de la pausa. Sin conexión, el robot se considera detenido (falla cerrado).
+- **Cifrado:** el servidor cifra y descifra; el robot recibe por TLS solo el texto de sus propios mensajes.
+- **Token atado al equipo:** `robot.json` guarda el token de renovación y una clave local cifrados con DPAPI (usuario de Windows). Copiar el archivo a otro equipo no sirve. **Rotación con detección de reúso:** si se presenta un token ya rotado y el nuevo ya se usó, se revocan todos los tokens del robot y se alerta `ROBOT_TOKEN_REUSE`.
+- **Clave local por equipo** para la sesión guardada de Abaya y las trazas pendientes de subir.
+- **Límite de peticiones** por robot en la pasarela y auditoría de altas, renovaciones y rechazos.
+- El modo directo (`.env`) se mantiene solo para desarrollo, pruebas y la demo.
+
+### 2.9 Actualizaciones de los robots y preparación de los equipos *(cambio v1.7)*
+
+- **Firma propia (Ed25519):** cada paquete publicado lleva un manifiesto (versión, SHA-256, tamaño) firmado con la clave privada de publicación, que vive solo donde se arma el paquete (`.secrets/`, nunca en el repositorio ni en el servidor). Cada robot trae la clave pública y **solo instala paquetes con firma válida**; si no, rechaza y alerta `ROBOT_UPDATE_FAILED`. No requiere certificado comercial (este sigue siendo recomendable para que Windows no muestre el aviso en la primera instalación).
+- **Versiones lado a lado en el equipo:** `versions\<versión>\{app,node}` y `current.txt`. El lanzador (`iniciar.ps1`) arranca la versión vigente.
+- **Desde el panel:** ADMIN pulsa "Actualizar" (un robot o todos). El servidor avisa al robot por el WebSocket; el robot **espera a tener la bandeja vacía y la fila sin acciones** (no puede impedir que Abaya le asigne chats), descarga el paquete por la pasarela, verifica firma y SHA-256, lo prepara en `versions\` y sale con código 4. El lanzador cambia de versión y arranca la nueva.
+- **Reversión automática:** si la versión nueva no llega a "en línea" (dos fallas seguidas en sus primeros 2 minutos), el lanzador vuelve a la anterior; el robot reporta `ROLLED_BACK` y se alerta. Confirmada la nueva (2 min en línea), reporta `APPLIED`.
+- **Botón local de respaldo:** `actualizar.cmd` en el equipo pide la actualización al robot en marcha (archivo de solicitud), sin credenciales.
+- **Preparación del equipo:** el instalador revisa y avisa: suspensión del equipo, horas activas de Windows Update, inicio de sesión automático, espacio en disco y la excepción del antivirus (recordatorio).
+- **Respaldo del servidor:** `pg_dump` diario con retención y prueba de restauración documentados en el runbook.
+
 ---
 
 ## 3. Stack tecnológico
@@ -370,6 +417,59 @@ model OutboxEvent {
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
 }
+
+enum AdminRole { ADMIN OPERADOR }
+
+model AdminUser {                // usuarios del panel de administración (v1.3)
+  id                 String    @id @default(cuid())
+  username           String    @unique
+  passwordHash       String    // scrypt con sal; nunca la contraseña
+  role               AdminRole
+  active             Boolean   @default(true)
+  mustChangePassword Boolean   @default(true)   // contraseña temporal
+  failedAttempts     Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdBy          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  sessions           AdminSession[]
+}
+
+model AdminSession {             // sesión del panel en el servidor (cookie httpOnly)
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique  // sha256 del token; el token solo viaja en la cookie
+  userId      String
+  expiresAt   DateTime  // absoluta: 8 h
+  lastSeenAt  DateTime  // inactividad: 30 min
+  createdAt   DateTime  @default(now())
+  user        AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Robot {                    // registro de robots hijos (v1.4, sección 2.6)
+  robotUser              String    @id      // usuario de Abaya del robot
+  enabled                Boolean   @default(true)
+  paused                 Boolean   @default(false)
+  abayaPasswordEncrypted Bytes?             // cifrada; nunca se devuelve al panel
+  mfaMode                String    @default("none")
+  totpSecretEncrypted    Bytes?
+  enrollmentCodeHash     String?   @unique  // código de instalación de un solo uso
+  enrollmentExpiresAt    DateTime?
+  agentTokenHash         String?   @unique  // token del equipo instalado
+  enrolledAt             DateTime?
+  host                   String?            // nombre del equipo
+  instanceId             String?            // instancia en línea (evita duplicados)
+  version                String?
+  state                  String    @default("STOPPED")  // ONLINE | STOPPED
+  startedAt              DateTime?
+  lastSeenAt             DateTime?
+  stoppedAt              DateTime?
+  lastRejectedHost       String?            // último arranque duplicado rechazado
+  lastRejectedAt         DateTime?
+  createdBy              String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
 ```
 
 **Huella de mensaje entrante:**
@@ -398,6 +498,7 @@ model OutboxEvent {
 3. Por cada mensaje: huella → insertar `Message` (si existe, ignorar) → encolar `abaya.inbound`.
 4. Ignorar mensajes propios del robot y del sistema de Abaya.
 5. Chat nuevo asignado → crear `Conversation` en estado inicial.
+6. **Barrido de mensajes no detectados** *(v1.5)*: cada 15 s el robot lee la bandeja; si un chat tiene no leídos y el sistema no tiene nada en curso para él (ni entrantes sin atender ni respuestas por enviar), lo abre por el `BrowserActor` para que la lectura normal recupere el mensaje. Cubre cortes del WebSocket (recargas de página, red). Encontrado por la prueba de carga: abrir un chat recargaba la página y un mensaje de otro chat llegado en ese instante se perdía.
 
 ### 6.3 Motor de conversación
 
@@ -480,7 +581,7 @@ Si falla: **regenerar una vez** con el error explicado al modelo. Si vuelve a fa
 - Temperatura baja (0–0.3).
 - Contexto mínimo: instrucciones del estado actual, perfil extraído, catálogo filtrado al proceso y últimos N mensajes (con resumen si la conversación es larga).
 - *Prompt caching* de la parte fija del prompt para bajar latencia y costo.
-- Timeout de 15 s y 1 reintento; si el proveedor falla, conversación a `NEEDS_REVIEW` y alerta. Opcional: proveedor de respaldo.
+- Timeout de 8 s y 1 reintento *(v1.5; antes 15 s)*; si el proveedor falla y hay proveedor de respaldo (`LLM_FALLBACK_PROVIDER`), se usa el respaldo; si también falla, conversación a `NEEDS_REVIEW` y alerta.
 - Prompts versionados en `PromptVersion`; ningún cambio sale a producción sin pasar la suite de evaluación (sección 12).
 
 #### 6.3.7 Elección del proveedor
@@ -576,6 +677,8 @@ El robot lee y escribe datos personales. Aplican la Ley 1581 de 2012 (protecció
 | Consentimiento | Texto mostrado (hash), respuesta del cliente, fecha y hora de Bogotá, cadena de hashes. |
 | Derechos de titulares | Procedimiento para consulta, rectificación y supresión. |
 | Retención | Política de borrado de conversaciones definida con Claro. |
+| Usuarios del panel | Cuentas nominales con contraseña (scrypt con sal, mínimo 12 caracteres), roles `ADMIN` y `OPERADOR`, contraseña temporal generada por el sistema y cambio obligatorio en el primer ingreso, bloqueo de 15 min tras 5 intentos fallidos, sesión en el servidor con cookie `httpOnly`/`SameSite=Strict` (8 h máximo, 30 min de inactividad). El primer administrador se crea por consola. Todo queda en `AdminAuditLog` con el usuario autenticado. *(Cambio v1.3: reemplaza el token compartido `ADMIN_TOKEN`.)* |
+| Robots hijos | Credenciales de Abaya cifradas en la base del servidor (ingresadas en el panel por un ADMIN, nunca devueltas). Instalación con código de un solo uso (24 h, guardado como hash); token por equipo guardado como hash y revocable. La configuración del hijo se descarga por HTTPS en cada arranque y no se escribe en disco. Riesgo aceptado: cada equipo robot recibe la conexión a la base de datos, a Redis y la clave de cifrado de campos (igual que con `.env`, pero centralizado y revocable); mitigación futura: pasarela de API para los hijos. *(Cambio v1.4.)* |
 
 ---
 
@@ -772,6 +875,20 @@ LLM simulados.
 - Trazas cifradas con limpieza automática.
 - Prueba de humo cada 15 min.
 - Panel mínimo: estado de sesiones, chats activos, ventas transferidas del día, conversaciones en `NEEDS_REVIEW`, errores recientes. Acceso con autenticación y registro de auditoría.
+- Módulo de usuarios del panel (v1.3, sección 8). Permisos:
+
+  | Acción | ADMIN | OPERADOR |
+  |---|---|---|
+  | Ver resumen, sesiones, revisiones y errores | ✅ | ✅ |
+  | Apagado de emergencia (activar kill switch) | ✅ | ✅ |
+  | Reanudar el robot (desactivar kill switch) | ✅ | ❌ |
+  | Habilitar reintento de una sesión en `DOWN` | ✅ | ❌ |
+  | Ver la auditoría | ✅ | ❌ |
+  | Crear usuarios, cambiar rol, activar/desactivar, restablecer contraseña | ✅ | ❌ |
+  | Cambiar su propia contraseña | ✅ | ✅ |
+
+  Salvaguardas: nadie se desactiva ni se quita el rol a sí mismo y siempre queda al menos un `ADMIN` activo; desactivar o restablecer la contraseña cierra las sesiones abiertas del usuario.
+- Robots padre/hijo (v1.4, sección 2.6): registro de robots, instalador para Windows con código de instalación, presencia y detección de duplicados, pausa por robot y vista "Robots" con rendimiento por equipo. Permisos: ver robots y su rendimiento, ambos roles; crear, pausar, deshabilitar, generar códigos y cambiar credenciales, solo `ADMIN`.
 
 **Criterios de aceptación**
 - 8 horas continuas en ambiente de pruebas sin intervención.
@@ -839,6 +956,9 @@ genera docs/runbook.md con el procedimiento para cada alerta de la sección 11.
 | Revisión pendiente | Conversación en `NEEDS_REVIEW` | Alta |
 | Envío incierto | Mensaje en `UNCERTAIN` | Alta |
 | Cliente sin respuesta | Mensaje entrante sin respuesta > 2 min | Alta |
+| Robot sobrecargado | Chats activos de un robot > `MAX_CHATS_PER_ROBOT` (v1.5) | Alta |
+| Respuesta lenta | p95 del tiempo de respuesta de un robot > 20 s en 15 min (v1.5) | Alta |
+| Robot duplicado | Mismo robot arrancado en dos equipos (v1.4) | Crítica |
 | Error del proveedor de LLM | Tasa de error > 5 % en 10 min | Alta |
 | Validación fallida | Respuestas con FALLBACK > 5 % en 1 hora | Alta (posible degradación del modelo o del prompt) |
 | Prueba de humo | Falla | Alta |

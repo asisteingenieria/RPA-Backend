@@ -9,26 +9,30 @@
     "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node --env-file-if-exists=../../.env dist/main.js\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "create-admin": "node --env-file-if-exists=../../.env dist/cli/create-admin.js"
   },
   "dependencies": {
     "@abaya/alerts": "workspace:*",
     "@abaya/config": "workspace:*",
     "@abaya/crypto": "workspace:*",
+    "@abaya/db": "workspace:*",
     "@abaya/domain": "workspace:*",
     "@abaya/logger": "workspace:*",
+    "@abaya/robot-store": "workspace:*",
     "@nestjs/common": "^12.1.2",
     "@nestjs/core": "^12.1.2",
     "@nestjs/platform-express": "^12.1.2",
     "bullmq": "^6.3.11",
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
-  },
-  "devDependencies": {
-    "@abaya/db": "workspace:*"
+    "rxjs": "^7.8.2",
+    "ws": "^8.22.0"
   },
   "files": [
     "dist"
-  ]
+  ],
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
 }

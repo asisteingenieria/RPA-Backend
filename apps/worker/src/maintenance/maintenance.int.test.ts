@@ -129,6 +129,95 @@ describe('AlertMonitor con chequeos de BD', () => {
     expect(after).not.toContain('SESSION_DOWN');
   });
 
+  it('heartbeat perdido: alerta si el robot cayó, no si se apagó en orden', async () => {
+    const monitor = new AlertMonitor(databaseChecks(db.prisma), new MemoryAlertAdapter(), silent);
+    const old = new Date(Date.now() - 5 * 60_000);
+    for (const robotUser of ['robot-caido', 'robot-apagado']) {
+      await db.prisma.rpaSession.create({
+        data: { robotUser, status: 'ACTIVE', lastHeartbeat: old, consecutiveFails: 0 },
+      });
+    }
+    await db.prisma.robot.create({ data: { robotUser: 'robot-caido', state: 'ONLINE' } });
+    await db.prisma.robot.create({ data: { robotUser: 'robot-apagado', state: 'STOPPED' } });
+    const alerts = new MemoryAlertAdapter();
+    const m = new AlertMonitor(databaseChecks(db.prisma), alerts, silent);
+    expect(await m.tick()).toContain('HEARTBEAT_LOST');
+    expect(alerts.raised.find((a) => a.code === 'HEARTBEAT_LOST')?.detail).toEqual({
+      robots: ['robot-caido'],
+    });
+    await db.prisma.robot.update({
+      where: { robotUser: 'robot-caido' },
+      data: { state: 'STOPPED' },
+    });
+    expect(await monitor.tick()).not.toContain('HEARTBEAT_LOST');
+  });
+
+  it('robot sobrecargado: más chats abiertos que el tope (por robot)', async () => {
+    const alerts = new MemoryAlertAdapter();
+    const monitor = new AlertMonitor(
+      databaseChecks(db.prisma, { maxChatsPerRobot: 3, responseP95AlertMs: 20_000 }),
+      alerts,
+      silent,
+    );
+    const mk = (robotUser: string, n: number, status = 'ACTIVE' as const) =>
+      Promise.all(
+        Array.from({ length: n }, (_, i) =>
+          db.prisma.conversation.create({
+            data: { abayaChatId: `${robotUser}-${status}-${i}`, robotUser, status },
+          }),
+        ),
+      );
+    await mk('robot-ok', 3);
+    await mk('robot-lleno', 3);
+    await mk('robot-ok', 5, 'CLOSED_NO_SALE' as never); // cerrados no cuentan
+    expect(await monitor.tick()).not.toContain('ROBOT_OVERLOADED');
+    await db.prisma.conversation.create({
+      data: { abayaChatId: 'extra', robotUser: 'robot-lleno', status: 'TRANSFERRING' },
+    });
+    expect(await monitor.tick()).toContain('ROBOT_OVERLOADED');
+    expect(alerts.raised.find((a) => a.code === 'ROBOT_OVERLOADED')?.detail).toEqual({
+      max: 3,
+      robots: [{ robotUser: 'robot-lleno', chats: 4 }],
+    });
+  });
+
+  it('respuesta lenta: p95 de los últimos 15 min por encima del umbral, con muestras suficientes', async () => {
+    const alerts = new MemoryAlertAdapter();
+    const monitor = new AlertMonitor(
+      databaseChecks(db.prisma, { maxChatsPerRobot: 3, responseP95AlertMs: 20_000 }),
+      alerts,
+      silent,
+    );
+    const now = Date.now();
+    let n = 0;
+    const reply = async (robotUser: string, ms: number) => {
+      const c = await db.prisma.conversation.create({
+        data: { abayaChatId: `rt-${n}`, robotUser, status: 'ACTIVE' },
+      });
+      await db.prisma.message.create({
+        data: {
+          conversationId: c.id,
+          direction: 'OUTBOUND',
+          idempotencyKey: `k-${n++}`,
+          bodyEncrypted: new Uint8Array([1]),
+          status: 'SENT_VERIFIED',
+          occurredAt: new Date(now - 60_000),
+          respondsToAt: new Date(now - 60_000 - ms),
+          sentAt: new Date(now - 60_000),
+        },
+      });
+    };
+    for (let i = 0; i < 4; i++) await reply('robot-lento', 30_000);
+    expect(await monitor.tick()).not.toContain('RESPONSE_SLOW'); // 4 muestras: no alcanza
+    await reply('robot-lento', 30_000);
+    for (let i = 0; i < 6; i++) await reply('robot-rapido', 6_000);
+    expect(await monitor.tick()).toContain('RESPONSE_SLOW');
+    expect(alerts.raised.find((a) => a.code === 'RESPONSE_SLOW')?.detail).toEqual({
+      thresholdMs: 20_000,
+      robots: [{ robotUser: 'robot-lento', p95Ms: 30_000, samples: 5 }],
+    });
+  });
+
   it('selector roto: tres acciones seguidas fallidas de un robot', async () => {
     const alerts = new MemoryAlertAdapter();
     const monitor = new AlertMonitor(databaseChecks(db.prisma), alerts, silent);

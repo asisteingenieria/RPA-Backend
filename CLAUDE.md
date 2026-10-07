@@ -153,9 +153,30 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
 
 ## Operación (F7)
 
-- Panel: `http://<api>/panel` (build de `apps/panel`), autenticado con `ADMIN_TOKEN` (Bearer) y
-  `X-Admin-User` para la auditoría. Sin `ADMIN_TOKEN`, `/admin` responde 503 (nunca abierto).
-- Kill switch en caliente: bandera `abaya:killswitch` en Redis (panel → rpa), falla cerrado.
+- Panel: `http://<api>/panel` (build de `apps/panel`) con usuarios y contraseña (v1.3): roles
+  `ADMIN`/`OPERADOR`, sesión en cookie `httpOnly` (`AdminSession`), cabecera
+  `x-requested-with: abaya-panel` en peticiones que cambian algo. Primer ADMIN:
+  `pnpm --filter @abaya/api create-admin -- <usuario>` (contraseña temporal, cambio obligatorio).
+- Kill switch en caliente: bandera `abaya:killswitch` en Redis (panel → rpa), falla cerrado; pausa
+  por robot con `abaya:pause:<robot>` (revisadas juntas antes de cada acción).
+- Robots padre/hijo (v1.4) e "hijo delgado" (v1.6, secciones 2.6 y 2.8 del plan): el robot
+  instalado (`robot.json` v2, protegido con DPAPI) habla SOLO con la pasarela del servidor
+  (`/robot-api/v1`: `enroll`, `token`, `config`, `rpc`, `traces`, WebSocket `ws`); nunca recibe
+  base de datos, Redis ni la clave. Protocolo y persistencia compartida en `@abaya/robot-store`;
+  pasarela en `apps/api/src/robots/gateway/`; cliente y backends en `apps/rpa/src/child/` y
+  `apps/rpa/src/backend/` (directo = desarrollo/demo, hijo = producción). Cada operación verifica
+  que los datos sean del robot del token. Instalador Windows: `pnpm robot:package`. Códigos de
+  salida del rpa: 3 = no reintentar, 4 = activar versión nueva.
+- Actualizaciones (v1.7, sección 2.9): paquetes firmados con Ed25519 (`pnpm robot:keys` crea
+  `.secrets/release-signing.key` y `apps/rpa/release-key.pub`; `pnpm robot:package` firma).
+  Robot: `apps/rpa/src/update/updater.ts`; lanzador `apps/rpa/installer/iniciar.ps1` (versiones
+  lado a lado y reversión automática); servidor: `ReleaseService` y botones en el panel.
 - Colas de acciones por robot: `abaya.outbound|transfer|close.<robotUser>`.
 - Trazas solo en error, cifradas, en `TRACE_DIR` (7 días); `decryptTrace` para verlas.
 - Alertas: logs + `ALERT_WEBHOOK_URL` (Slack/Teams), sin datos personales.
+- Capacidad (v1.5, sección 2.7 del plan): 3 chats por robot (`MAX_CHATS_PER_ROBOT`), fila del
+  `BrowserActor` con prioridad (`PRIORITY` en `serial-executor.ts`: enviar > abrir > transferir >
+  leer > cerrar > reciclar), tiempo de respuesta `Message.respondsToAt → sentAt` (reloj del robot;
+  consultas en `@abaya/db` `metrics.ts`), alertas `ROBOT_OVERLOADED` y `RESPONSE_SLOW`.
+  Prueba de carga: `pnpm build && pnpm loadtest -- --robots N --chats 3 --minutos M`
+  (base aparte `abaya_rpa_carga`, se borra al terminar).

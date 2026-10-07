@@ -13,6 +13,8 @@ interface MemMessage {
   text: string;
   processed: boolean;
   idempotencyKey?: string;
+  at: Date;
+  respondsToAt?: Date;
 }
 
 interface MemConversation {
@@ -49,7 +51,7 @@ export class MemoryConversationStore implements ConversationStore {
   addInbound(conversationId: string, text: string): string {
     const c = this.conversations.get(conversationId)!;
     const id = `in-${++this.seq}`;
-    c.messages.push({ id, direction: 'INBOUND', text, processed: false });
+    c.messages.push({ id, direction: 'INBOUND', text, processed: false, at: new Date() });
     return id;
   }
 
@@ -76,7 +78,7 @@ export class MemoryConversationStore implements ConversationStore {
       abayaChatId: c.abayaChatId,
       robotUser: c.robotUser,
       status: c.status,
-      pending: pending.map((m) => ({ id: m.id, text: m.text })),
+      pending: pending.map((m) => ({ id: m.id, text: m.text, detectedAt: m.at })),
     };
   }
 
@@ -86,7 +88,7 @@ export class MemoryConversationStore implements ConversationStore {
     c.profile = { ...t.profile };
     c.status = t.status;
     for (const m of c.messages) if (t.processedMessageIds.includes(m.id)) m.processed = true;
-    const ids = t.outbound.map((o) => {
+    const ids = t.outbound.map((o, i) => {
       const id = `out-${++this.seq}`;
       c.messages.push({
         id,
@@ -94,6 +96,8 @@ export class MemoryConversationStore implements ConversationStore {
         text: o.text,
         processed: true,
         idempotencyKey: o.idempotencyKey,
+        at: new Date(),
+        ...(i === 0 && t.respondsToAt ? { respondsToAt: t.respondsToAt } : {}),
       });
       return id;
     });
