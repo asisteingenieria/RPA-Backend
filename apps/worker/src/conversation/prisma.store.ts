@@ -101,12 +101,22 @@ export class PrismaConversationStore implements ConversationStore {
               data: t.llmCalls.map((c) => ({ ...c, conversationId: id })),
             });
           }
+          if (t.knowledge?.length) {
+            await tx.knowledgeUsage.createMany({
+              data: t.knowledge.map((k) => ({
+                ...k,
+                conversationId: id,
+                messageId: ids[0] ?? null,
+              })),
+            });
+          }
           if (t.sale) {
             await tx.sale.create({
               data: {
                 conversationId: id,
                 process: t.sale.process,
                 planCode: t.sale.planCode,
+                catalogVersionId: t.sale.catalogVersionId ?? null,
                 summaryEncrypted: new Uint8Array(this.cipher.encrypt(t.sale.summary, saleAad(id))),
               },
             });

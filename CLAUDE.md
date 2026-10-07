@@ -125,6 +125,7 @@ abaya-rpa/
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
 - [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
 - [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; falta despliegue y piloto con Claro
+- [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
 
 ## Abaya simulado
 
@@ -138,8 +139,15 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
 - `apps/worker/src/engine/`: máquina de estados, plantillas, validadores, prompts versionados.
 - Menú y autorización son **deterministas**: solo un "SÍ AUTORIZO" explícito (regex en código) es
   consentimiento; el modelo nunca puede darlo por hecho.
-- Catálogo y textos legales son **sintéticos** (`plans.synthetic.json`, `templates.ts`) hasta
-  recibir los oficiales de Claro. Cargar catálogo: `pnpm --filter @abaya/worker seed -- <archivo>`.
+- Catálogo y textos legales son **sintéticos** (`plans.synthetic.csv`, `templates.ts`) hasta
+  recibir los oficiales de Claro. Cargar catálogo (Excel o CSV): `pnpm --filter @abaya/worker seed -- <archivo>`.
+- Brains (v1.9, `docs/DECISIONS.md` D-001): el catálogo vive en un Brain (`packages/knowledge`);
+  el motor usa la versión PUBLICADA (`PublishedBrainCatalog`), la consulta por proceso la hace el
+  código, publicar un catálogo pasa por la suite (cola `abaya.evals`, `kind: 'brain'`) y cada turno
+  deja `KnowledgeUsage`. API en `/admin/knowledge/*`; ingesta por la cola `abaya.knowledge-ingest`.
+  Documentos: contexto completo y búsqueda híbrida (`PgHybridSearch`, embeddings por
+  `EMBEDDINGS_PROVIDER`), páginas web con `SafeWebFetcher` (SSRF). Publicar exige ADMIN con
+  `knowledgePublisher`.
 - Configuración del agente en el panel (v1.8, sección 6.3.8): guion en Markdown + ajustes en
   `AgentConfigVersion`; reglas del sistema, revisión y armado del prompt en
   `packages/domain/src/agent-config.ts`. Publicar corre la suite en el worker (cola

@@ -7,13 +7,15 @@ const plan = (code: string, process: Plan['process'] = 'PORTABILIDAD'): Plan => 
   code,
   process,
   name: `Plan ${code}`,
-  dataGb: 10,
+  dataText: '10 GB',
+  sharedDataText: null,
+  includesText: null,
+  extrasText: null,
+  unlimitedAppsText: null,
+  callsText: null,
   priceCop: 39900,
   discountText: null,
-  benefits: [],
-  active: true,
-  validFrom: new Date('2026-01-01'),
-  validTo: null,
+  hash: `hash-${code}`,
 });
 
 const ctx: ValidationContext = {

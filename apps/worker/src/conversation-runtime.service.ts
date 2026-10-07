@@ -10,15 +10,30 @@ import {
   type EvalJob,
   type InboundJob,
 } from '@abaya/domain';
+import {
+  bootstrapLegacyCatalog,
+  CatalogTableParser,
+  embeddingsFromConfig,
+  ingestSource,
+  KnowledgeRetriever,
+  PgBlobStore,
+  PgHybridSearch,
+  refreshDueWebSources,
+  SafeWebFetcher,
+  TextExtractor,
+  type KnowledgeIngestJob,
+} from '@abaya/knowledge';
+import { PublishedKnowledge } from './knowledge/published-knowledge.js';
 import { createLogger } from '@abaya/logger';
 import { Worker } from 'bullmq';
 import { PrismaAgentConfigSource } from './catalog/agent-config.js';
-import { PrismaCatalog } from './catalog/catalog.js';
+import { PublishedBrainCatalog } from './catalog/catalog.js';
 import { PrismaConversationStore } from './conversation/prisma.store.js';
 import { TurnScheduler } from './conversation/turn-scheduler.js';
 import { TurnService } from './conversation/turn.service.js';
 import { ConversationEngine } from './engine/conversation-engine.js';
 import { evaluateAgentVersion } from './evals/agent-evaluation.js';
+import { catchUpDraft, evaluateBrainVersion } from './evals/brain-evaluation.js';
 import { runAgentTest } from './evals/agent-test.js';
 import { llmFromConfig, providerAdapter } from './llm/from-config.js';
 import { BullQueuePublisher, OutboxPublisher } from './outbox/outbox-publisher.js';
@@ -43,6 +58,9 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
   private evals?: Worker<EvalJob>;
   private agentTests?: Worker<AgentTestJob, AgentTestResult>;
   private agentSource?: PrismaAgentConfigSource;
+  private catalog?: PublishedBrainCatalog;
+  private knowledge?: PublishedKnowledge;
+  private ingest?: Worker<KnowledgeIngestJob>;
   private outbox?: OutboxPublisher;
   private publisher?: BullQueuePublisher;
   private timers: NodeJS.Timeout[] = [];
@@ -51,7 +69,36 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     const cfg = loadConfig();
     this.prisma = createPrismaClient(cfg.DATABASE_URL);
     const cipher = cipherFromConfig(cfg);
-    const catalog = new PrismaCatalog(this.prisma);
+    // Catálogo (v1.9): versión publicada del Brain conectado al agente. La primera vez, el
+    // catálogo vigente de la tabla Plan pasa a ser la v1 del Brain (paso único, auditado).
+    const migrated = await bootstrapLegacyCatalog(this.prisma);
+    if (migrated.created) {
+      this.logger.info(
+        { plans: migrated.records },
+        'catálogo de Plan pasado a Brain (v1 publicada)',
+      );
+    }
+    this.catalog = new PublishedBrainCatalog(this.prisma, createLogger('worker.catalog'));
+    await this.catalog.start();
+    const catalog = this.catalog;
+    // Documentos de los Brains (K3/K4): contexto completo + búsqueda híbrida por turno.
+    const embeddings = embeddingsFromConfig(cfg);
+    const retriever = new KnowledgeRetriever(
+      this.prisma,
+      new PgHybridSearch(this.prisma),
+      embeddings,
+      {
+        topK: cfg.KNOWLEDGE_SEARCH_TOP_K,
+        fullContextBudget: cfg.KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS * 2,
+      },
+    );
+    this.knowledge = new PublishedKnowledge(
+      this.prisma,
+      retriever,
+      createLogger('worker.knowledge'),
+    );
+    await this.knowledge.start();
+    const knowledge = this.knowledge;
     const alerts: AlertPort = alertsFromConfig(cfg, createLogger('worker.alerts'));
     // Versión publicada del agente (v1.8): guion y ajustes editados en el panel.
     this.agentSource = new PrismaAgentConfigSource(this.prisma, createLogger('worker.agent'));
@@ -64,6 +111,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
         catalog,
         timeoutMs: cfg.LLM_TIMEOUT_MS,
         agentConfig: () => agentSource.get(),
+        knowledge,
       }),
       catalog,
       alerts,
@@ -89,16 +137,25 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     this.evals = new Worker<EvalJob>(
       QUEUES.evals,
       async (job) => {
-        await evaluateAgentVersion(
-          {
-            prisma: prismaForEvals,
-            provider: cfg.LLM_PROVIDER,
-            llm: () => providerAdapter(cfg, cfg.LLM_PROVIDER, cfg.LLM_MODEL),
-            ...(cfg.EVALS_DIR ? { casesDir: cfg.EVALS_DIR } : {}),
-            logger: evalLogger,
-          },
-          job.data,
-        );
+        const deps = {
+          prisma: prismaForEvals,
+          provider: cfg.LLM_PROVIDER,
+          llm: () => providerAdapter(cfg, cfg.LLM_PROVIDER, cfg.LLM_MODEL),
+          ...(cfg.EVALS_DIR ? { casesDir: cfg.EVALS_DIR } : {}),
+          logger: evalLogger,
+          retriever,
+          knowledge,
+        };
+        if (job.data.kind === 'brain') {
+          // Catálogo de un Brain (v1.9): misma suite, agente publicado + catálogo borrador.
+          const startedAt = new Date();
+          await evaluateBrainVersion(deps, job.data);
+          await catchUpDraft(prismaForEvals, job.data.versionId, startedAt);
+          await catalog.refresh();
+          await knowledge.refresh();
+          return;
+        }
+        await evaluateAgentVersion(deps, job.data);
         await agentSource.refresh();
       },
       { connection: { url: cfg.REDIS_URL }, concurrency: 1 },
@@ -108,8 +165,27 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     this.agentTests = new Worker<AgentTestJob, AgentTestResult>(
       QUEUES.agentTest,
       async (job) =>
-        runAgentTest({ llm: testLlm, catalog, timeoutMs: cfg.LLM_TIMEOUT_MS }, job.data),
+        runAgentTest({ llm: testLlm, catalog, knowledge, timeoutMs: cfg.LLM_TIMEOUT_MS }, job.data),
       { connection: { url: cfg.REDIS_URL }, concurrency: 4 },
+    );
+    // Ingesta de fuentes de los Brains (v1.9, D9): un archivo inválido no se reintenta.
+    const ingestLogger = createLogger('worker.knowledge');
+    const ingestDeps = {
+      prisma: this.prisma,
+      blobs: new PgBlobStore(this.prisma, cipher),
+      parser: new CatalogTableParser(),
+      documents: new TextExtractor(),
+      web: new SafeWebFetcher(),
+      embeddings,
+      fullContextMaxTokens: cfg.KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS,
+      log: (msg: string, data: Record<string, unknown>) => ingestLogger.info(data, msg),
+    };
+    this.ingest = new Worker<KnowledgeIngestJob>(
+      QUEUES.knowledgeIngest,
+      async (job) => {
+        await ingestSource(ingestDeps, job.data);
+      },
+      { connection: { url: cfg.REDIS_URL }, concurrency: 2 },
     );
     this.publisher = new BullQueuePublisher(cfg.REDIS_URL);
     this.outbox = new OutboxPublisher(this.prisma, this.publisher, createLogger('worker.outbox'));
@@ -143,6 +219,19 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
             ),
           );
       }, 5 * 60_000),
+      // Páginas web de los Brains con actualización programada (K5): revisión cada 10 min.
+      setInterval(() => {
+        refreshDueWebSources(ingestDeps)
+          .then(
+            (r) => (r.refreshed || r.failed) && ingestLogger.info(r, 'páginas web actualizadas'),
+          )
+          .catch((err: unknown) =>
+            ingestLogger.error(
+              { err: err instanceof Error ? err.name : 'unknown' },
+              'error actualizando páginas web',
+            ),
+          );
+      }, 10 * 60_000),
     );
     this.logger.info(
       { llm: cfg.LLM_PROVIDER, model: cfg.LLM_MODEL ?? 'por defecto' },
@@ -153,6 +242,9 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
   async onApplicationShutdown() {
     this.timers.forEach(clearInterval);
     this.agentSource?.stop();
+    this.catalog?.stop();
+    this.knowledge?.stop();
+    await this.ingest?.close();
     await this.evals?.close();
     await this.agentTests?.close();
     await this.inbound?.close();

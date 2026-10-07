@@ -26,6 +26,8 @@ export interface PublicUser {
   role: AdminRole;
   active: boolean;
   mustChangePassword: boolean;
+  /** v1.9: permiso «Publicar conocimiento» (Brains). */
+  knowledgePublisher: boolean;
   lockedUntil: Date | null;
   lastLoginAt: Date | null;
   createdBy: string | null;
@@ -38,6 +40,7 @@ const PUBLIC_FIELDS = {
   role: true,
   active: true,
   mustChangePassword: true,
+  knowledgePublisher: true,
   lockedUntil: true,
   lastLoginAt: true,
   createdBy: true,
@@ -49,6 +52,7 @@ export interface AuthenticatedUser {
   username: string;
   role: AdminRole;
   mustChangePassword: boolean;
+  knowledgePublisher: boolean;
   sessionId: string;
 }
 
@@ -136,6 +140,7 @@ export class UsersService {
         username: user.username,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        knowledgePublisher: user.knowledgePublisher,
         sessionId: session.id,
       },
     };
@@ -167,6 +172,7 @@ export class UsersService {
       username: user.username,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
+      knowledgePublisher: user.knowledgePublisher,
       sessionId: session.id,
     };
   }
@@ -241,14 +247,20 @@ export class UsersService {
   async update(
     me: AuthenticatedUser,
     id: string,
-    input: { role?: unknown; active?: unknown },
+    input: { role?: unknown; active?: unknown; knowledgePublisher?: unknown },
   ): Promise<PublicUser> {
     const role = input.role === undefined ? undefined : this.parseRole(input.role);
     if (input.active !== undefined && typeof input.active !== 'boolean') {
       throw new UsersError(400, 'active debe ser booleano');
     }
     const active = input.active as boolean | undefined;
-    if (role === undefined && active === undefined) throw new UsersError(400, 'Nada que cambiar');
+    if (input.knowledgePublisher !== undefined && typeof input.knowledgePublisher !== 'boolean') {
+      throw new UsersError(400, 'knowledgePublisher debe ser booleano');
+    }
+    const publisher = input.knowledgePublisher as boolean | undefined;
+    if (role === undefined && active === undefined && publisher === undefined) {
+      throw new UsersError(400, 'Nada que cambiar');
+    }
     if (id === me.id) {
       throw new UsersError(403, 'No puede cambiar su propio rol ni desactivarse');
     }
@@ -258,6 +270,9 @@ export class UsersService {
         async (tx) => {
           const target = await tx.adminUser.findUnique({ where: { id } });
           if (!target) throw new UsersError(404, 'Usuario no encontrado');
+          if (publisher && (role ?? target.role) !== 'ADMIN') {
+            throw new UsersError(409, 'El permiso «Publicar conocimiento» requiere rol ADMIN');
+          }
           const losesAdmin =
             target.role === 'ADMIN' &&
             target.active &&
@@ -271,6 +286,9 @@ export class UsersService {
             data: {
               ...(role !== undefined ? { role } : {}),
               ...(active !== undefined ? { active } : {}),
+              // El permiso solo tiene sentido en un ADMIN: quitar el rol lo quita.
+              ...(publisher !== undefined ? { knowledgePublisher: publisher } : {}),
+              ...(role === 'OPERADOR' ? { knowledgePublisher: false } : {}),
             },
             select: PUBLIC_FIELDS,
           });
@@ -284,6 +302,13 @@ export class UsersService {
     const { before, after } = updated;
     if (role !== undefined && role !== before.role) {
       await this.audit(me.username, 'USER_ROLE_CHANGED', `${after.username}:${role}`);
+    }
+    if (after.knowledgePublisher !== before.knowledgePublisher) {
+      await this.audit(
+        me.username,
+        after.knowledgePublisher ? 'USER_KNOWLEDGE_PUBLISHER_ON' : 'USER_KNOWLEDGE_PUBLISHER_OFF',
+        after.username,
+      );
     }
     if (active !== undefined && active !== before.active) {
       await this.audit(me.username, active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED', after.username);

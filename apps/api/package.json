@@ -18,6 +18,7 @@
     "@abaya/crypto": "workspace:*",
     "@abaya/db": "workspace:*",
     "@abaya/domain": "workspace:*",
+    "@abaya/knowledge": "workspace:*",
     "@abaya/logger": "workspace:*",
     "@abaya/robot-store": "workspace:*",
     "@nestjs/common": "^12.1.2",

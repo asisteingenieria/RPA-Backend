@@ -11,11 +11,15 @@ export const QUEUES = {
   evals: 'abaya.evals',
   /** "Probar agente" del panel: turno simulado con respuesta inmediata (v1.8). */
   agentTest: 'abaya.agent-test',
+  /** Ingesta de fuentes de los Brains (v1.9, docs/DECISIONS.md D-001 D9). */
+  knowledgeIngest: 'abaya.knowledge-ingest',
 } as const;
 
 export interface EvalJob {
   versionId: string;
   requestedBy: string;
+  /** v1.9: `brain` = versión del catálogo de un Brain; sin valor = versión del agente. */
+  kind?: 'agent' | 'brain';
 }
 
 /**

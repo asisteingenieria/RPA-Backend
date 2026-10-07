@@ -305,7 +305,7 @@ async function main() {
   run('npx', ['prisma', 'migrate', 'deploy'], join(ROOT, 'packages/db'), { DATABASE_URL: DB });
   run(
     'npx',
-    ['tsx', 'src/catalog/seed.ts', 'src/catalog/plans.synthetic.json'],
+    ['tsx', 'src/catalog/seed.ts', 'src/catalog/plans.synthetic.csv'],
     join(ROOT, 'apps/worker'),
     {
       ...fileEnv,

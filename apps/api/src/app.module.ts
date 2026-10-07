@@ -8,6 +8,15 @@ import { AdminController } from './admin/admin.controller.js';
 import { AdminService } from './admin/admin.service.js';
 import { AgentConfigController } from './admin/agent-config.controller.js';
 import { AgentConfigService } from './admin/agent-config.service.js';
+import { KnowledgeController } from './admin/knowledge.controller.js';
+import { KnowledgeService } from './admin/knowledge.service.js';
+import {
+  embeddingsFromConfig,
+  KnowledgeRetriever,
+  PgBlobStore,
+  PgHybridSearch,
+  type KnowledgeIngestJob,
+} from '@abaya/knowledge';
 import { QUEUES, type AgentTestJob, type AgentTestResult, type EvalJob } from '@abaya/domain';
 import { Queue, QueueEvents } from 'bullmq';
 import { AuthController, COOKIE_SECURE } from './admin/auth.controller.js';
@@ -76,7 +85,49 @@ export const hubDeps: HubDeps = {
 const evalQueue = new Queue<EvalJob>(QUEUES.evals, { connection: { url: cfg.REDIS_URL } });
 const testQueue = new Queue<AgentTestJob>(QUEUES.agentTest, { connection: { url: cfg.REDIS_URL } });
 const testEvents = new QueueEvents(QUEUES.agentTest, { connection: { url: cfg.REDIS_URL } });
-const agentConfig = new AgentConfigService(
+const ingestQueue = new Queue<KnowledgeIngestJob>(QUEUES.knowledgeIngest, {
+  connection: { url: cfg.REDIS_URL },
+});
+// Brains (v1.9): fuentes cifradas en PostgreSQL, ingesta y publicación (con la suite) en el worker.
+// Mismo bloqueo de publicación que el agente (proveedor real y API key).
+const knowledge: KnowledgeService = new KnowledgeService(
+  prisma,
+  new PgBlobStore(prisma, cipher),
+  {
+    ingest: async (job) => {
+      await ingestQueue.add('ingest', job, {
+        jobId: `ingest-${job.sourceId}-${Date.now()}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5_000 },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      });
+    },
+    evaluate: async (job) => {
+      await evalQueue.add('evaluate', job, {
+        jobId: `brain-${job.versionId}-${Date.now()}`,
+        attempts: 1,
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      });
+    },
+  },
+  {
+    publishBlocker: (): string | null => agentConfig.publishBlocker(),
+    maxFileBytes: cfg.KNOWLEDGE_MAX_FILE_MB * 1024 * 1024,
+    // Prueba de búsqueda en el panel: mismo recuperador que usa el motor.
+    retriever: new KnowledgeRetriever(
+      prisma,
+      new PgHybridSearch(prisma),
+      embeddingsFromConfig(cfg),
+      {
+        topK: cfg.KNOWLEDGE_SEARCH_TOP_K,
+        fullContextBudget: cfg.KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS * 2,
+      },
+    ),
+  },
+);
+const agentConfig: AgentConfigService = new AgentConfigService(
   prisma,
   {
     provider: cfg.LLM_PROVIDER,
@@ -110,6 +161,7 @@ const agentConfig = new AgentConfigService(
       return (await j.waitUntilFinished(testEvents, 45_000)) as AgentTestResult;
     },
   },
+  () => knowledge.agentCatalogForPanel(),
 );
 const traceCleanup = setInterval(() => void gateway.cleanupTraces(), 6 * 3_600_000);
 traceCleanup.unref();
@@ -121,6 +173,7 @@ traceCleanup.unref();
     AdminController,
     UsersController,
     AgentConfigController,
+    KnowledgeController,
     RobotsController,
     RobotGatewayController,
   ],
@@ -128,6 +181,7 @@ traceCleanup.unref();
     { provide: AdminService, useValue: new AdminService(prisma, flags) },
     { provide: UsersService, useValue: new UsersService(prisma) },
     { provide: AgentConfigService, useValue: agentConfig },
+    { provide: KnowledgeService, useValue: knowledge },
     { provide: RobotsService, useValue: robots },
     { provide: RobotGateway, useValue: gateway },
     { provide: ReleaseService, useValue: release },
@@ -142,6 +196,7 @@ export class AppModule implements OnApplicationShutdown {
     await gateway.close();
     await evalQueue.close();
     await testQueue.close();
+    await ingestQueue.close();
     await testEvents.close();
     await flags.close();
     await prisma.$disconnect();

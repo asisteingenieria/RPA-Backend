@@ -1,3 +1,4 @@
+import { planTitle } from '@abaya/knowledge';
 import type { Plan } from '../catalog/catalog.js';
 import { bogotaDateTime } from '../engine/templates/templates.js';
 import type { Profile } from '../engine/types.js';
@@ -19,7 +20,7 @@ export function buildSaleSummary(i: SaleSummaryInput): string {
   return [
     '*VENTA AGENTE RPA*',
     `Proceso: ${p.process ?? 'N/D'}`,
-    `Plan: ${p.planCode ?? 'N/D'}${i.plan ? ` - ${i.plan.name}` : ''}`,
+    `Plan: ${p.planCode ?? 'N/D'}${i.plan ? ` - ${planTitle(i.plan)}` : ''}`,
     `Cliente: ${p.name ?? 'N/D'}`,
     ...(p.process === 'PORTABILIDAD' ? [`Operador actual: ${p.currentOperator ?? 'N/D'}`] : []),
     'Número: el del chat de Abaya',

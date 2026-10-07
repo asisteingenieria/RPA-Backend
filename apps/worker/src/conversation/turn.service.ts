@@ -57,8 +57,16 @@ export class TurnService {
       outbound: [],
       respondsToAt: new Date(Math.min(...input.pending.map((p) => p.detectedAt.getTime()))),
       llmCalls: result.llmCalls,
+      knowledge: result.knowledge ?? [],
       events: [],
     };
+    if (result.catalogEmpty) {
+      // El catálogo publicado no tiene planes para el proceso: se escaló sin ofrecer nada.
+      await this.d.alerts.raise('CATALOG_EMPTY_FOR_PROCESS', 'ALTA', {
+        conversationId,
+        process: result.catalogEmpty,
+      });
+    }
     const replyEvents: OutboxEventInput[] = [];
 
     for (const a of result.actions) {
@@ -78,6 +86,7 @@ export class TurnService {
             commit.sale = {
               process: p.process,
               planCode: p.planCode,
+              ...(p.planCatalogVersionId ? { catalogVersionId: p.planCatalogVersionId } : {}),
               summary: buildSaleSummary({
                 conversationId,
                 abayaChatId: input.abayaChatId,

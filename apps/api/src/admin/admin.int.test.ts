@@ -110,6 +110,7 @@ describe('autenticación del panel', () => {
       username: 'ana.ops',
       role: 'OPERADOR',
       mustChangePassword: true,
+      knowledgePublisher: false,
     });
     expect(res.setCookie).toMatch(
       /^abaya_admin=[\w-]{43}; Path=\/admin; HttpOnly; SameSite=Strict/,
@@ -294,6 +295,7 @@ describe('gestión de usuarios (ADMIN)', () => {
       username: u!.username,
       role: u!.role,
       mustChangePassword: false,
+      knowledgePublisher: false,
       sessionId: 'x',
     });
     // Cada uno intenta quitarle el rol al otro a la vez: solo uno puede ganar.

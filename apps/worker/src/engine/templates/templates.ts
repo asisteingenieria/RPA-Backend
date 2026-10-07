@@ -1,4 +1,5 @@
 import { DEFAULT_AGENT_CONFIG, menuText } from '@abaya/domain';
+import { FEATURE_FIELDS, planTitle } from '@abaya/knowledge';
 import type { Plan } from '../../catalog/catalog.js';
 
 /**
@@ -62,13 +63,18 @@ export function formatCop(value: number): string {
   return '$' + new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(value);
 }
 
+/**
+ * Ficha oficial de un plan (v1.9): título, columnas de texto del catálogo y precio, LITERALES
+ * del registro publicado. El modelo nunca la escribe: pone {{OFERTA:CÓDIGO}} y el código la
+ * inserta (regla 11).
+ */
 export function offer(p: Plan): string {
-  const lines = [
-    `*${p.name}*`,
-    `• ${p.dataGb} GB de navegación`,
-    `• Valor: *${formatCop(p.priceCop)}* al mes`,
-    ...p.benefits.map((b) => `• ${b}`),
-  ];
+  const lines = [`*${planTitle(p)}*`];
+  for (const [key, label] of FEATURE_FIELDS) {
+    const v = p[key];
+    if (v) lines.push(`• ${label}: ${v}`);
+  }
+  lines.push(`• Valor: *${formatCop(p.priceCop)}* al mes`);
   if (p.discountText) lines.push(`_${p.discountText}_`);
   return lines.join('\n');
 }

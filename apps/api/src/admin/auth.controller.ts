@@ -73,8 +73,8 @@ export class AuthController {
     }
     this.limiter.success(ip);
     res.setHeader('Set-Cookie', this.cookie(r.token, SESSION_MAX_MS / 1000));
-    const { username, role, mustChangePassword } = r.user;
-    return { username, role, mustChangePassword };
+    const { username, role, mustChangePassword, knowledgePublisher } = r.user;
+    return { username, role, mustChangePassword, knowledgePublisher };
   }
 
   @Post('logout')
@@ -92,8 +92,8 @@ export class AuthController {
   @UseGuards(AdminAuthGuard)
   @AllowPendingPassword()
   me(@Req() req: AdminRequest) {
-    const { username, role, mustChangePassword } = req.me;
-    return { username, role, mustChangePassword };
+    const { username, role, mustChangePassword, knowledgePublisher } = req.me;
+    return { username, role, mustChangePassword, knowledgePublisher };
   }
 
   @Post('password')

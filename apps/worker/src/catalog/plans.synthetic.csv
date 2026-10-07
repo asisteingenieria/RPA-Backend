@@ -1,0 +1,6 @@
+Proceso;ID;Nombre;Datos;GB para compartir;Incluye;Servicios adicionales;Apps ilimitadas;Llamadas y mensajes;Precio;Descuento
+Portabilidad;P1;Plan Porta Básico (DEMO);10 GB;;Redes sociales incluidas (DEMO);;;Minutos ilimitados a todo operador (DEMO);39900;
+Portabilidad;P2;Plan Porta Plus (DEMO);30 GB;;;Roaming DEMO;;Minutos ilimitados a todo operador (DEMO);59900;Descuento DEMO del 20% durante 6 meses (texto de ejemplo, no aprobado).
+Migración;M1;Plan Migra Esencial (DEMO);15 GB;;Conservas tu número (DEMO);;;;45900;
+Migración;M2;Plan Migra Max (DEMO);40 GB;;Conservas tu número (DEMO);Streaming DEMO incluido;;;69900;
+Línea nueva;L1;Plan Nueva Línea (DEMO);20 GB;;SIM sin costo de envío (DEMO);;;;49900;

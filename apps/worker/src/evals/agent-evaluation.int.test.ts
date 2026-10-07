@@ -1,9 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
 import { DEFAULT_AGENT_CONFIG, SYSTEM_RULES, type LlmRequest } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { catalogFileSchema } from '../catalog/catalog.js';
+import { createPublishedCatalog, DEFAULT_CATALOG_BRAIN } from '@abaya/knowledge';
+import { readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { PrismaAgentConfigSource } from '../catalog/agent-config.js';
 import { heuristicBrain } from '../llm/adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from '../llm/adapters/scripted.adapter.js';
@@ -11,9 +11,7 @@ import { evaluateAgentVersion } from './agent-evaluation.js';
 
 let db: TestDatabase;
 const logger = createLogger('test', { level: 'silent' });
-const plans = catalogFileSchema.parse(
-  JSON.parse(readFileSync(new URL('../catalog/plans.synthetic.json', import.meta.url), 'utf8')),
-).plans;
+const plans = await readCatalogFile(SYNTHETIC_CATALOG);
 
 beforeAll(async () => {
   db = await startTestDatabase();
@@ -23,11 +21,14 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.reset();
-  for (const p of plans) {
-    await db.prisma.plan.create({
-      data: { ...p, discountText: p.discountText ?? null, validTo: p.validTo ?? null },
-    });
-  }
+  // Catálogo sintético publicado como v1 del Brain conectado al agente (v1.9).
+  await createPublishedCatalog(db.prisma, {
+    name: DEFAULT_CATALOG_BRAIN,
+    records: plans,
+    actor: 'seed',
+    action: 'BRAIN_SEEDED',
+    note: 'prueba',
+  });
 });
 
 const { id: _id, ...v1 } = DEFAULT_AGENT_CONFIG;
@@ -66,13 +67,15 @@ describe('publicar una versión del agente = pasar la suite (regla 13)', () => {
     const [old, current] = await versions();
     expect(old!.status).toBe('ARCHIVED');
     expect(current).toMatchObject({ status: 'PUBLISHED', publishedBy: 'jefe' });
-    expect(current!.evalSummary).toMatchObject({ cases: 60, invented: 0, problems: [] });
+    expect(current!.evalSummary).toMatchObject({ cases: 66, invented: 0, problems: [] });
     // El guion de la versión evaluada va detrás de las reglas del sistema.
     expect(requests[0]!.systemFixed.startsWith(SYSTEM_RULES)).toBe(true);
     expect(requests[0]!.systemFixed).toContain('Eres Sofía, guion de prueba.');
     expect(requests[0]!.systemDynamic).toMatch(/Etapa actual: [A-Z]+/);
 
-    const audit = await db.prisma.adminAuditLog.findMany();
+    const audit = await db.prisma.adminAuditLog.findMany({
+      where: { action: { startsWith: 'AGENT_' } },
+    });
     expect(audit.map((a) => a.action)).toEqual(['AGENT_PUBLISHED']);
 
     // El worker toma la versión publicada.
