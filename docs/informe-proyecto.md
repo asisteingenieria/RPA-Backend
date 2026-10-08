@@ -1,7 +1,8 @@
 # Informe del proyecto — Agente RPA de ventas en Abaya
 
-> Fecha: 2026-10-06 · Fuente de verdad del diseño: `docs/planRPA.md` · Operación: `docs/runbook.md`
-> · Seguridad: `docs/security-review.md`
+> Fecha: 2026-10-08 · Fuente de verdad del diseño: `docs/planRPA.md` · Decisiones posteriores al
+> plan: `docs/DECISIONS.md` (D-001 a D-005) · Operación: `docs/runbook.md` · Seguridad:
+> `docs/security-review.md` · Panel: repositorio `interfazRPA`
 
 ## Contenido
 
@@ -37,6 +38,16 @@
   su rendimiento.
 - **Cada robot puede atender varias conversaciones a la vez** (como un asesor con varios chats
   abiertos). El tope lo pone Abaya (chats simultáneos por usuario, pendiente de Claro).
+- **El agente se configura desde el panel** (v1.8): un guion en Markdown al estilo Dapta, con
+  vista previa, prueba en un chat de simulación y versiones. **Publicar es inmediato** (D-005); la
+  suite de evaluación corre después y queda como evidencia en el historial de cada versión. Cada
+  conversación termina con la versión del guion con la que empezó (D-004).
+- **Brains** (v1.9, D-001): el catálogo de planes y los documentos (texto, PDF, DOCX, páginas web)
+  que consulta el agente, versionados y publicados desde el panel.
+- **Trazabilidad** (D-002): el ADMIN ve las conversaciones reales completas, por robot, con
+  búsqueda, rendimiento y exportación; cada apertura y exportación queda auditada.
+- El flujo sigue el de la campaña en Dapta (D-003): menú 🅐–🅓, sin línea nueva, soporte que no
+  cierra el chat y textos de transferencia y despedida de la campaña.
 - Las fases F0–F8 están **construidas y probadas contra un Abaya simulado**. Para salir a
   producción faltan insumos externos: acceso a Abaya real, contenido comercial y legal de Claro,
   API keys del LLM y el servidor de despliegue.
@@ -48,10 +59,10 @@
 | 1    | Abre Abaya en un navegador real (Chromium controlado por Playwright).                             |
 | 2    | Inicia sesión con **su** usuario y contraseña de Abaya; mantiene la sesión y se reconecta si cae. |
 | 3    | Detecta los chats asignados y los mensajes nuevos de los clientes.                                |
-| 4    | Responde y conduce la venta (menú → perfil → oferta → objeciones → autorización).                 |
+| 4    | Responde y conduce la venta (menú 🅐–🅓 → nombre y perfil → oferta → objeciones → autorización).    |
 | 5    | Con el "SÍ AUTORIZO" del cliente: registra la venta y la evidencia de consentimiento.             |
 | 6    | Deja la nota interna con el resumen y **transfiere el chat a la cola de backoffice** en Abaya.    |
-| 7    | Cierra los chats que no son venta (soporte, no interesado, inactividad).                          |
+| 7    | Cierra los chats que no son venta (no interesado, inactividad); a soporte le da los canales.      |
 
 Para Abaya, cada robot es un asesor más con su usuario. El "cerebro" (qué responder) no está en el
 computador del robot sino en el servidor central (sección 3).
@@ -85,7 +96,7 @@ su salida se valida antes de enviarse.
 | -------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Servidor central (padre)**     | `postgres`, `redis`, `worker`, `api`       | Datos, colas, motor de conversación (máquina de estados + LLM), ventas, alertas, panel, usuarios y **registro de robots** (credenciales cifradas, códigos de instalación, presencia). |
 | **Cada computador (hijo)**       | `rpa` (uno solo), instalado con el paquete | Navegador, sesión en Abaya con su usuario, lectura de mensajes y ejecución de acciones en su pantalla. Recibe su configuración del padre al arrancar.                                 |
-| **Navegador de quien supervisa** | —                                          | Panel en `https://<servidor>/panel` con usuario y contraseña.                                                                                                                         |
+| **Navegador de quien supervisa** | —                                          | Panel (`interfazRPA`) en el servidor, con usuario y contraseña (ruta de publicación pendiente, 15.2).                                                                                 |
 
 ### 3.2 Qué hace independiente a cada robot ("bien seccionado")
 
@@ -160,17 +171,32 @@ Criterio: 0 mensajes en chat equivocado, 0 duplicados, 0 perdidos, **p95 < 15 s*
 | F2 Sesión                         | ✅     | Login, sesión cifrada, heartbeat, reconexión progresiva, MFA por TOTP. Probado en simulador.                                                                                                               |
 | F3 Lectura de mensajes            | ✅     | Red + pantalla, huella única, sin duplicados.                                                                                                                                                              |
 | F4 Envío                          | ✅     | `BrowserActor`, verificación de identidad del chat, kill switch, envíos inciertos nunca se reintentan solos.                                                                                               |
-| F5 Motor de conversación          | ✅     | Máquina de estados, validadores anti-alucinación, adaptadores de LLM para Anthropic y OpenAI, suite de 60 casos. Catálogo y textos **sintéticos**.                                                         |
+| F5 Motor de conversación          | ✅     | Máquina de estados, validadores anti-alucinación, adaptadores de LLM para Anthropic y OpenAI, suite de 69 casos. Flujo de la campaña (D-003). Catálogo y texto legal **sintéticos**.                       |
 | F6 Venta y transferencia          | ✅     | Venta, consentimiento con cadena de hashes, nota y transferencia. Formato de nota pendiente de Claro.                                                                                                      |
 | F7 Robustez, operación y panel    | ✅     | Colas por robot, reconciliación, alertas, trazas cifradas, prueba de humo, panel con usuarios y roles, robots padre/hijo con instalador y rendimiento por equipo. Falta la prueba de 8 h en ambiente real. |
 | F8 Seguridad, despliegue y piloto | 🟡     | Revisión de seguridad y runbook hechos. Falta desplegar y el piloto.                                                                                                                                       |
 
+Cambios posteriores a las fases (en `docs/planRPA.md` v1.8–v1.9 y `docs/DECISIONS.md`):
+
+| Cambio                                       | Estado | Detalle                                                                                                                                                                    |
+| -------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1.8 Configuración del agente en el panel    | ✅     | Guion en Markdown, ajustes del modelo, revisión al guardar, «Probar agente» con el motor real, historial y restaurar.                                                      |
+| v1.9 / D-001 Brains                          | ✅     | K1–K5: catálogo versionado, contexto completo, búsqueda híbrida (RAG) con PDF/DOCX y páginas web seguras. Publicar un Brain sigue exigiendo la evaluación.                 |
+| D-002 Trazabilidad                           | ✅     | Conversaciones completas para ADMIN, búsqueda en el texto, rendimiento por robot, CSV, auditoría y retención configurable. Falta la referencia escrita de la autorización. |
+| D-003 Flujo de la campaña (Dapta)            | ✅     | Menú 🅐–🅓, nombre antes de la oferta, soporte con canales sin cerrar, ofrecer asesor si no autoriza, textos de transferencia y despedida.                                   |
+| D-004 Versiones del agente                   | ✅     | Nota del cambio, versión fijada por conversación, aplicar con urgencia a las conversaciones en curso, pruebas guardadas, diferencias del guion entre versiones.            |
+| D-005 Publicar sin depender de la evaluación | ✅     | Publicar es inmediato con cualquier resultado; la evaluación corre después (o a pedido) y queda como evidencia. Reemplaza las reglas de publicación de D-004.              |
+
 ### 5.2 Calidad
 
-- Más de 220 pruebas automáticas en verde: unitarias, de integración con PostgreSQL real temporal y de
-  navegador contra el Abaya simulado.
-- Suite de evaluación del motor: 59/60 casos correctos y **0 datos inventados**, con el modelo
-  heurístico de referencia. **Falta correrla con un LLM real** (requiere API keys).
+- 475 pruebas automáticas en verde en el backend (2026-10-08): `worker` 158, `rpa` 93, `api` 85,
+  `knowledge` 82, `crypto` 24, `domain` 13, `config` 7, `db` 6, `alerts` 3, `logger` 2,
+  `robot-store` 2. Son unitarias, de integración con PostgreSQL real temporal y de navegador contra
+  el Abaya simulado. El panel (`interfazRPA`) suma 13. La prueba «DOCX dañado» de `knowledge` falló
+  una vez al correr todo el monorepo y pasa sola: sensible a la carga de la máquina.
+- Suite de evaluación del motor: 69 conversaciones guionadas. Con el modelo heurístico de
+  referencia cumple la meta (≥ 95 % de casos correctos y **0 datos inventados**). **Falta correrla
+  con un LLM real** (requiere la API key en el servidor).
 - CI: formato, lint, typecheck, pruebas y evaluación en cada cambio.
 
 ## 6. Backend
@@ -178,31 +204,91 @@ Criterio: 0 mensajes en chat equivocado, 0 duplicados, 0 perdidos, **p95 < 15 s*
 Tres procesos separados, para que una falla del navegador no detenga al motor (y viceversa) y para
 poder tener **muchos robots con un solo motor**:
 
-| Proceso  | Dónde corre     | Responsabilidad                                                                                                                                                    |
-| -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rpa`    | Cada computador | Navegador, sesión en Abaya, lectura de mensajes, ejecución de acciones (`BrowserActor`), kill switch, verificación de chat, prueba de humo, trazas de error.       |
-| `worker` | Servidor        | Agrupa ráfagas de mensajes (4 s), máquina de estados de la venta, llamadas al LLM, validadores, ventas y consentimiento, cierres por inactividad, alertas, outbox. |
-| `api`    | Servidor        | Salud, panel de administración, usuarios y roles, kill switch, revisión de casos y auditoría.                                                                      |
+| Proceso  | Dónde corre     | Responsabilidad                                                                                                                                                                                                                                                                                   |
+| -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rpa`    | Cada computador | Navegador, sesión en Abaya, lectura de mensajes, ejecución de acciones (`BrowserActor`), kill switch, verificación de chat, prueba de humo, trazas de error.                                                                                                                                      |
+| `worker` | Servidor        | Agrupa ráfagas de mensajes (4 s), máquina de estados de la venta, llamadas al LLM, validadores, ventas y consentimiento, cierres por inactividad, alertas, outbox. Además: suite de evaluación del agente y de los Brains, «Probar agente», ingesta de documentos y retención de la Trazabilidad. |
+| `api`    | Servidor        | Salud, panel de administración, usuarios y roles, kill switch, revisión de casos, auditoría, configuración y versiones del agente, Brains y Trazabilidad.                                                                                                                                         |
 
-Paquetes compartidos: `domain` (reglas y eventos), `db` (esquema y cliente), `config` (variables
-validadas), `crypto` (cifrado, cadenas de hashes, contraseñas, TOTP), `logger` (logs sin datos
-personales), `alerts`.
+Paquetes compartidos: `domain` (reglas, eventos, configuración del agente y reglas del sistema),
+`db` (esquema y cliente), `config` (variables validadas), `crypto` (cifrado, cadenas de hashes,
+contraseñas, TOTP), `logger` (logs sin datos personales), `alerts`, `knowledge` (Brains: catálogo,
+documentos, búsqueda y páginas web) y `robot-store`.
+
+### 6.1 Rutas nuevas de la API (panel)
+
+| Ruta                                                    | Qué hace                                                                                                                     | Rol                |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `GET /admin/agent`, `POST /admin/agent/review`          | Configuración publicada y de trabajo, reglas del sistema, catálogo; revisión del guion mientras se escribe.                  | Ver: todos         |
+| `PUT /admin/agent/draft`                                | Guarda un borrador (con nota; opcionalmente lanza la evaluación).                                                            | ADMIN              |
+| `POST /admin/agent/draft/publish`                       | Publica al instante (D-005): nota opcional, urgencia y evaluación de evidencia después de publicar.                          | ADMIN              |
+| `POST /admin/agent/versions/:id/evaluate`               | Evalúa cualquier versión para dejar la evidencia en su historial.                                                            | ADMIN              |
+| `GET /admin/agent/versions`, `…/:id`, `…/:id/tests`     | Historial con resultado, conversaciones atendidas y pruebas guardadas; restaurar con `…/:id/restore`.                        | Ver: todos         |
+| `POST /admin/agent/test`, `POST /admin/agent/tests`     | «Probar agente» (turno simulado con el motor real) y guardar la prueba en el historial.                                      | ADMIN (editor)     |
+| `/admin/knowledge/…`                                    | Brains: fuentes, versiones, publicación con evaluación, prueba de consultas.                                                 | ADMIN para cambiar |
+| `GET /admin/conversations`, `/stats`, `/:id`, `/export` | Trazabilidad: lista con filtros y KPIs, rendimiento por robot, detalle completo, CSV. Cada apertura y exportación se audita. | Solo ADMIN         |
 
 ## 7. Frontend
 
-Panel web en **React + Vite**, servido por la `api` en `/panel`:
+El panel es el repositorio **`interfazRPA`** (React 19 + Vite + Tailwind v4 + shadcn/ui +
+TanStack Router y Query), con el kit visual de Asiste ING (skill `asiste-agente-rpa-ui`). Habla
+con la `api` por `/admin/*` en el mismo origen (cookie de sesión). En desarrollo corre en
+`http://localhost:5180` y reenvía `/admin` a la `api`. El panel anterior (`apps/panel`, servido en
+`/panel`) queda reemplazado.
 
-- Inicio de sesión con usuario y contraseña; cambio obligatorio de la contraseña temporal.
-- Estado de la sesión de cada robot, conversaciones activas, ventas del día y transferidas.
-- Casos que requieren revisión humana y envíos inciertos.
-- Errores recientes por robot.
-- **Robots**: cuántos hay en línea, en qué equipo corre cada uno, estado, versión, rendimiento
-  comparado por rango de fechas, detalle con historial de acciones, alta de robots con código de
-  instalación, pausa, credenciales y descarga del instalador.
-- Apagado de emergencia (kill switch) y reanudación.
-- Auditoría y gestión de usuarios (rol ADMIN).
+| Pantalla         | Qué muestra                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Inicio y En vivo | Estado de cada robot, conversaciones activas, ventas del día y transferidas, casos para revisión humana, envíos inciertos y errores recientes.                                                         |
+| Robots           | Cuántos hay en línea, equipo, estado, versión, rendimiento por rango de fechas, historial de acciones, alta con código de instalación, pausa, credenciales y descarga del instalador.                  |
+| Agente           | Pestañas Configuración (guion con vista previa, ajustes, prueba al lado), Probar agente, Historial, Evaluaciones y Conocimiento (Brains). Detalle en 7.1.                                              |
+| Trazabilidad     | Conversaciones reales completas por robot: filtros (rango, robot, tipificación, proceso, etapa, revisión, versión del guion), búsqueda en el texto, detalle con anterior/siguiente, rendimiento y CSV. |
+| Usuarios         | Alta, rol, bloqueo y contraseñas temporales (ADMIN).                                                                                                                                                   |
+| Auditoría        | Acciones del panel y por quién (ADMIN).                                                                                                                                                                |
 
-Roles: **ADMIN** (todo) y **OPERADOR** (consulta, revisión y apagado de emergencia).
+El apagado de emergencia (kill switch) está siempre visible; reanudar es solo del ADMIN.
+
+Roles: **ADMIN** (todo, incluida la Trazabilidad) y **OPERADOR** (consulta, revisión, apagado de
+emergencia y probar la versión publicada). Lo que el OPERADOR no puede hacer se ve deshabilitado
+con el motivo.
+
+### 7.1 Agente: guion, versiones y publicación (D-004, D-005)
+
+- **Guion:** un bloque en Markdown organizado por etapas (`## MENU`, `## PERFIL`, `## OFERTA`,
+  `## OBJECIONES`, `## AUTORIZACION`). Va siempre detrás de las **reglas del sistema**, que no se
+  editan y mandan si el guion las contradice. El menú, la autorización, los precios y los textos
+  legales los pone el código.
+- **Revisión al guardar:** el guion no puede llevar precios, gigas ni porcentajes (salen del
+  catálogo); la bienvenida no admite promesas prohibidas ni enlaces.
+- **Guardar borrador:** guarda sin publicar, con una nota del cambio opcional.
+- **Publicar:** inmediato, pase o no la evaluación. Si el editor tiene cambios, se guardan como
+  versión nueva y esa se publica. Opciones: nota, «Evaluar después de publicar» (marcada por
+  defecto) y «Aplicar también a las conversaciones en curso (urgencia)».
+- **Evaluación como evidencia:** la suite (69 conversaciones guionadas; meta 0 datos inventados y
+  ≥ 95 % de casos correctos) corre en segundo plano después de publicar o con «Evaluar» desde el
+  historial. Su resultado (OK, con alertas, inventó datos, error) queda en la versión, con la
+  conversación de cada caso fallido. Nunca publica ni despublica.
+- **Versión por conversación:** cada conversación termina con la versión del guion con la que
+  empezó; las nuevas usan la publicada. Con urgencia, las abiertas pasan a la nueva.
+- **Historial:** por versión, nota, quién guardó y publicó, resultado de la evaluación,
+  conversaciones reales atendidas (enlace a la Trazabilidad filtrada), pruebas guardadas y qué
+  cambió en el guion frente a la versión anterior.
+- **Protección en producción:** con o sin evaluación, cada respuesta real pasa por los validadores
+  (sin cifras fuera de las fichas del catálogo, sin promesas prohibidas, sin planes inexistentes,
+  máximo dos planes por mensaje). Si una respuesta falla, el modelo la rehace una vez y, si vuelve
+  a fallar, sale una frase segura.
+
+### 7.2 Trazabilidad (D-002)
+
+- Claro autoriza mostrar el contenido de las conversaciones reales sin enmascarar, para seguir el
+  rendimiento de cada robot. **Falta adjuntar la referencia del documento escrito** en D-002.
+- Solo ADMIN. El contenido se descifra solo para la respuesta HTTP y nunca va a los logs.
+- La búsqueda incluye el texto de los mensajes (rango máximo 30 días con búsqueda). El CSV de la
+  lista no lleva texto; la transcripción se exporta por conversación.
+- **Retención:** `CONVERSATION_RETENTION_DAYS` (vacío = no se borra). Una tarea horaria borra el
+  contenido de las conversaciones cerradas vencidas y conserva tipificación, venta y métricas. El
+  plazo lo define Claro.
+- Datos que hoy no existen y se muestran como «—»: teléfono del cliente, origen exacto de cada
+  respuesta, recorrido completo de etapas y lo que pasa después de la transferencia.
 
 ## 8. Tecnologías y por qué se eligieron
 
@@ -218,7 +304,7 @@ Roles: **ADMIN** (todo) y **OPERADOR** (consulta, revisión y apagado de emergen
 | **pino**                         | Logs                       | Redacción automática de teléfonos, nombres y contenido.                                                                                                      |
 | **Vitest** + **Playwright Test** | Pruebas                    | Unitarias, integración con PostgreSQL real temporal y navegador contra el simulador.                                                                         |
 | **pnpm** + **Turborepo**         | Monorepo                   | Varios procesos y paquetes en un repositorio, con compilación incremental.                                                                                   |
-| **React** + **Vite**             | Panel                      | Simple, rápido y servido desde el mismo origen que la API (sin CORS).                                                                                        |
+| **React** + **Vite**             | Panel (`interfazRPA`)      | Con Tailwind, shadcn/ui y TanStack Router/Query. Habla con la API en el mismo origen (sin CORS).                                                             |
 | **Docker**                       | Empaquetado y despliegue   | Cada proceso con sus dependencias exactas (incluido el Chromium fijado); corre igual en cualquier máquina.                                                   |
 
 ## 9. Base de datos
@@ -228,22 +314,27 @@ Roles: **ADMIN** (todo) y **OPERADOR** (consulta, revisión y apagado de emergen
 sensibles (mensajes, perfil del cliente, resúmenes, respuesta de consentimiento) se guardan
 **cifrados** (AES-256-GCM con rotación de clave).
 
-| Tabla             | Para qué sirve                                                                                                                                     | Separada por robot      |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `Conversation`    | Cada chat de Abaya: paso de la venta, estado, robot que lo atiende, perfil del cliente (cifrado).                                                  | Sí (`robotUser`)        |
-| `Message`         | Mensajes entrantes y salientes (cifrados), huella anti-duplicados y estado del envío (pendiente, verificado, incierto).                            | Vía la conversación     |
-| `Sale`            | Venta: proceso, plan, resumen para el backoffice (cifrado), hora de transferencia.                                                                 | Vía la conversación     |
-| `ConsentEvidence` | Prueba de la autorización del cliente: hash del texto mostrado, respuesta, hora de Bogotá; cadena de hashes inalterable.                           | Vía la conversación     |
-| `RpaSession`      | Estado de la sesión de cada robot en Abaya y su último heartbeat.                                                                                  | Sí (una fila por robot) |
-| `RpaActionLog`    | Auditoría de cada acción del robot (abrir chat, enviar, nota, transferir, cerrar), con duración y resultado; cadena de hashes por robot.           | Sí (`robotUser`)        |
-| `Plan`            | Catálogo de planes y precios: única fuente de esos datos.                                                                                          | No (compartido)         |
-| `PromptVersion`   | Versiones de las instrucciones del LLM por paso de la venta.                                                                                       | No                      |
-| `LlmCall`         | Trazabilidad de cada llamada al modelo: proveedor, latencia, tokens, resultado de la validación.                                                   | Vía la conversación     |
-| `OutboxEvent`     | Eventos (venta lista, transferida, cerrada) guardados con la operación y publicados después; no se pierden si algo cae.                            | No                      |
-| `AdminAuditLog`   | Acciones hechas desde el panel y por quién.                                                                                                        | No                      |
-| `AdminUser`       | Usuarios del panel (contraseña con hash, rol, bloqueo).                                                                                            | No                      |
-| `Robot`           | Registro de robots hijos: credenciales de Abaya cifradas, código de instalación y token del equipo (como hash), equipo, versión, presencia, pausa. | Sí (una fila por robot) |
-| `AdminSession`    | Sesiones abiertas del panel.                                                                                                                       | No                      |
+| Tabla                                               | Para qué sirve                                                                                                                                                                                                         | Separada por robot      |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `Conversation`                                      | Cada chat de Abaya: paso de la venta, estado, robot que lo atiende, perfil del cliente (cifrado), versión del guion con la que empezó (`agentVersionId`) y si se borró su contenido por retención (`contentPurgedAt`). | Sí (`robotUser`)        |
+| `Message`                                           | Mensajes entrantes y salientes (cifrados), huella anti-duplicados y estado del envío (pendiente, verificado, incierto).                                                                                                | Vía la conversación     |
+| `Sale`                                              | Venta: proceso, plan, resumen para el backoffice (cifrado), hora de transferencia.                                                                                                                                     | Vía la conversación     |
+| `ConsentEvidence`                                   | Prueba de la autorización del cliente: hash del texto mostrado, respuesta, hora de Bogotá; cadena de hashes inalterable.                                                                                               | Vía la conversación     |
+| `RpaSession`                                        | Estado de la sesión de cada robot en Abaya y su último heartbeat.                                                                                                                                                      | Sí (una fila por robot) |
+| `RpaActionLog`                                      | Auditoría de cada acción del robot (abrir chat, enviar, nota, transferir, cerrar), con duración y resultado; cadena de hashes por robot.                                                                               | Sí (`robotUser`)        |
+| `Plan`                                              | Catálogo de planes y precios: única fuente de esos datos.                                                                                                                                                              | No (compartido)         |
+| `PromptVersion`                                     | Histórico: instrucciones por paso de la venta anteriores a la v1.8.                                                                                                                                                    | No                      |
+| `AgentConfigVersion`                                | Versiones del agente: guion, ajustes, estado (borrador, publicada, archivada), nota del cambio, resultado de la evaluación (`evalVerdict`, evidencia), quién publicó, nota y urgencia.                                 | No                      |
+| `AgentTestRecord`                                   | Pruebas de «Probar agente» guardadas en el historial de una versión (solo simulación).                                                                                                                                 | No                      |
+| `Brain`, `BrainVersion`, `AgentBrain`               | Bases de conocimiento, sus versiones (borrador, evaluando, publicada) y a qué agente están conectadas.                                                                                                                 | No                      |
+| `KnowledgeSource`, `KnowledgeBlob`, `CatalogRecord` | Fuentes de cada Brain (texto, archivo, página web), el archivo original y los registros del catálogo de planes.                                                                                                        | No                      |
+| `SourceChunk`, `VersionChunk`, `KnowledgeUsage`     | Fragmentos para la búsqueda (RAG), los que entran en cada versión y qué conocimiento se usó en cada turno.                                                                                                             | No                      |
+| `LlmCall`                                           | Trazabilidad de cada llamada al modelo: proveedor, latencia, tokens, resultado de la validación.                                                                                                                       | Vía la conversación     |
+| `OutboxEvent`                                       | Eventos (venta lista, transferida, cerrada) guardados con la operación y publicados después; no se pierden si algo cae.                                                                                                | No                      |
+| `AdminAuditLog`                                     | Acciones hechas desde el panel y por quién.                                                                                                                                                                            | No                      |
+| `AdminUser`                                         | Usuarios del panel (contraseña con hash, rol, bloqueo).                                                                                                                                                                | No                      |
+| `Robot`                                             | Registro de robots hijos: credenciales de Abaya cifradas, código de instalación y token del equipo (como hash), equipo, versión, presencia, pausa.                                                                     | Sí (una fila por robot) |
+| `AdminSession`                                      | Sesiones abiertas del panel.                                                                                                                                                                                           | No                      |
 
 ## 10. Colas y workers
 
@@ -255,10 +346,13 @@ Redis + BullMQ conectan los procesos:
 | `abaya.outbound.<robot>`     | `worker` → ese `rpa`          | Respuestas a enviar. Concurrencia 1: una acción a la vez por navegador.                       |
 | `abaya.transfer.<robot>`     | `worker` → ese `rpa`          | Nota interna + transferencia al backoffice.                                                   |
 | `abaya.close.<robot>`        | `worker` → ese `rpa`          | Cierres sin venta.                                                                            |
+| `abaya.evals`                | `api` → `worker`              | Evaluación de una versión del agente (evidencia, D-005) o de un Brain.                        |
+| `abaya.agent-test`           | `api` → `worker`              | «Probar agente»: un turno del motor real con respuesta inmediata; no toca Abaya.              |
+| `abaya.knowledge-ingest`     | `api` → `worker`              | Procesar las fuentes de un Brain (extraer texto, fragmentar, indexar).                        |
 | `abaya:killswitch` (bandera) | `api` → todos los `rpa`       | Apagado de emergencia en caliente. Si Redis no responde, el robot se detiene (falla cerrado). |
 
-Tareas programadas: cierre por inactividad, alertas y limpieza (en el `worker`); prueba de humo
-cada 15 min y limpieza de trazas (en cada `rpa`).
+Tareas programadas: cierre por inactividad, alertas, limpieza y retención de la Trazabilidad cada
+hora (en el `worker`); prueba de humo cada 15 min y limpieza de trazas (en cada `rpa`).
 
 ## 11. Docker
 
@@ -351,7 +445,7 @@ El servidor **no necesita** acceso a Abaya: quienes entran a Abaya son los compu
     balanceador de la empresa) hacia el puerto 3000. No exponer el 3000 directamente.
 11. **Firewall**: solo 443 (HTTPS) hacia el servidor, desde la red interna y los computadores
     robot. PostgreSQL y Redis quedan cerrados al exterior del servidor. Redis con contraseña (`requirepass`) y PostgreSQL con TLS (`sslmode=require`).
-12. **Verificar**: `curl https://<servidor>/health` y entrar a `https://<servidor>/panel`.
+12. **Verificar**: `curl https://<servidor>/health` y entrar al panel (hoy `https://<servidor>/panel`; ver 15.2).
 13. **Respaldos**: `pg_dump` diario de la base `abaya_rpa`, guardado fuera del servidor.
 
 > El `docker-compose.yml` actual está pensado para desarrollo (un solo robot, Redis sin
@@ -571,14 +665,16 @@ ORDER BY r."robotUser";
 
 ### 15.1 Insumos externos (bloquean el paso a producción)
 
-| Pendiente                                                                                          | De quién       |
-| -------------------------------------------------------------------------------------------------- | -------------- |
-| Ambiente de pruebas de Abaya y un usuario robot por computador                                     | Claro          |
-| Respuesta sobre MFA, expiración de sesión y **chats simultáneos por usuario**                      | Claro          |
-| Dónde corren los robots (red, VPN, lista de IP)                                                    | Claro          |
-| Planes y precios oficiales, texto legal de autorización, formato de la nota, política de retención | Claro          |
-| API keys de al menos dos proveedores de LLM (o modelo en la nube de Claro)                         | Equipo / Claro |
-| Servidor de despliegue con Docker                                                                  | Equipo         |
+| Pendiente                                                                                         | De quién       |
+| ------------------------------------------------------------------------------------------------- | -------------- |
+| Ambiente de pruebas de Abaya y un usuario robot por computador                                    | Claro          |
+| Respuesta sobre MFA, expiración de sesión y **chats simultáneos por usuario**                     | Claro          |
+| Dónde corren los robots (red, VPN, lista de IP)                                                   | Claro          |
+| Planes y precios oficiales, texto legal de autorización, formato de la nota                       | Claro          |
+| Documento escrito de la autorización para la Trazabilidad (referencia en D-002)                   | Claro          |
+| Días de retención del contenido de las conversaciones (y si ventas y consentimientos tienen otro) | Claro          |
+| API keys de al menos dos proveedores de LLM (o modelo en la nube de Claro); sin ella no se evalúa | Equipo / Claro |
+| Servidor de despliegue con Docker                                                                 | Equipo         |
 
 ### 15.2 Trabajo técnico pendiente (no depende de terceros)
 
@@ -589,16 +685,24 @@ ORDER BY r."robotUser";
 3. Descubrimiento real de Abaya (F1) apenas haya acceso: selectores, fixtures sanitizados y
    confirmación de la lectura simultánea de chats.
 4. Evaluación con LLM real, prueba de resistencia de 8 h y piloto con 1 robot.
+5. Definir cómo se publica el panel `interfazRPA` en el servidor (build estático detrás del mismo
+   origen que `/admin`) y retirar `apps/panel`.
+6. Llevar los Brains al esquema de D-005 si se quiere publicarlos sin esperar la evaluación.
+7. pgvector en el PostgreSQL del servidor para la búsqueda (RAG) de los Brains (D-001).
+8. Guardar el teléfono del cliente cifrado, el origen de cada respuesta y el recorrido de etapas
+   para completar la Trazabilidad.
 
 ### 15.3 Riesgos principales
 
-| Riesgo                                | Mitigación                                                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Cambios en la interfaz de Abaya       | Selectores centralizados y semánticos, alerta de selector roto, prueba de humo cada 15 min.                                       |
-| Respuesta en el chat equivocado       | Una acción a la vez por robot y verificación de identidad del chat antes de escribir.                                             |
-| El LLM inventa precios o condiciones  | El modelo nunca escribe datos: catálogo + plantillas + validadores + suite de evaluación.                                         |
-| Caída de un computador                | Los demás robots siguen; alerta de heartbeat perdido; al volver, reconciliación del estado.                                       |
-| Caída del servidor central            | Ningún robot actúa (falla cerrado); respaldos diarios de la base.                                                                 |
-| Mismo usuario de Abaya en dos equipos | Bloqueado por el sistema: el segundo equipo no inicia sesión y se alerta.                                                         |
-| Robo o pérdida de un equipo robot     | El equipo no tiene la base, Redis ni la clave; su token está protegido con DPAPI. Deshabilitar en el panel lo revoca al instante. |
-| Copia del archivo del robot           | Token atado al usuario de Windows (DPAPI) y rotativo: un reúso revoca el robot y alerta `ROBOT_TOKEN_REUSE`.                      |
+| Riesgo                                              | Mitigación                                                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Cambios en la interfaz de Abaya                     | Selectores centralizados y semánticos, alerta de selector roto, prueba de humo cada 15 min.                                               |
+| Respuesta en el chat equivocado                     | Una acción a la vez por robot y verificación de identidad del chat antes de escribir.                                                     |
+| El LLM inventa precios o condiciones                | El modelo nunca escribe datos: catálogo + plantillas + validadores en cada respuesta + suite de evaluación.                               |
+| Se publica un guion que falla la evaluación (D-005) | Riesgo aceptado: los validadores frenan cada respuesta inválida (rehace o frase segura) y el reporte queda en el historial para corregir. |
+| Exposición de conversaciones reales (Trazabilidad)  | Solo ADMIN, contenido cifrado en la base, nunca en logs, cada apertura y exportación auditada, retención configurable.                    |
+| Caída de un computador                              | Los demás robots siguen; alerta de heartbeat perdido; al volver, reconciliación del estado.                                               |
+| Caída del servidor central                          | Ningún robot actúa (falla cerrado); respaldos diarios de la base.                                                                         |
+| Mismo usuario de Abaya en dos equipos               | Bloqueado por el sistema: el segundo equipo no inicia sesión y se alerta.                                                                 |
+| Robo o pérdida de un equipo robot                   | El equipo no tiene la base, Redis ni la clave; su token está protegido con DPAPI. Deshabilitar en el panel lo revoca al instante.         |
+| Copia del archivo del robot                         | Token atado al usuario de Windows (DPAPI) y rotativo: un reúso revoca el robot y alerta `ROBOT_TOKEN_REUSE`.                              |
