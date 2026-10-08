@@ -1,5 +1,34 @@
 # Decisiones de diseño
 
+## D-006 · Gemini como proveedor del modelo y de embeddings · APROBADA — implementada
+
+Fecha: 2026-10-08 · Estado: **aprobada e implementada** · Afecta: `apps/worker` (adaptador y
+fábrica), `apps/api` (proveedor listo), `packages/config`, `packages/knowledge` (embeddings),
+`evals/run-evals.ts`.
+
+Pedido del responsable del proyecto: que el agente consuma directamente los tokens de Gemini.
+
+- `GeminiLlmAdapter` (`apps/worker/src/llm/adapters/gemini.adapter.ts`), ya previsto en la sección
+  4 del plan: `LLM_PROVIDER=gemini` con `GEMINI_API_KEY`; también puede ser el respaldo
+  (`LLM_FALLBACK_PROVIDER=gemini`). Modelo por defecto `gemini-3.8-flash` (se fija con
+  `LLM_MODEL`).
+- **API REST directa, sin SDK** (excepción a la tabla de la sección 5, "SDK oficial de cada
+  proveedor"): una sola llamada `models/{modelo}:generateContent`, igual que los embeddings, sin
+  sumar dependencias con scripts de instalación. Salida estructurada con `responseJsonSchema`,
+  razonamiento `thinkingLevel: low` en Gemini 3+ (latencia), timeout de 8 s y 1 reintento solo
+  ante 429, 5xx o sin respuesta. La parte fija del system prompt va primero: Gemini cachea el
+  prefijo de forma implícita.
+- Embeddings: `EMBEDDINGS_PROVIDER=gemini` (`gemini-embedding-2`, 768 dimensiones,
+  `RETRIEVAL_DOCUMENT` / `RETRIEVAL_QUERY`), con la misma `GEMINI_API_KEY`.
+- Suite: `pnpm evals -- --provider gemini` (`EVAL_GEMINI_MODEL` opcional). Primera corrida con
+  `gemini-3.8-flash` y el catálogo sintético: 66/69 (95,7 %), 0 datos inventados, p50 2,4 s,
+  p95 5,8 s. Fallas: `man-json-01` (un JSON pegado por el cliente avanzó a AUTORIZACION; el
+  consentimiento sigue exigiendo el «SÍ AUTORIZO» por regex) y `amb-audio-01` / `amb-imagen-01`
+  (escala a asesor ante audio o imagen en vez de seguir en PERFIL).
+- **Pendiente (sección 9, datos al LLM):** usar una clave de un proyecto con facturación activa.
+  En el nivel gratuito de Google AI Studio, Google puede usar los datos enviados para mejorar sus
+  productos; con facturación no. Si Claro tiene Google Cloud, evaluar Vertex AI.
+
 ## D-005 · Publicar el agente sin depender de la evaluación (la evaluación es evidencia) · APROBADA — implementada
 
 Fecha: 2026-10-08 · Estado: **aprobada e implementada** (backend y panel) · Afecta:

@@ -140,7 +140,9 @@ const agentConfig: AgentConfigService = new AgentConfigService(
         ? !!cfg.ANTHROPIC_API_KEY
         : cfg.LLM_PROVIDER === 'openai'
           ? !!cfg.OPENAI_API_KEY
-          : cfg.LLM_PROVIDER !== 'gemini',
+          : cfg.LLM_PROVIDER === 'gemini'
+            ? !!cfg.GEMINI_API_KEY
+            : true,
   },
   {
     enqueue: async (job) => {

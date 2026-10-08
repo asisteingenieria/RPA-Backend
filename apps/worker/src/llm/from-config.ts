@@ -3,6 +3,7 @@ import type { LlmPort } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { AnthropicLlmAdapter } from './adapters/anthropic.adapter.js';
 import { FallbackLlmAdapter } from './adapters/fallback.adapter.js';
+import { GeminiLlmAdapter } from './adapters/gemini.adapter.js';
 import { OpenAiLlmAdapter } from './adapters/openai.adapter.js';
 import { heuristicBrain } from './adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from './adapters/scripted.adapter.js';
@@ -24,6 +25,13 @@ export function providerAdapter(
       return new OpenAiLlmAdapter({
         model,
         ...(cfg.OPENAI_API_KEY ? { apiKey: cfg.OPENAI_API_KEY } : {}),
+        timeoutMs: cfg.LLM_TIMEOUT_MS,
+      });
+    case 'gemini':
+      if (!cfg.GEMINI_API_KEY) throw new Error('Falta GEMINI_API_KEY');
+      return new GeminiLlmAdapter({
+        apiKey: cfg.GEMINI_API_KEY,
+        ...(model ? { model } : {}),
         timeoutMs: cfg.LLM_TIMEOUT_MS,
       });
     case 'simulado':

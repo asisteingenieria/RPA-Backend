@@ -79,7 +79,7 @@ export const envSchema = z.object({
   LLM_SIMULATED_DELAY_MS: z.coerce.number().int().min(0).default(0),
   /** Proveedor de respaldo si el principal falla (vacío = sin respaldo). */
   LLM_FALLBACK_PROVIDER: z
-    .enum(['anthropic', 'openai'])
+    .enum(['anthropic', 'openai', 'gemini'])
     .optional()
     .or(z.literal('').transform(() => undefined)),
   LLM_FALLBACK_MODEL: optionalString,
@@ -104,13 +104,19 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
+  /** Clave de la API de Gemini (Google AI Studio): modelo y, si se elige, embeddings. */
+  GEMINI_API_KEY: optionalString,
   // ---------- Brains (v1.9, docs/DECISIONS.md D-001) ----------
   /**
    * Embeddings para la búsqueda de los Brains (K4). `none` = búsqueda solo por texto completo de
-   * PostgreSQL en español. `openai` usa OPENAI_API_KEY; `voyage` usa VOYAGE_API_KEY.
+   * PostgreSQL en español. `openai` usa OPENAI_API_KEY; `voyage` usa VOYAGE_API_KEY; `gemini`
+   * usa GEMINI_API_KEY.
    */
-  EMBEDDINGS_PROVIDER: z.enum(['none', 'openai', 'voyage']).default('none'),
-  /** Modelo de embeddings (vacío = text-embedding-3-small u voyage-4 según el proveedor). */
+  EMBEDDINGS_PROVIDER: z.enum(['none', 'openai', 'voyage', 'gemini']).default('none'),
+  /**
+   * Modelo de embeddings (vacío = text-embedding-3-small, voyage-4 o gemini-embedding-2 según el
+   * proveedor).
+   */
   EMBEDDINGS_MODEL: optionalString,
   VOYAGE_API_KEY: optionalString,
   /** Contenido de uso "contexto completo" por encima de esto se rechaza (usa Búsqueda). */
@@ -131,6 +137,9 @@ function crossChecks(cfg: AppConfig): string[] {
   }
   if (cfg.EMBEDDINGS_PROVIDER === 'voyage' && !cfg.VOYAGE_API_KEY) {
     issues.push('EMBEDDINGS_PROVIDER=voyage requiere VOYAGE_API_KEY');
+  }
+  if (cfg.EMBEDDINGS_PROVIDER === 'gemini' && !cfg.GEMINI_API_KEY) {
+    issues.push('EMBEDDINGS_PROVIDER=gemini requiere GEMINI_API_KEY');
   }
   if (cfg.NODE_ENV === 'production' && cfg.LLM_PROVIDER === 'simulado') {
     issues.push('LLM_PROVIDER: "simulado" no está permitido en producción');
