@@ -73,7 +73,8 @@ describe('armado del prompt', () => {
 
   it('el menú es la bienvenida más las opciones fijas A–D', () => {
     const m = menuText('  Hola, soy Sofía  ');
-    expect(m.startsWith('Hola, soy Sofía\n\n*A.*')).toBe(true);
-    expect(m).toContain('*D.*');
+    // D-003: menú de la campaña (🅐–🅓) justo después de la bienvenida.
+    expect(m.startsWith('Hola, soy Sofía\n🅐 Cambiarme de operador')).toBe(true);
+    expect(m.endsWith('🅓 Cancelar mi plan pospago')).toBe(true);
   });
 });

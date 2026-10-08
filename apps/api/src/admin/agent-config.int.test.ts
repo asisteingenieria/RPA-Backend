@@ -199,7 +199,11 @@ describe('configuración del agente (v1.8)', () => {
   it('D-005: publicar sin evaluar como evidencia (evaluate: false) no encola la suite', async () => {
     const admin = await ready('jefe', 'ADMIN');
     await put('/admin/agent/draft', fields(), admin);
-    const r = await post('/admin/agent/draft/publish', { evaluate: false, reason: 'ajuste' }, admin);
+    const r = await post(
+      '/admin/agent/draft/publish',
+      { evaluate: false, reason: 'ajuste' },
+      admin,
+    );
     expect(await json(r)).toMatchObject({ status: 'PUBLISHED', evaluation: 'SKIPPED' });
     expect(jobs).toHaveLength(0);
     const audit = await db.prisma.adminAuditLog.findFirstOrThrow({

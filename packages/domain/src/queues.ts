@@ -7,7 +7,7 @@ export const QUEUES = {
   outbound: 'abaya.outbound',
   transfer: 'abaya.transfer',
   close: 'abaya.close',
-  /** Evaluación de un borrador del agente antes de publicarlo (v1.8, regla 13). */
+  /** Evaluación de una versión del agente (evidencia, D-005) o de un Brain (v1.8, regla 13). */
   evals: 'abaya.evals',
   /** "Probar agente" del panel: turno simulado con respuesta inmediata (v1.8). */
   agentTest: 'abaya.agent-test',
