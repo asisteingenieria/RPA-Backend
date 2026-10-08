@@ -180,7 +180,10 @@ describe('evaluar una versión del agente (regla 13; D-004/D-005: evaluar no pub
 
   it('una versión que ya no está en evaluación se ignora', async () => {
     const v2 = await evaluating();
-    await db.prisma.agentConfigVersion.update({ where: { id: v2.id }, data: { evalVerdict: null } });
+    await db.prisma.agentConfigVersion.update({
+      where: { id: v2.id },
+      data: { evalVerdict: null },
+    });
     const outcome = await evaluateAgentVersion(
       deps(() => new ScriptedLlmAdapter(heuristicBrain)),
       { versionId: v2.id, requestedBy: 'jefe' },
