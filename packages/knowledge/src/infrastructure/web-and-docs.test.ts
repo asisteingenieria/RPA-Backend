@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { TextExtractor } from './document-parser.js';
-import { OpenAiEmbeddings, VoyageEmbeddings, embeddingsFromConfig } from './embeddings.js';
+import {
+  GeminiEmbeddings,
+  OpenAiEmbeddings,
+  VoyageEmbeddings,
+  embeddingsFromConfig,
+} from './embeddings.js';
 import { htmlTitle, htmlToText } from './html-text.js';
 import { SafeWebFetcher, checkWebUrl, isPublicAddress } from './web-fetcher.js';
 
@@ -132,6 +137,53 @@ describe('embeddings: forma de las peticiones (referencia oficial)', () => {
     });
   });
 
+  it('Gemini: batchEmbedContents con taskType, 768 dimensiones y clave en x-goog-api-key', async () => {
+    const calls: { url: string; body: { requests: { taskType: string }[] }; key: string | null }[] =
+      [];
+    const e = new GeminiEmbeddings({
+      apiKey: 'g-prueba',
+      model: 'gemini-embedding-2',
+      fetchImpl: (async (url: string, init: RequestInit) => {
+        const body = JSON.parse(init.body as string) as { requests: { taskType: string }[] };
+        calls.push({
+          url,
+          body,
+          key: (init.headers as Record<string, string>)['x-goog-api-key'] ?? null,
+        });
+        const embeddings = body.requests.map((_, i) => ({ values: [i, 2] }));
+        return new Response(JSON.stringify({ embeddings }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    expect(await e.embed(['a', 'b'], 'document')).toEqual([
+      [0, 2],
+      [1, 2],
+    ]);
+    expect(calls[0]!.url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents',
+    );
+    expect(calls[0]!.key).toBe('g-prueba');
+    expect(calls[0]!.body.requests[0]).toEqual({
+      model: 'models/gemini-embedding-2',
+      content: { parts: [{ text: 'a' }] },
+      taskType: 'RETRIEVAL_DOCUMENT',
+      outputDimensionality: 768,
+    });
+    await e.embed(['q'], 'query');
+    expect(calls[1]!.body.requests[0]!.taskType).toBe('RETRIEVAL_QUERY');
+  });
+
+  it('Gemini: respuesta con menos vectores que textos → EmbeddingError', async () => {
+    const e = new GeminiEmbeddings({
+      apiKey: 'g',
+      model: 'gemini-embedding-2',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ embeddings: [{ values: [1] }] }), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    });
+    await expect(e.embed(['a', 'b'], 'document')).rejects.toThrow('incompleta');
+  });
+
   it('error del proveedor → EmbeddingError (la ingesta reintenta)', async () => {
     const e = new OpenAiEmbeddings({
       apiKey: 'x',
@@ -147,6 +199,10 @@ describe('embeddings: forma de las peticiones (referencia oficial)', () => {
     expect(
       embeddingsFromConfig({ EMBEDDINGS_PROVIDER: 'openai', OPENAI_API_KEY: 'k' })?.model,
     ).toBe('text-embedding-3-small');
+    expect(embeddingsFromConfig({ EMBEDDINGS_PROVIDER: 'gemini' })).toBeNull();
+    expect(
+      embeddingsFromConfig({ EMBEDDINGS_PROVIDER: 'gemini', GEMINI_API_KEY: 'k' })?.model,
+    ).toBe('gemini-embedding-2');
   });
 });
 

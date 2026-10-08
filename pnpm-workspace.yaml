@@ -11,6 +11,8 @@ allowBuilds:
   '@embedded-postgres/windows-x64': true
   # CI (ubuntu-latest): PostgreSQL temporal de las pruebas de integración.
   '@embedded-postgres/linux-x64': true
+  # Mac con Apple Silicon (desarrollo local).
+  '@embedded-postgres/darwin-arm64': true
 
 # Correcciones de seguridad en dependencias transitivas del CLI de Prisma (F8).
 overrides:

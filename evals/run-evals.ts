@@ -3,10 +3,12 @@
  *
  *   pnpm evals                                  # línea base heurística (sin red)
  *   pnpm evals --provider anthropic,openai      # proveedores reales (requiere API keys)
+ *   pnpm evals --provider gemini                # Gemini (requiere GEMINI_API_KEY)
  *   pnpm evals --provider anthropic --filter feliz-
  *   pnpm evals --provider anthropic --agent borrador.json   # una versión del agente (v1.8)
  *
  * Variables: EVAL_ANTHROPIC_MODEL (por defecto claude-opus-5-5), EVAL_OPENAI_MODEL,
+ * EVAL_GEMINI_MODEL (por defecto el del adaptador de Gemini),
  * EVAL_PRICE_<PROVEEDOR>_IN / _OUT (USD por millón de tokens) para el costo.
  * Sale con código 1 si hay datos inventados o si los correctos son < 95 %.
  * El núcleo vive en `apps/worker/src/evals/suite.ts` (también lo usa el worker al publicar).
@@ -25,6 +27,7 @@ import {
   type CaseResult,
 } from '../apps/worker/src/evals/suite.js';
 import { AnthropicLlmAdapter } from '../apps/worker/src/llm/adapters/anthropic.adapter.js';
+import { GeminiLlmAdapter } from '../apps/worker/src/llm/adapters/gemini.adapter.js';
 import { OpenAiLlmAdapter } from '../apps/worker/src/llm/adapters/openai.adapter.js';
 import { ScriptedLlmAdapter } from '../apps/worker/src/llm/adapters/scripted.adapter.js';
 import { heuristicBrain } from '../apps/worker/src/llm/adapters/heuristic-brain.js';
@@ -51,6 +54,12 @@ function adapterFor(provider: string): LlmPort {
       const model = process.env.EVAL_OPENAI_MODEL;
       if (!model) throw new Error('Falta EVAL_OPENAI_MODEL');
       return new OpenAiLlmAdapter({ model });
+    }
+    case 'gemini': {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Falta GEMINI_API_KEY');
+      const model = process.env.EVAL_GEMINI_MODEL;
+      return new GeminiLlmAdapter({ apiKey, ...(model ? { model } : {}) });
     }
     default:
       throw new Error(`proveedor desconocido: ${provider}`);

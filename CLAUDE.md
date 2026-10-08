@@ -154,7 +154,9 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   `abaya.evals`, `apps/worker/src/evals/agent-evaluation.ts`); "Probar agente" usa la cola
   `abaya.agent-test`. Núcleo de la suite: `apps/worker/src/evals/suite.ts`.
 - Suite de evaluación: `pnpm evals` (línea base sin red) o
-  `pnpm evals -- --provider anthropic,openai` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
+  `pnpm evals -- --provider anthropic,openai,gemini` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
+- Gemini (D-006): `LLM_PROVIDER=gemini` y `EMBEDDINGS_PROVIDER=gemini` con `GEMINI_API_KEY`;
+  adaptador por API REST (sin SDK) en `apps/worker/src/llm/adapters/gemini.adapter.ts`.
 
 ## Pruebas de integración con PostgreSQL
 

@@ -61,4 +61,19 @@ describe('loadConfig', () => {
     );
     expect(() => loadConfig({ ...valid, LLM_FALLBACK_PROVIDER: 'otro' })).toThrow();
   });
+
+  it('Gemini: proveedor principal o de respaldo; sus embeddings exigen GEMINI_API_KEY', () => {
+    expect(loadConfig({ ...valid, LLM_PROVIDER: 'gemini', GEMINI_API_KEY: 'k' })).toMatchObject({
+      LLM_PROVIDER: 'gemini',
+      GEMINI_API_KEY: 'k',
+    });
+    expect(loadConfig({ ...valid, LLM_FALLBACK_PROVIDER: 'gemini' }).LLM_FALLBACK_PROVIDER).toBe(
+      'gemini',
+    );
+    expect(() => loadConfig({ ...valid, EMBEDDINGS_PROVIDER: 'gemini' })).toThrow(/GEMINI_API_KEY/);
+    expect(
+      loadConfig({ ...valid, EMBEDDINGS_PROVIDER: 'gemini', GEMINI_API_KEY: 'k' })
+        .EMBEDDINGS_PROVIDER,
+    ).toBe('gemini');
+  });
 });
