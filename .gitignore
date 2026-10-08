@@ -14,6 +14,8 @@ packages/db/src/generated/
 
 # Playwright: sesiones, trazas y reportes (pueden contener datos personales)
 **/storage-state*
+# …pero no el código que las cifra (apps/rpa/src/session/storage-state.store.ts y su prueba).
+!**/storage-state*.ts
 **/traces/
 **/test-results/
 **/playwright-report/
