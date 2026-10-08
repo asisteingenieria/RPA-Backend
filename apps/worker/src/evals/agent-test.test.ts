@@ -52,17 +52,30 @@ describe('probar agente (turno simulado)', () => {
       'Consentimiento registrado (evidencia con cadena de hashes)',
       'Transferencia al backoffice (con nota interna)',
     ]);
-    expect(all.replies.at(-1)).toBe(T.TRANSFER);
+    expect(all.replies.at(-1)).toContain('Te transfiero con uno de nuestros asesores');
   });
 
-  it('opción D: soporte y cierre', async () => {
-    const r = await runAgentTest(deps, {
+  it('opción D: canales de soporte sin cerrar; «no gracias» cierra como soporte', async () => {
+    const menu = {
+      stage: 'MENU' as const,
+      profile: {},
+      history: [{ role: 'bot' as const, text: T.MENU }],
+    };
+    const r = await runAgentTest(deps, { agent, state: menu, message: 'D' });
+    expect(r.stage).toBe('MENU');
+    expect(r.replies).toEqual([T.SUPPORT]);
+    expect(r.events).toEqual([]);
+    const r2 = await runAgentTest(deps, {
       agent,
-      state: { stage: 'MENU', profile: {}, history: [{ role: 'bot', text: T.MENU }] },
-      message: 'D',
+      state: {
+        stage: r.stage,
+        profile: r.profile,
+        history: [...menu.history, { role: 'customer', text: 'D' }],
+      },
+      message: 'no gracias',
     });
-    expect(r.stage).toBe('SOPORTE');
-    expect(r.events).toEqual(['Chat cerrado (soporte *611)']);
+    expect(r2.stage).toBe('SOPORTE');
+    expect(r2.events).toEqual(['Chat cerrado (soporte *611)']);
   });
 });
 

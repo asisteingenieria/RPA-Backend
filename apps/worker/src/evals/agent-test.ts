@@ -52,8 +52,12 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
   }
   return {
     stage: r.stage,
+    // Texto y marcas del flujo (D-003): la simulación del panel los devuelve en el turno siguiente.
     profile: Object.fromEntries(
-      Object.entries(r.profile).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      Object.entries(r.profile).filter(
+        (e): e is [string, string | boolean] =>
+          typeof e[1] === 'string' || typeof e[1] === 'boolean',
+      ),
     ),
     replies,
     events,

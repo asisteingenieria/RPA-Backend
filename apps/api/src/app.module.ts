@@ -8,6 +8,8 @@ import { AdminController } from './admin/admin.controller.js';
 import { AdminService } from './admin/admin.service.js';
 import { AgentConfigController } from './admin/agent-config.controller.js';
 import { AgentConfigService } from './admin/agent-config.service.js';
+import { ConversationsController } from './admin/conversations.controller.js';
+import { ConversationsService } from './admin/conversations.service.js';
 import { KnowledgeController } from './admin/knowledge.controller.js';
 import { KnowledgeService } from './admin/knowledge.service.js';
 import {
@@ -174,6 +176,7 @@ traceCleanup.unref();
     UsersController,
     AgentConfigController,
     KnowledgeController,
+    ConversationsController,
     RobotsController,
     RobotGatewayController,
   ],
@@ -182,6 +185,13 @@ traceCleanup.unref();
     { provide: UsersService, useValue: new UsersService(prisma) },
     { provide: AgentConfigService, useValue: agentConfig },
     { provide: KnowledgeService, useValue: knowledge },
+    // Trazabilidad (D-002): conversaciones completas para todo ADMIN.
+    {
+      provide: ConversationsService,
+      useValue: new ConversationsService(prisma, cipher, {
+        retentionDays: cfg.CONVERSATION_RETENTION_DAYS ?? null,
+      }),
+    },
     { provide: RobotsService, useValue: robots },
     { provide: RobotGateway, useValue: gateway },
     { provide: ReleaseService, useValue: release },

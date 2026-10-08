@@ -44,7 +44,13 @@ export class PrismaConversationStore implements ConversationStore {
       ? (JSON.parse(this.cipher.decryptString(c.profileEncrypted, profileAad(c.id))) as Profile)
       : {};
     return {
-      state: { conversationId, stage: c.stage as Stage, profile, history },
+      state: {
+        conversationId,
+        stage: c.stage as Stage,
+        profile,
+        history,
+        ...(c.agentVersionId ? { agentVersionId: c.agentVersionId } : {}),
+      },
       abayaChatId: c.abayaChatId,
       robotUser: c.robotUser,
       status: c.status,
@@ -72,6 +78,14 @@ export class PrismaConversationStore implements ConversationStore {
               ),
             },
           });
+          // D-004: la conversación conserva la versión con la que empezó. Solo se fija si no
+          // tenía (una publicación urgente pudo cambiarla mientras corría el turno).
+          if (t.agentVersionId) {
+            await tx.conversation.updateMany({
+              where: { id, agentVersionId: null },
+              data: { agentVersionId: t.agentVersionId },
+            });
+          }
           if (t.processedMessageIds.length) {
             await tx.message.updateMany({
               where: { id: { in: t.processedMessageIds } },

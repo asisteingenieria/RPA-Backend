@@ -7,6 +7,7 @@ import {
   closeInactive,
   conversationsWithPendingInbound,
   databaseChecks,
+  purgeExpiredConversations,
 } from './maintenance.js';
 
 let db: TestDatabase;
@@ -242,5 +243,81 @@ describe('AlertMonitor con chequeos de BD', () => {
       });
     }
     expect(await monitor.tick()).toContain('SELECTOR_BROKEN');
+  });
+});
+
+describe('retención de conversaciones (D-002)', () => {
+  async function withContent(
+    abayaChatId: string,
+    status: 'ACTIVE' | 'TRANSFERRED_BACKOFFICE',
+    endedAgo: number,
+    now: Date,
+  ) {
+    const c = await db.prisma.conversation.create({
+      data: {
+        abayaChatId,
+        robotUser: 'robot',
+        status,
+        profileEncrypted: new Uint8Array([1, 2, 3]),
+      },
+    });
+    await inbound(c.id, true);
+    if (status === 'TRANSFERRED_BACKOFFICE') {
+      await db.prisma.sale.create({
+        data: {
+          conversationId: c.id,
+          process: 'PORTABILIDAD',
+          planCode: 'P1',
+          summaryEncrypted: new Uint8Array([4]),
+        },
+      });
+      await db.prisma.consentEvidence.create({
+        data: {
+          conversationId: c.id,
+          textShownHash: 'h',
+          templateVersion: 'v1',
+          customerReplyEncrypted: new Uint8Array([5]),
+          acceptedAt: now,
+          prevHash: `p-${abayaChatId}`,
+          hash: `h-${abayaChatId}`,
+        },
+      });
+    }
+    await db.prisma.$executeRawUnsafe(
+      `UPDATE "Conversation" SET "updatedAt" = now() - interval '${endedAgo} days' WHERE id = $1`,
+      c.id,
+    );
+    return c;
+  }
+
+  it('borra el contenido de las cerradas vencidas y conserva tipificación, venta y hashes', async () => {
+    const now = new Date();
+    const old = await withContent('AB-1', 'TRANSFERRED_BACKOFFICE', 100, now);
+    const open = await withContent('AB-2', 'ACTIVE', 100, now);
+    const recent = await withContent('AB-3', 'TRANSFERRED_BACKOFFICE', 10, now);
+    const endedBefore = (await db.prisma.conversation.findUniqueOrThrow({ where: { id: old.id } }))
+      .updatedAt;
+
+    expect(await purgeExpiredConversations(db.prisma, now, 90)).toBe(1);
+    const c = await db.prisma.conversation.findUniqueOrThrow({
+      where: { id: old.id },
+      include: { sale: true },
+    });
+    expect(c.contentPurgedAt).not.toBeNull();
+    expect(c.profileEncrypted).toBeNull();
+    expect(c.status).toBe('TRANSFERRED_BACKOFFICE');
+    expect(c.updatedAt).toEqual(endedBefore);
+    expect(c.sale?.planCode).toBe('P1');
+    expect(c.sale?.summaryEncrypted.length).toBe(0);
+    const consent = await db.prisma.consentEvidence.findFirstOrThrow({
+      where: { conversationId: old.id },
+    });
+    expect(consent.customerReplyEncrypted.length).toBe(0);
+    expect(consent.hash).toBe('h-AB-1');
+    expect(await db.prisma.message.count({ where: { conversationId: old.id } })).toBe(0);
+    expect(await db.prisma.message.count({ where: { conversationId: open.id } })).toBe(1);
+    expect(await db.prisma.message.count({ where: { conversationId: recent.id } })).toBe(1);
+    // Una segunda pasada no vuelve a tocarla.
+    expect(await purgeExpiredConversations(db.prisma, now, 90)).toBe(0);
   });
 });

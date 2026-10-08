@@ -28,6 +28,8 @@ export class TurnService {
       logger: Logger;
       historyLimit?: number;
       now?: () => Date;
+      /** D-004: versión publicada del agente; fija la versión de las conversaciones nuevas. */
+      currentAgentVersionId?: () => string;
     },
   ) {}
 
@@ -42,8 +44,10 @@ export class TurnService {
       return;
     }
 
+    // D-004: una conversación termina con la versión del agente con la que empezó.
+    const agentVersionId = input.state.agentVersionId ?? this.d.currentAgentVersionId?.();
     const result = await this.d.engine.runTurn(
-      input.state,
+      agentVersionId ? { ...input.state, agentVersionId } : input.state,
       input.pending.map((p) => p.text),
     );
     const now = this.d.now?.() ?? new Date();
@@ -59,6 +63,7 @@ export class TurnService {
       llmCalls: result.llmCalls,
       knowledge: result.knowledge ?? [],
       events: [],
+      ...(agentVersionId ? { agentVersionId } : {}),
     };
     if (result.catalogEmpty) {
       // El catálogo publicado no tiene planes para el proceso: se escaló sin ofrecer nada.

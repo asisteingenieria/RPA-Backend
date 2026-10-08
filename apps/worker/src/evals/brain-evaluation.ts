@@ -16,7 +16,10 @@ import {
 import type { Logger } from '@abaya/logger';
 import { agentConfigFromRow } from '../catalog/agent-config.js';
 import { FixedKnowledge } from '../knowledge/published-knowledge.js';
-import { DEFAULT_CASES_DIR, type AgentEvaluationOutcome } from './agent-evaluation.js';
+import { DEFAULT_CASES_DIR } from './agent-evaluation.js';
+
+/** Los Brains siguen publicando al pasar la suite (v1.9). */
+export type BrainEvaluationOutcome = 'PUBLISHED' | 'REJECTED' | 'SKIPPED';
 import { gateFailures, loadCases, runSuite, summarize } from './suite.js';
 
 export interface BrainEvaluationDeps {
@@ -38,7 +41,7 @@ export interface BrainEvaluationDeps {
 export async function evaluateBrainVersion(
   d: BrainEvaluationDeps,
   job: EvalJob,
-): Promise<AgentEvaluationOutcome> {
+): Promise<BrainEvaluationOutcome> {
   const version = await d.prisma.brainVersion.findUnique({
     where: { id: job.versionId },
     include: { brain: { select: { name: true } } },

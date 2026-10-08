@@ -11,7 +11,7 @@ cases:
     turns: ['Hola', 'B', '[audio]']
     expect: { finalStage: PERFIL }
   - id: amb-imagen-01
-    turns: ['Hola', 'C', 'Diana', '[imagen]']
+    turns: ['Hola', 'B', 'Diana', '[imagen]']
     expect: { finalStage: PERFIL }
   - id: amb-todo-junto-01
     turns: ['Hola', 'A', 'Soy Karen, tengo Movistar y uso mucho redes y videos']

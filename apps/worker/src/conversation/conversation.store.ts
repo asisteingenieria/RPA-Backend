@@ -50,6 +50,8 @@ export interface TurnCommit {
   knowledge?: KnowledgeUsageRecord[];
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */
   events: OutboxEventInput[];
+  /** D-004: versión del agente del turno; se fija en la conversación si aún no tenía. */
+  agentVersionId?: string;
 }
 
 /**

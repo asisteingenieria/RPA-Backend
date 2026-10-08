@@ -47,6 +47,40 @@ export class PrismaAgentConfigSource {
     return this.current;
   }
 
+  /** Versiones ya publicadas que siguen atendiendo conversaciones (no cambian: D-004). */
+  private readonly pinned = new Map<string, AgentConfig>();
+
+  /**
+   * Versión de una conversación (D-004): la con la que empezó, aunque ya haya otra publicada.
+   * Sin versión, o si no se encuentra, la publicada actual.
+   */
+  async resolve(id: string | undefined): Promise<AgentConfig> {
+    if (!id || id === this.current.id) return this.current;
+    if (id === DEFAULT_AGENT_CONFIG.id) return DEFAULT_AGENT_CONFIG;
+    const cached = this.pinned.get(id);
+    if (cached) return cached;
+    try {
+      const row = await this.prisma.agentConfigVersion.findUnique({ where: { id } });
+      // Solo versiones que estuvieron publicadas (las demás pueden cambiar o nunca se usaron).
+      if (row && (row.status === 'PUBLISHED' || row.status === 'ARCHIVED')) {
+        const cfg = agentConfigFromRow(row);
+        if (this.pinned.size > 50) this.pinned.clear();
+        this.pinned.set(id, cfg);
+        return cfg;
+      }
+      this.logger.warn(
+        { id },
+        'versión del agente de la conversación no disponible: se usa la publicada',
+      );
+    } catch (err) {
+      this.logger.error(
+        { err: err instanceof Error ? err.name : 'unknown' },
+        'no se pudo leer la versión del agente de la conversación: se usa la publicada',
+      );
+    }
+    return this.current;
+  }
+
   async refresh(): Promise<void> {
     try {
       const row = await this.prisma.agentConfigVersion.findFirst({

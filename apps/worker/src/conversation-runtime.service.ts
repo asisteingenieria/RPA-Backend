@@ -42,6 +42,7 @@ import {
   closeInactive,
   conversationsWithPendingInbound,
   databaseChecks,
+  purgeExpiredConversations,
 } from './maintenance/maintenance.js';
 import { alertsFromConfig } from '@abaya/alerts';
 
@@ -110,11 +111,13 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
         llm: llmFromConfig(cfg),
         catalog,
         timeoutMs: cfg.LLM_TIMEOUT_MS,
-        agentConfig: () => agentSource.get(),
+        // D-004: cada conversación termina con la versión con la que empezó.
+        agentConfig: (s) => agentSource.resolve(s.agentVersionId),
         knowledge,
       }),
       catalog,
       alerts,
+      currentAgentVersionId: () => agentSource.get().id,
       logger: createLogger('worker.turn'),
     });
     this.scheduler = new TurnScheduler((id) => turns.handle(id), {
@@ -219,6 +222,21 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
             ),
           );
       }, 5 * 60_000),
+      // Retención de conversaciones (D-002): solo si Claro definió el plazo. Revisión cada hora.
+      setInterval(() => {
+        const days = cfg.CONVERSATION_RETENTION_DAYS;
+        if (!days) return;
+        purgeExpiredConversations(prisma, new Date(), days)
+          .then(
+            (n) => n && this.logger.info({ purged: n, days }, 'contenido borrado por retención'),
+          )
+          .catch((err: unknown) =>
+            this.logger.error(
+              { err: err instanceof Error ? err.name : 'unknown' },
+              'error en la retención de conversaciones',
+            ),
+          );
+      }, 3_600_000),
       // Páginas web de los Brains con actualización programada (K5): revisión cada 10 min.
       setInterval(() => {
         refreshDueWebSources(ingestDeps)

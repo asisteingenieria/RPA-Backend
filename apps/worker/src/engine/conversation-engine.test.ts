@@ -59,18 +59,77 @@ describe('primer contacto y menú (deterministas)', () => {
   it('opción D redirige a soporte con plantilla y cierra', async () => {
     const { e } = engine([]);
     const r = await e.runTurn(state(), ['opción d']);
-    expect(r.stage).toBe('SOPORTE');
+    // D-003: como en Dapta, los canales de soporte no cierran el chat.
+    expect(r.stage).toBe('MENU');
     expect(sent(r)).toEqual([T.SUPPORT]);
-    expect(r.actions).toContainEqual({ type: 'CLOSE', reason: 'SUPPORT' });
+    expect(r.profile.supportRedirected).toBe(true);
+    expect(r.actions.some((a) => a.type === 'CLOSE')).toBe(false);
   });
 
   it('elección en texto libre la interpreta el modelo', async () => {
     const { e } = engine([
-      out({ intent: 'ELIGE_OPCION', option: 'C', reply: '¡Genial! ¿Cómo te llamas?' }),
+      out({
+        intent: 'ELIGE_OPCION',
+        option: 'B',
+        reply: '¡Perfecto! 😊 ¿Con quién tengo el gusto?',
+      }),
     ]);
-    const r = await e.runTurn(state(), ['quiero una línea nueva por favor']);
+    const r = await e.runTurn(state(), ['quiero dejar las recargas y pasarme a un plan']);
     expect(r.stage).toBe('PERFIL');
-    expect(r.profile.process).toBe('LINEA_NUEVA');
+    expect(r.profile.process).toBe('MIGRACION');
+  });
+
+  it('D-003: la opción A pregunta el nombre con el texto de la campaña', async () => {
+    const { e } = engine([]);
+    const r = await e.runTurn(state(), ['A']);
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(sent(r)).toEqual([T.askName('A')]);
+  });
+
+  it.each(['C', '🅒', 'D', '4'])(
+    'D-003: la opción %s da los canales de soporte sin cerrar',
+    async (o) => {
+      const { e } = engine([]);
+      const r = await e.runTurn(state(), [o]);
+      expect(r.stage).toBe('MENU');
+      expect(sent(r)).toEqual([T.SUPPORT]);
+      expect(sent(r)[0]).toContain('018003200200');
+      expect(sent(r)[0]).toContain('¿Te puedo ayudar con algún plan móvil?');
+      expect(r.profile.process).toBeUndefined();
+    },
+  );
+
+  it('D-003: si el modelo elige C desde texto libre también da los canales sin cerrar', async () => {
+    const { e } = engine([out({ intent: 'ELIGE_OPCION', option: 'C', reply: 'Te ayudo.' })]);
+    const r = await e.runTurn(state(), ['necesito un duplicado de mi factura']);
+    expect(r.stage).toBe('MENU');
+    expect(sent(r)).toEqual([T.SUPPORT]);
+    expect(r.profile.supportRedirected).toBe(true);
+  });
+
+  it('D-003: tras los canales de soporte, «no gracias» se despide y cierra como soporte', async () => {
+    const { e } = engine([]);
+    const r = await e.runTurn(state({ profile: { supportRedirected: true } }), ['no gracias']);
+    expect(r.stage).toBe('SOPORTE');
+    expect(sent(r)).toEqual([T.NO_SALE_GOODBYE]);
+    expect(r.actions).toContainEqual({ type: 'CLOSE', reason: 'SUPPORT' });
+  });
+
+  it('D-003: tras los canales de soporte puede elegir un plan', async () => {
+    const { e } = engine([]);
+    const r = await e.runTurn(state({ profile: { supportRedirected: true } }), ['A']);
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.process).toBe('PORTABILIDAD');
+  });
+
+  it('D-003: si el modelo dice NO_INTERESADO tras los canales, cierra como soporte', async () => {
+    const { e } = engine([out({ intent: 'NO_INTERESADO', reply: 'Gracias.' })]);
+    const r = await e.runTurn(state({ profile: { supportRedirected: true } }), [
+      'por ahora nada más',
+    ]);
+    expect(r.stage).toBe('SOPORTE');
+    expect(r.actions).toContainEqual({ type: 'CLOSE', reason: 'SUPPORT' });
   });
 });
 
@@ -226,11 +285,41 @@ describe('aceptación, autorización y transferencia', () => {
     });
   });
 
-  it('"no" explícito → cierre sin venta con plantilla', async () => {
+  it('D-003: "no" explícito → se le ofrece un asesor y la conversación sigue', async () => {
     const { e } = engine([]);
-    const r = await e.runTurn(auth, ['No']);
+    const r = await e.runTurn({ ...auth, profile: { ...auth.profile, name: 'ana' } }, ['No']);
+    expect(r.stage).toBe('AUTORIZACION');
+    expect(r.profile.authorizationDeclined).toBe(true);
+    expect(sent(r)).toEqual([T.declinedAuthorization('ana')]);
+    expect(sent(r)[0]).toContain('Entiendo, Ana.');
+    expect(r.actions.some((a) => a.type === 'CLOSE')).toBe(false);
+  });
+
+  it('D-003: después de no autorizar, "sí" escala a un asesor sin registrar consentimiento', async () => {
+    const { e } = engine([]);
+    const declined = { ...auth, profile: { ...auth.profile, authorizationDeclined: true } };
+    const r = await e.runTurn(declined, ['Sí, por favor']);
+    expect(r.stage).toBe('ESCALAR');
+    expect(r.actions).toContainEqual({ type: 'ESCALATE' });
+    expect(r.actions.some((a) => a.type === 'RECORD_CONSENT')).toBe(false);
+    expect(sent(r)).toEqual([T.advisorAfterDecline(declined.profile.name)]);
+  });
+
+  it('D-003: después de no autorizar, "no" → despedida y cierre sin venta', async () => {
+    const { e } = engine([]);
+    const declined = { ...auth, profile: { ...auth.profile, authorizationDeclined: true } };
+    const r = await e.runTurn(declined, ['no gracias']);
     expect(r.stage).toBe('CIERRE_SIN_VENTA');
     expect(sent(r)).toEqual([T.NO_SALE_GOODBYE]);
+    expect(r.actions).toContainEqual({ type: 'CLOSE', reason: 'NO_SALE' });
+  });
+
+  it('D-003: si cambia de opinión y escribe SÍ AUTORIZO, se registra y se transfiere', async () => {
+    const { e } = engine([]);
+    const declined = { ...auth, profile: { ...auth.profile, authorizationDeclined: true } };
+    const r = await e.runTurn(declined, ['SÍ AUTORIZO']);
+    expect(r.stage).toBe('TRANSFERENCIA');
+    expect(r.actions[0]).toMatchObject({ type: 'RECORD_CONSENT' });
   });
 
   it('regresión: una pregunta en AUTORIZACION conserva el plan y no repite el texto legal', async () => {
@@ -350,7 +439,8 @@ describe('configuración del agente desde el panel (v1.8)', () => {
     const { e } = withAgent([]);
     const r = await e.runTurn(state({ history: [] }), ['Hola']);
     expect(sent(r)).toEqual([T.menu(agent.welcome)]);
-    expect(sent(r)[0]).toContain('*A.* Traer tu número');
+    expect(sent(r)[0]).toContain('🅐 Cambiarme de operador');
+    expect(sent(r)[0]).not.toContain('línea nueva');
   });
 
   it('el guion va detrás de las reglas del sistema, con modelo, temperatura y versión', async () => {

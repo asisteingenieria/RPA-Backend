@@ -1,4 +1,4 @@
-import { openChatsByRobot, responseTimeByRobot, type PrismaClient } from '@abaya/db';
+import { openChatsByRobot, responseTimeByRobot, utcParam, type PrismaClient } from '@abaya/db';
 import type { AlertPort, AlertSeverity } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 
@@ -63,6 +63,64 @@ export async function closeInactive(
     });
   }
   return closed;
+}
+
+// ---------- retención de conversaciones (D-002) ----------
+
+/** Estados en los que la conversación ya terminó (las abiertas nunca se borran). */
+const CLOSED_STATUSES = [
+  'TRANSFERRED_BACKOFFICE',
+  'CLOSED_NO_SALE',
+  'CLOSED_SUPPORT',
+  'CLOSED_INACTIVE',
+] as const;
+
+/**
+ * Borra el CONTENIDO de las conversaciones cerradas hace más de `days` días: mensajes, perfil,
+ * resumen de la venta y respuesta del consentimiento. Conserva la conversación (tipificación,
+ * etapa, robot, fechas), la venta (plan, transferencia) y los hashes de la cadena, para que las
+ * métricas históricas sigan cuadrando. Marca `contentPurgedAt`.
+ */
+export async function purgeExpiredConversations(
+  prisma: PrismaClient,
+  now: Date,
+  days: number,
+  batch = 200,
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - days * 86_400_000);
+  let purged = 0;
+  for (;;) {
+    const ids = (
+      await prisma.conversation.findMany({
+        where: {
+          status: { in: [...CLOSED_STATUSES] },
+          updatedAt: { lt: cutoff },
+          contentPurgedAt: null,
+        },
+        select: { id: true },
+        take: batch,
+      })
+    ).map((c) => c.id);
+    if (!ids.length) return purged;
+    const empty = new Uint8Array(0);
+    await prisma.$transaction([
+      prisma.message.deleteMany({ where: { conversationId: { in: ids } } }),
+      prisma.sale.updateMany({
+        where: { conversationId: { in: ids } },
+        data: { summaryEncrypted: empty },
+      }),
+      prisma.consentEvidence.updateMany({
+        where: { conversationId: { in: ids } },
+        data: { customerReplyEncrypted: empty },
+      }),
+      // updatedAt se conserva: es el fin de la conversación (duración en la Trazabilidad).
+      prisma.$executeRaw`
+        UPDATE "Conversation" SET "profileEncrypted" = NULL, "contentPurgedAt" = ${utcParam(now)}
+        WHERE id = ANY(${ids})`,
+    ]);
+    purged += ids.length;
+    if (ids.length < batch) return purged;
+  }
 }
 
 // ---------- monitor de alertas (sección 11) ----------

@@ -30,6 +30,7 @@ import {
 import {
   OPTION_PROCESS,
   TERMINAL_STAGES,
+  isSupportOption,
   missingProfileFields,
   parseMenuOption,
   transition,
@@ -57,8 +58,11 @@ export interface EngineDeps {
   llm: LlmPort;
   catalog: Catalog;
   now?: () => Date;
-  /** Versión publicada del agente (guion y ajustes, v1.8); por defecto la v1 del código. */
-  agentConfig?: () => AgentConfig;
+  /**
+   * Versión del agente para el turno (guion y ajustes, v1.8): la de la conversación (D-004) o la
+   * publicada; por defecto la v1 del código.
+   */
+  agentConfig?: (state: ConversationState) => AgentConfig | Promise<AgentConfig>;
   /** v1.9: documentos de los Brains conectados (contexto completo y búsqueda, K3/K4). */
   knowledge?: TurnKnowledge;
   historyLimit?: number;
@@ -68,9 +72,11 @@ export interface EngineDeps {
 const EXPLICIT_YES =
   /^\s*(s[ií]\s*,?\s*(lo\s+)?autorizo|autorizo|acepto(\s+la\s+autorizaci[oó]n)?)\s*[.!]*\s*$/i;
 const EXPLICIT_NO = /^\s*(no|no\s+autorizo|no\s+acepto|no\s+gracias)\s*[.!]*\s*$/i;
-
-const PROFILE_QUESTION_AFTER_MENU =
-  '¡Perfecto! 🙌 Para recomendarte el mejor plan, ¿me compartes tu nombre?';
+/** Respuesta a «¿Quieres que un asesor te resuelva las dudas?» (después de no autorizar). */
+const WANTS_ADVISOR =
+  /^\s*(s[ií]|claro|dale|ok|okay|bueno|de\s+acuerdo|por\s+favor|s[ií]\s*,?\s*(por\s+favor|gracias|quiero|me\s+gustar[ií]a)|quiero(\s+un\s+asesor)?)\s*[.!]*\s*$/i;
+const NO_ADVISOR =
+  /^\s*(no|no\s+gracias|no\s+quiero|no\s+por\s+ahora|no\s+es\s+necesario)\s*[.!]*\s*$/i;
 const CONFIRM_AUTHORIZATION =
   'Para continuar necesito tu confirmación expresa. Por favor responde *SÍ AUTORIZO* si estás de acuerdo, o *NO* si prefieres no autorizar.';
 
@@ -91,7 +97,7 @@ export class ConversationEngine {
     const stage = state.stage;
     const profile = { ...state.profile };
     // Un turno usa una sola versión del agente, aunque se publique otra a mitad de turno.
-    const agent = this.d.agentConfig?.() ?? DEFAULT_AGENT_CONFIG;
+    const agent = (await this.d.agentConfig?.(state)) ?? DEFAULT_AGENT_CONFIG;
 
     if (TERMINAL_STAGES.has(stage) || !text) return result(stage, profile, [], [], 'NO_LLM');
 
@@ -102,19 +108,27 @@ export class ConversationEngine {
       return result('MENU', profile, [send(T.menu(agent.welcome))], [], 'NO_LLM');
     }
 
+    // Después de los canales de soporte (el chat sigue abierto): «no» → despedida y cierre.
+    if (stage === 'MENU' && profile.supportRedirected && NO_ADVISOR.test(text)) {
+      return result('SOPORTE', profile, supportGoodbye(), [], 'NO_LLM');
+    }
+
     // Menú: elección clara → decide el código.
     if (menuOption) {
-      if (menuOption === 'D') {
-        return result(
-          'SOPORTE',
-          profile,
-          [send(T.SUPPORT), { type: 'CLOSE', reason: 'SUPPORT' }],
-          [],
-          'NO_LLM',
-        );
+      const process = OPTION_PROCESS[menuOption];
+      if (isSupportOption(menuOption) || !process) {
+        // D-003: como en Dapta, no se cierra; se ofrece seguir con un plan.
+        profile.supportRedirected = true;
+        return result('MENU', profile, [send(T.SUPPORT)], [], 'NO_LLM');
       }
-      profile.process = OPTION_PROCESS[menuOption];
-      return result('PERFIL', profile, [send(PROFILE_QUESTION_AFTER_MENU)], [], 'NO_LLM');
+      profile.process = process;
+      return result(
+        'PERFIL',
+        profile,
+        [send(T.askName(menuOption === 'A' ? 'A' : 'B'))],
+        [],
+        'NO_LLM',
+      );
     }
 
     // Autorización: el consentimiento lo reconoce el código, nunca el modelo.
@@ -131,18 +145,40 @@ export class ConversationEngine {
               templateVersion: profile.authorizationTemplateVersion ?? 'desconocida',
               customerReply: text,
             },
-            send(T.TRANSFER),
+            send(T.transfer(profile.name)),
             { type: 'TRANSFER_BACKOFFICE' },
           ],
           [],
           'NO_LLM',
         );
       }
-      if (EXPLICIT_NO.test(text)) {
+      // D-003: ya no autorizó y se le ofreció un asesor → sí: se escala; no: despedida.
+      if (profile.authorizationDeclined) {
+        if (WANTS_ADVISOR.test(text)) {
+          return result(
+            'ESCALAR',
+            profile,
+            [send(T.advisorAfterDecline(profile.name)), { type: 'ESCALATE' }],
+            [],
+            'NO_LLM',
+          );
+        }
+        if (NO_ADVISOR.test(text)) {
+          return result(
+            'CIERRE_SIN_VENTA',
+            profile,
+            [send(T.NO_SALE_GOODBYE), { type: 'CLOSE', reason: 'NO_SALE' }],
+            [],
+            'NO_LLM',
+          );
+        }
+      } else if (EXPLICIT_NO.test(text)) {
+        // No autoriza: antes de cerrar se le ofrece un asesor (la conversación sigue abierta).
+        profile.authorizationDeclined = true;
         return result(
-          'CIERRE_SIN_VENTA',
+          'AUTORIZACION',
           profile,
-          [send(T.NO_SALE_GOODBYE), { type: 'CLOSE', reason: 'NO_SALE' }],
+          [send(T.declinedAuthorization(profile.name))],
           [],
           'NO_LLM',
         );
@@ -245,7 +281,7 @@ export class ConversationEngine {
     const stage = state.stage;
     const intent = out.intent;
     const merged = mergeProfile(profile, out.extracted);
-    if (stage === 'MENU' && out.option && out.option !== 'D')
+    if (stage === 'MENU' && out.option && OPTION_PROCESS[out.option])
       merged.process = OPTION_PROCESS[out.option];
 
     // El modelo no puede dar por autorizado un mensaje ambiguo.
@@ -267,13 +303,18 @@ export class ConversationEngine {
     // Plantillas de salida de estados terminales: el texto es 100 % fijo.
     switch (to) {
       case 'SOPORTE':
+        // D-003: canales de soporte sin cerrar; el chat vuelve al menú.
         return {
-          stage: to,
-          profile: merged,
-          actions: [send(T.SUPPORT), { type: 'CLOSE', reason: 'SUPPORT' }],
+          stage: 'MENU',
+          profile: { ...merged, supportRedirected: true },
+          actions: [send(T.SUPPORT)],
           rendered: [],
         };
       case 'CIERRE_SIN_VENTA':
+        // Ya se le dieron los canales de soporte y no quiere un plan: cierra como soporte.
+        if (stage === 'MENU' && merged.supportRedirected) {
+          return { stage: 'SOPORTE', profile: merged, actions: supportGoodbye(), rendered: [] };
+        }
         return {
           stage: to,
           profile: merged,
@@ -500,4 +541,9 @@ function mergeProfile(p: Profile, ex: TurnOutput['extracted']): Profile {
     ...(clean(ex.currentOperator) ? { currentOperator: clean(ex.currentOperator) } : {}),
     ...(clean(ex.usage) ? { usage: clean(ex.usage) } : {}),
   };
+}
+
+/** Despedida después de los canales de soporte; la conversación queda tipificada como soporte. */
+function supportGoodbye(): TurnAction[] {
+  return [send(T.NO_SALE_GOODBYE), { type: 'CLOSE', reason: 'SUPPORT' }];
 }

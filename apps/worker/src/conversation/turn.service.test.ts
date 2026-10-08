@@ -1,4 +1,4 @@
-import type { LlmRequest } from '@abaya/domain';
+import { DEFAULT_AGENT_CONFIG, type LlmRequest } from '@abaya/domain';
 import { sha256 } from '@abaya/crypto';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
@@ -121,7 +121,9 @@ describe('TurnService: camino de venta completo (Abaya y LLM simulados)', () => 
       target: 'BACKOFFICE',
       afterMessageIds: [lastTurn[0]!.payload.messageId],
     });
-    expect(store.outboundTexts('c1').at(-1)).toBe(T.TRANSFER);
+    expect(store.outboundTexts('c1').at(-1)).toContain(
+      'Te transfiero con uno de nuestros asesores',
+    );
     // Ningún mensaje enviado contiene un marcador sin reemplazar.
     expect(store.outboundTexts('c1').join('\n')).not.toContain('{{');
   });
@@ -131,6 +133,9 @@ describe('TurnService: camino de venta completo (Abaya y LLM simulados)', () => 
     store.create('c2');
     await say(store, svc, 'c2', 'Hola');
     await say(store, svc, 'c2', 'D');
+    // D-003: los canales de soporte no cierran el chat; cierra si no quiere un plan.
+    expect(store.get('c2').status).toBe('ACTIVE');
+    await say(store, svc, 'c2', 'no gracias');
     expect(store.get('c2').status).toBe('CLOSED_SUPPORT');
     expect(store.events.at(-1)).toMatchObject({
       type: 'ConversationClosed',
@@ -143,6 +148,7 @@ describe('TurnService: camino de venta completo (Abaya y LLM simulados)', () => 
     store.create('c3');
     await say(store, svc, 'c3', 'Hola');
     await say(store, svc, 'c3', 'D');
+    await say(store, svc, 'c3', 'no');
     const before = store.outboundTexts('c3').length;
     await say(store, svc, 'c3', '¿hola?');
     expect(store.outboundTexts('c3').length).toBe(before);
@@ -202,5 +208,49 @@ describe('concurrencia', () => {
     const before = store.outboundTexts('b1').length;
     await scheduler.idle();
     expect(store.outboundTexts('b1').length).toBe(before + 1);
+  });
+});
+
+describe('D-004: versión del agente por conversación', () => {
+  it('una conversación nueva toma la publicada y la conserva aunque se publique otra', async () => {
+    const store = new MemoryConversationStore();
+    let published = DEFAULT_AGENT_CONFIG;
+    const used: string[] = [];
+    const v2 = { ...DEFAULT_AGENT_CONFIG, id: 'v2', version: 2, welcome: '¡Hola desde v2!' };
+    const v3 = { ...DEFAULT_AGENT_CONFIG, id: 'v3', version: 3, welcome: '¡Hola desde v3!' };
+    const byId = new Map([v2, v3].map((v) => [v.id, v]));
+    const engine = new ConversationEngine({
+      llm: new ScriptedLlmAdapter(fakeBrain),
+      catalog,
+      agentConfig: (s) => {
+        const a = (s.agentVersionId && byId.get(s.agentVersionId)) || published;
+        used.push(a.id);
+        return a;
+      },
+    });
+    const svc = new TurnService({
+      store,
+      engine,
+      catalog,
+      alerts,
+      logger: silent,
+      currentAgentVersionId: () => published.id,
+    });
+
+    published = v2;
+    store.create('c1');
+    await say(store, svc, 'c1', 'Hola');
+    expect(store.get('c1').agentVersionId).toBe('v2');
+    expect(store.outboundTexts('c1')[0]).toContain('¡Hola desde v2!');
+
+    // Se publica la v3: la conversación en curso sigue con la v2; una nueva empieza con la v3.
+    published = v3;
+    await say(store, svc, 'c1', 'A');
+    expect(store.get('c1').agentVersionId).toBe('v2');
+    store.create('c2');
+    await say(store, svc, 'c2', 'Hola');
+    expect(store.get('c2').agentVersionId).toBe('v3');
+    expect(store.outboundTexts('c2')[0]).toContain('¡Hola desde v3!');
+    expect(used).toEqual(['v2', 'v2', 'v3']);
   });
 });

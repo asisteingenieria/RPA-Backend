@@ -33,10 +33,19 @@ model Conversation {
   customerRefHash  String? // hash del identificador del cliente
   lastInboundAt    DateTime?
   lastOutboundAt   DateTime?
+  /// D-002: el contenido (mensajes, perfil, resumen, respuesta del consentimiento) se borró por retención.
+  contentPurgedAt  DateTime?
+  /// D-004: versión del agente con la que empezó (la conversación la conserva hasta el final).
+  agentVersionId   String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   messages         Message[]
   sale             Sale?
+
+  @@index([robotUser, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([agentVersionId])
 }
 
 enum Direction {
@@ -174,22 +183,31 @@ enum AgentConfigStatus {
 model AgentConfigVersion {
   // configuración y guion del agente editados en el panel (v1.8, sección 6.3.8).
   // Una sola PUBLISHED a la vez (transacción Serializable al publicar).
-  id          String            @id @default(cuid())
-  version     Int               @unique
-  status      AgentConfigStatus @default(DRAFT)
-  agentName   String
-  companyName String
-  companyInfo String
-  welcome     String // saludo antes del menú A–D (fijo en código)
-  prompt      String // bloque grande en Markdown
-  model       String? // null = el de la configuración del worker
-  temperature Float // 0–0.3
-  evalSummary Json? // resultado de la suite al publicar
-  createdBy   String
-  publishedBy String?
-  publishedAt DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id            String            @id @default(cuid())
+  version       Int               @unique
+  status        AgentConfigStatus @default(DRAFT)
+  agentName     String
+  companyName   String
+  companyInfo   String
+  welcome       String // saludo antes del menú A–D (fijo en código)
+  prompt        String // bloque grande en Markdown
+  model         String? // null = el de la configuración del worker
+  temperature   Float // 0–0.3
+  evalSummary   Json? // resultado de la suite (avance mientras evalúa)
+  /// D-004/D-005: OK | WARN | BLOCKED | ERROR | CANCELLED | RUNNING (null = sin evaluar). Evidencia: no frena la publicación.
+  evalVerdict   String?
+  evaluatedAt   DateTime?
+  /// D-004: nota del cambio que escribe quien guarda.
+  changeNote    String?
+  /// D-005: nota opcional de quien publica.
+  publishReason String?
+  /// D-004: al publicar se aplicó también a las conversaciones en curso (urgencia).
+  appliedToOpen Boolean           @default(false)
+  createdBy     String
+  publishedBy   String?
+  publishedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([status])
 }
@@ -501,4 +519,21 @@ model VersionChunk {
   version        BrainVersion @relation(fields: [brainVersionId], references: [id], onDelete: Cascade)
 
   @@index([brainVersionId, use])
+}
+
+model AgentTestRecord {
+  // D-004: prueba de "Probar agente" guardada en el historial de una versión del agente.
+  // Texto escrito en el panel (simulación): nunca datos de clientes.
+  id         String   @id @default(cuid())
+  /// Versión probada (null = contenido del editor sin guardar).
+  versionId  String?
+  version    Int?
+  source     String // editor | published
+  note       String?
+  transcript Json // [{ role: customer | bot | event, text }]
+  finalStage String
+  createdBy  String
+  createdAt  DateTime @default(now())
+
+  @@index([versionId, createdAt])
 }

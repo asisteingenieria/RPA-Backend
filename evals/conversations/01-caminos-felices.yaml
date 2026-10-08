@@ -1,4 +1,4 @@
-# Caminos felices (12): cada proceso hasta la venta.
+# Caminos felices (12): portabilidad y migración hasta la venta (D-003: sin línea nueva).
 # Datos de clientes 100 % sintéticos.
 group: caminos_felices
 cases:
@@ -89,42 +89,42 @@ cases:
         'Sí, autorizo',
       ]
     expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
-  - id: feliz-nueva-01
+  - id: feliz-recargas-01
     turns:
-      ['Hola', 'C', 'Valentina', 'para mi hija, redes y tareas', 'me sirve, lo tomo', 'SÍ AUTORIZO']
-    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
-  - id: feliz-nueva-02
+      ['Hola', 'B', 'Valentina', 'para mi hija, redes y tareas', 'me sirve, lo tomo', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-recargas-02
     turns:
       [
-        'quiero una línea nueva',
-        'c',
+        'quiero dejar las recargas y tener plan',
+        'b',
         'Me llamo Andrés',
         'la necesito para el negocio, llamadas y WhatsApp Business',
         'listo',
         'sí quiero ese plan',
         'Acepto',
       ]
-    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
-  - id: feliz-nueva-03
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-recargas-03
     turns:
       [
         'Hola',
-        '3',
+        '2',
         'Camila',
         'Netflix y redes',
         '¿qué incluye?',
         'ok me quedo con ese',
         'SÍ AUTORIZO',
       ]
-    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
-  - id: feliz-nueva-04
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: feliz-recargas-04
     turns:
       [
-        'hola necesito otra linea',
-        'C',
+        'hola, ya no quiero seguir con recargas',
+        'B',
         'Ricardo',
         'GPS y apps de domicilios, trabajo de repartidor',
         'Lo tomo',
         'si autorizo',
       ]
-    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }

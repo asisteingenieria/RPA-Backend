@@ -82,7 +82,6 @@ function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentCon
     agent ? T.menu(agent.welcome) : T.MENU,
     T.SUPPORT,
     T.SAFE_FALLBACK,
-    T.TRANSFER,
     T.NO_SALE_GOODBYE,
     T.ESCALATE,
     T.authorization(now),
@@ -92,6 +91,13 @@ function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentCon
     ...plans.map(T.offer),
   ];
   for (const f of fixed) t = t.split(f).join(' ');
+  // Plantillas con el nombre del cliente (D-003): transferencia, no autoriza y asesor.
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const fn of [T.transfer, T.declinedAuthorization, T.advisorAfterDecline]) {
+    const [head, tail] = fn('Ana').split(', Ana') as [string, string];
+    t = t.replace(new RegExp(`${esc(head)}(, [^!.?]+)?${esc(tail)}`, 'g'), ' ');
+  }
+  for (const n of ['A', 'B'] as const) t = t.split(T.askName(n)).join(' ');
   return t;
 }
 
@@ -150,6 +156,17 @@ export interface RunOptions {
   /** v1.9: documentos de los Brains (contexto completo y búsqueda) que ve el modelo. */
   knowledge?: TurnKnowledge;
   concurrency?: number;
+  /** D-004: avance (casos terminados / total) para mostrarlo en el panel. */
+  onProgress?: (done: number, total: number) => Promise<void> | void;
+  /** D-004: se consulta entre casos; false = cancelar (la versión ya no se está evaluando). */
+  shouldContinue?: () => Promise<boolean>;
+}
+
+/** La evaluación se canceló a mitad (se guardó una versión más nueva). */
+export class SuiteCancelled extends Error {
+  constructor() {
+    super('evaluación cancelada');
+  }
 }
 
 export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
@@ -247,8 +264,21 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-export function runSuite(cases: EvalCase[], o: RunOptions): Promise<CaseResult[]> {
-  return pool(cases, o.concurrency ?? 4, (c) => runCase(c, o));
+export async function runSuite(cases: EvalCase[], o: RunOptions): Promise<CaseResult[]> {
+  let done = 0;
+  let cancelled = false;
+  await o.onProgress?.(0, cases.length);
+  const results = await pool(cases, o.concurrency ?? 4, async (c) => {
+    if (cancelled || (o.shouldContinue && !(await o.shouldContinue()))) {
+      cancelled = true;
+      return null;
+    }
+    const r = await runCase(c, o);
+    await o.onProgress?.(++done, cases.length);
+    return r;
+  });
+  if (cancelled) throw new SuiteCancelled();
+  return results as CaseResult[];
 }
 
 // ---------- reporte ----------

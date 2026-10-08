@@ -42,7 +42,7 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
         ? 'B'
         : /portar|traer|cambiarme/.test(lower)
           ? 'A'
-          : /l[ií]nea nueva|otra l[ií]nea/.test(lower)
+          : /factura|soporte|cancelar|cambio de plan/.test(lower)
             ? 'C'
             : null;
       return option

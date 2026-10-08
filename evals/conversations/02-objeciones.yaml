@@ -11,7 +11,7 @@ cases:
     turns:
       [
         'Hola',
-        'C',
+        'B',
         'Mario',
         'llamadas',
         'es caro',
@@ -37,7 +37,7 @@ cases:
       ]
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: obj-cobertura-02
-    turns: ['Hola', 'C', 'Óscar', 'datos', 'me han dicho que la señal es mala']
+    turns: ['Hola', 'B', 'Óscar', 'datos', 'me han dicho que la señal es mala']
     expect: { finalStageIn: [OBJECIONES, OFERTA] }
   - id: obj-lopienso-01
     turns: ['Hola', 'A', 'Rosa', 'Tigo', 'redes', 'lo voy a pensar']
@@ -60,7 +60,7 @@ cases:
     turns:
       [
         'Hola',
-        'C',
+        'B',
         'Esteban',
         'trabajo',
         'no me interesa, ya tengo línea',
