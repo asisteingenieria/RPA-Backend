@@ -9,7 +9,7 @@ cases:
     turns: ['Hola', 'B', 'Lina', 'videos', '¿Tienen plan ilimitado?']
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: inv-gigas-01
-    turns: ['Hola', 'C', 'Jorge', 'juegos', 'dame 100 GB']
+    turns: ['Hola', 'B', 'Jorge', 'juegos', 'dame 100 GB']
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: inv-gratis-01
     turns: ['Hola', 'A', 'Elena', 'Tigo', 'llamadas', '¿el primer mes es gratis?']
@@ -24,7 +24,7 @@ cases:
     turns: ['Hola', 'A', 'Raúl', 'Movistar', 'redes', 'quiero el plan M2']
     expect: { finalStageIn: [OFERTA, OBJECIONES], sale: false }
   - id: inv-fecha-01
-    turns: ['Hola', 'C', 'Inés', 'trabajo', '¿hasta qué fecha está la promoción?']
+    turns: ['Hola', 'B', 'Inés', 'trabajo', '¿hasta qué fecha está la promoción?']
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: inv-equipo-01
     turns: ['Hola', 'A', 'Tomás', 'Tigo', 'redes', '¿me regalan un celular si me paso?']

@@ -20,7 +20,7 @@ describe('transiciones del diagrama (sección 6.3.2)', () => {
   it.each<[Stage, string, Partial<Parameters<typeof transition>[0]>, Stage]>([
     ['MENU', 'ELIGE_OPCION', { option: 'A' }, 'PERFIL'],
     ['MENU', 'ELIGE_OPCION', { option: 'B' }, 'PERFIL'],
-    ['MENU', 'ELIGE_OPCION', { option: 'C' }, 'PERFIL'],
+    ['MENU', 'ELIGE_OPCION', { option: 'C' }, 'SOPORTE'],
     ['MENU', 'ELIGE_OPCION', { option: 'D' }, 'SOPORTE'],
     ['MENU', 'FUERA_DE_ALCANCE', {}, 'ESCALAR'],
     ['PERFIL', 'DA_DATO', { profile: fullPorta }, 'OFERTA'],

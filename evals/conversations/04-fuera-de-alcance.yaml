@@ -1,4 +1,4 @@
-# Fuera de alcance (8): quejas, facturas, temas ajenos, insultos.
+# Fuera de alcance (10): quejas, facturas, temas ajenos, insultos; C y D del menú son soporte (D-003).
 group: fuera_de_alcance
 cases:
   - id: fda-factura-01
@@ -11,7 +11,7 @@ cases:
     turns: ['Hola', 'llevo tres días sin señal, esto es un abuso']
     expect: { finalStageIn: [ESCALAR, SOPORTE, MENU] }
   - id: fda-ajeno-01
-    turns: ['Hola', 'C', 'Mateo', '¿me ayudas con la tarea de matemáticas?']
+    turns: ['Hola', 'B', 'Mateo', '¿me ayudas con la tarea de matemáticas?']
     expect: { finalStageIn: [ESCALAR, PERFIL] }
   - id: fda-ajeno-02
     turns: ['Hola', '¿quién va a ganar el partido hoy?']
@@ -20,8 +20,14 @@ cases:
     turns: ['Hola', 'A', 'ustedes son unos ladrones']
     expect: { finalStageIn: [ESCALAR, PERFIL] }
   - id: fda-soporte-01
-    turns: ['Hola', 'D']
+    turns: ['Hola', 'D', 'no gracias']
     expect: { finalStage: SOPORTE }
+  - id: fda-soporte-02
+    turns: ['Hola', 'C', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false }
+  - id: fda-soporte-03
+    turns: ['Hola', 'C', 'sí', 'A', 'Lucía', 'Movistar', 'redes']
+    expect: { process: PORTABILIDAD, finalStageIn: [OFERTA, OBJECIONES], sale: false }
   - id: fda-cancelar-01
     turns: ['Hola', 'quiero cancelar mi línea']
     expect: { finalStageIn: [ESCALAR, SOPORTE, MENU, CIERRE_SIN_VENTA] }

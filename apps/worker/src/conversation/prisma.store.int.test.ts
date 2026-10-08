@@ -55,12 +55,12 @@ function brain(req: LlmRequest): TurnOutput {
   if (stage === 'PERFIL') {
     return out({
       intent: 'DA_DATO',
-      reply: 'Te recomiendo:\n{{OFERTA:L1}}',
+      reply: 'Te recomiendo:\n{{OFERTA:M1}}',
       extracted: { name: 'Ana', currentOperator: null, usage: last },
     });
   }
   if (stage === 'OFERTA')
-    return out({ intent: 'ACEPTA_PLAN', planCode: 'L1', reply: '¡Excelente!' });
+    return out({ intent: 'ACEPTA_PLAN', planCode: 'M1', reply: '¡Excelente!' });
   return out({});
 }
 
@@ -101,7 +101,7 @@ async function setup(abayaChatId = 'CH-77') {
 describe('PrismaConversationStore + TurnService', () => {
   it('venta completa: estado, venta cifrada, consentimiento encadenado y outbox ordenado', async () => {
     const { conv, say } = await setup();
-    for (const t of ['Hola', 'C', 'Ana, uso redes y videos', 'lo quiero', 'SÍ AUTORIZO'])
+    for (const t of ['Hola', 'B', 'Ana, uso redes y videos', 'lo quiero', 'SÍ AUTORIZO'])
       await say(t);
 
     const c = await db.prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
@@ -111,8 +111,8 @@ describe('PrismaConversationStore + TurnService', () => {
     expect(Buffer.from(c.profileEncrypted!).toString('latin1')).not.toContain('Ana');
 
     const sale = await db.prisma.sale.findUniqueOrThrow({ where: { conversationId: conv.id } });
-    expect(sale).toMatchObject({ process: 'LINEA_NUEVA', planCode: 'L1', transferredAt: null });
-    expect(cipher.decryptString(sale.summaryEncrypted, `sale:${conv.id}`)).toContain('Plan: L1');
+    expect(sale).toMatchObject({ process: 'MIGRACION', planCode: 'M1', transferredAt: null });
+    expect(cipher.decryptString(sale.summaryEncrypted, `sale:${conv.id}`)).toContain('Plan: M1');
     // v1.9: de qué versión del catálogo salió el plan vendido y qué vio el cliente en cada turno.
     const published = await db.prisma.brainVersion.findFirstOrThrow({
       where: { status: 'PUBLISHED' },
@@ -123,7 +123,7 @@ describe('PrismaConversationStore + TurnService', () => {
       orderBy: { createdAt: 'asc' },
     });
     expect(usage.map((u) => [u.brainVersion, u.rendered])).toEqual([
-      [1, ['L1']], // oferta
+      [1, ['M1']], // oferta
       [1, []], // aceptación
     ]);
     expect(usage[0]!.messageId).not.toBeNull();
@@ -214,22 +214,17 @@ describe('PrismaConversationStore + TurnService', () => {
   it('el historial descifrado alimenta el siguiente turno', async () => {
     const { conv, say } = await setup();
     await say('Hola');
-    await say('C');
+    await say('B');
     const store = new PrismaConversationStore(db.prisma, cipher);
     const input = await store.loadForTurn(conv.id, 10);
-    expect(input!.state.history.map((m) => m.text)).toEqual([
-      'Hola',
-      T.MENU,
-      'C',
-      '¡Perfecto! 🙌 Para recomendarte el mejor plan, ¿me compartes tu nombre?',
-    ]);
-    expect(input!.state.profile.process).toBe('LINEA_NUEVA');
+    expect(input!.state.history.map((m) => m.text)).toEqual(['Hola', T.MENU, 'B', T.askName('B')]);
+    expect(input!.state.profile.process).toBe('MIGRACION');
   });
 
   it('la cadena de consentimientos enlaza conversaciones distintas', async () => {
     for (const id of ['CH-A', 'CH-B']) {
       const { say } = await setup(id);
-      for (const t of ['Hola', 'C', 'Ana, uso redes', 'lo quiero', 'SÍ AUTORIZO']) await say(t);
+      for (const t of ['Hola', 'B', 'Ana, uso redes', 'lo quiero', 'SÍ AUTORIZO']) await say(t);
     }
     const chain = await db.prisma.consentEvidence.findMany({ orderBy: { acceptedAt: 'asc' } });
     expect(chain).toHaveLength(2);
@@ -242,7 +237,7 @@ describe('concurrencia en PostgreSQL', () => {
     const convs = await Promise.all(
       ['CH-1', 'CH-2', 'CH-3', 'CH-4', 'CH-5'].map((id) => setup(id)),
     );
-    for (const t of ['Hola', 'C', 'Ana, uso redes', 'lo quiero']) {
+    for (const t of ['Hola', 'B', 'Ana, uso redes', 'lo quiero']) {
       await Promise.all(convs.map((c) => c.say(t)));
     }
     await Promise.all(convs.map((c) => c.say('SÍ AUTORIZO')));
@@ -266,7 +261,7 @@ describe('concurrencia en PostgreSQL', () => {
 describe('OutboxPublisher', () => {
   it('publica en orden con jobId = id del evento y marca publicados', async () => {
     const { say } = await setup();
-    for (const t of ['Hola', 'D']) await say(t);
+    for (const t of ['Hola', 'D', 'no gracias']) await say(t);
     const published: { queue: string; jobId: string; data: object }[] = [];
     const publisher: QueuePublisher = {
       publish: async (queue, jobId, data) => void published.push({ queue, jobId, data }),
@@ -275,6 +270,7 @@ describe('OutboxPublisher', () => {
     const ob = new OutboxPublisher(db.prisma, publisher, createLogger('t', { level: 'silent' }));
     await ob.tick();
     expect(published.map((p) => p.queue)).toEqual([
+      'abaya.outbound.robot',
       'abaya.outbound.robot',
       'abaya.outbound.robot',
       'abaya.close.robot',

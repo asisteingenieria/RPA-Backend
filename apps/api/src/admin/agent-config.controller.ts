@@ -27,8 +27,9 @@ async function withReview<T>(p: Promise<T>): Promise<T> {
 }
 
 /**
- * Configuración del agente (v1.8, sección 6.3.8). Ver: ambos roles. Guardar, publicar y
- * restaurar: solo ADMIN. Publicar = pasar la suite de evaluación (regla 13).
+ * Configuración del agente (v1.8, sección 6.3.8; D-004). Ver: ambos roles. Guardar, evaluar,
+ * publicar, restaurar y guardar pruebas: solo ADMIN. Guardar puede lanzar la suite de evaluación
+ * (regla 13); publicar usa el resultado ya calculado.
  */
 @Controller('admin/agent')
 @UseGuards(AdminAuthGuard)
@@ -67,10 +68,30 @@ export class AgentConfigController {
     return withReview(this.agent.saveDraft(req.adminUser, body));
   }
 
+  /** Publica al instante una versión ya evaluada (D-004): OK, o WARN con motivo; nunca BLOCKED. */
   @Post('draft/publish')
   @Roles(['ADMIN'])
-  publish(@Req() req: AdminRequest) {
-    return withReview(this.agent.publish(req.adminUser));
+  publish(@Body() body: unknown, @Req() req: AdminRequest) {
+    return withReview(this.agent.publish(req.adminUser, body));
+  }
+
+  /** Corre la suite sobre una versión guardada; el resultado queda en la versión (D-004). */
+  @Post('versions/:id/evaluate')
+  @Roles(['ADMIN'])
+  evaluate(@Param('id') id: string, @Req() req: AdminRequest) {
+    return withReview(this.agent.evaluate(req.adminUser, id));
+  }
+
+  /** Pruebas de "Probar agente" guardadas en el historial de una versión (D-004). */
+  @Get('versions/:id/tests')
+  tests(@Param('id') id: string): Promise<unknown> {
+    return this.agent.tests(id);
+  }
+
+  @Post('tests')
+  @Roles(['ADMIN'])
+  saveTest(@Body() body: unknown, @Req() req: AdminRequest) {
+    return toHttp(this.agent.saveTest(req.adminUser, body));
   }
 
   @Post('versions/:id/restore')

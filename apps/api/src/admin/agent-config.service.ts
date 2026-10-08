@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@abaya/db';
+import { Prisma, withSerializableRetry, type PrismaClient } from '@abaya/db';
 import {
   AGENT_LIMITS,
   AGENT_PROMPT_STAGES,
@@ -17,7 +17,7 @@ import {
 } from '@abaya/domain';
 import { ServiceError } from './errors.js';
 
-/** Encola la evaluación de una versión (el worker la corre y la publica o rechaza). */
+/** Encola la evaluación de una versión (el worker la corre y deja su resultado; D-004). */
 export interface EvalQueuePort {
   enqueue(job: EvalJob): Promise<void>;
 }
@@ -38,7 +38,23 @@ const PROFILE_KEYS = new Set([
   'authorizationTemplateVersion',
   'authorizationTextHash',
 ]);
+/** Marcas del flujo que la simulación conserva entre turnos (D-003). */
+const PROFILE_FLAGS = new Set(['authorizationDeclined', 'supportRedirected']);
 const MAX_TEST_TEXT = 2_000;
+
+/** Resultado de la evaluación de una versión (D-004). */
+/** D-005: RUNNING = la suite está corriendo (la evaluación ya no es un estado de la versión). */
+export type EvalVerdict = 'OK' | 'WARN' | 'BLOCKED' | 'ERROR' | 'CANCELLED' | 'RUNNING';
+/** Motivo mínimo para publicar una versión con alertas. */
+/** Conversaciones que siguen abiertas (la publicación urgente las pasa a la versión nueva). */
+const OPEN_CONVERSATION_STATUSES = [
+  'ACTIVE',
+  'WAITING_CONSENT',
+  'TRANSFERRING',
+  'NEEDS_REVIEW',
+] as const;
+const TEST_ROLES = new Set(['customer', 'bot', 'event']);
+const MAX_TEST_LINES = 200;
 
 export interface AgentConfigOptions {
   /** `LLM_PROVIDER`: con `simulado` no se puede publicar (regla 13). */
@@ -72,6 +88,11 @@ const VERSION_SELECT = {
   publishedBy: true,
   publishedAt: true,
   evalSummary: true,
+  evalVerdict: true,
+  evaluatedAt: true,
+  changeNote: true,
+  publishReason: true,
+  appliedToOpen: true,
 } as const;
 
 const CONTENT_SELECT = {
@@ -84,8 +105,13 @@ const CONTENT_SELECT = {
 } as const;
 
 /**
- * Configuración del agente en el panel (v1.8, sección 6.3.8): borradores, publicación con la
- * suite de evaluación (regla 13) e historial. El contenido se revisa al guardar (regla 11).
+ * Configuración del agente en el panel (v1.8, sección 6.3.8; D-004 y D-005): guardar, publicar al
+ * instante e historial con notas, pruebas y evaluaciones. El contenido se revisa al guardar
+ * (regla 11) y cada respuesta del robot pasa por los validadores (regla 10).
+ *
+ * D-005: publicar NO depende de la evaluación. La suite corre en segundo plano después de publicar
+ * (o cuando se pide) y su resultado queda como evidencia en el historial de la versión. Una versión
+ * evaluada no cambia más: guardar después crea otra.
  */
 export class AgentConfigService {
   private readonly staleMs: number;
@@ -130,8 +156,11 @@ export class AgentConfigService {
       stages: AGENT_PROMPT_STAGES,
       limits: AGENT_LIMITS,
       provider: this.opts.provider,
-      canPublish: this.publishBlocker() === null,
-      publishBlocker: this.publishBlocker(),
+      // D-005: publicar siempre se puede (el rol lo controla el guard); evaluar puede no estar disponible.
+      canPublish: true,
+      publishBlocker: null,
+      canEvaluate: this.publishBlocker() === null,
+      evaluateBlocker: this.publishBlocker(),
       temperatureApplies: this.opts.provider !== 'anthropic',
       defaultModel: this.opts.defaultModel,
       models: this.models(),
@@ -145,77 +174,209 @@ export class AgentConfigService {
     return this.issues(input);
   }
 
+  /**
+   * Guarda el contenido del editor sin publicarlo. Si el borrador actual no está evaluado se
+   * reescribe; si ya se evaluó (o está evaluando) se crea una versión nueva y la evaluación en curso
+   * del borrador se cancela. Con `evaluate` se lanza la suite sobre lo guardado.
+   */
   async saveDraft(actor: string, body: unknown) {
+    const b = (body ?? {}) as Record<string, unknown>;
     const input = this.parse(body);
     const issues = this.issues(input);
     if (issues.length) throw new AgentReviewError(issues);
+    const evaluate = b.evaluate === true;
+    if (evaluate) this.requireEvaluator();
+    const changeNote = parseNote(b.changeNote);
     await this.expireStale();
     const working = await this.working();
-    if (working?.status === 'EVALUATING') {
-      throw new ServiceError(409, 'Hay una versión en evaluación: espera el resultado.');
-    }
+    if (working?.evalVerdict === 'RUNNING') await this.cancelEvaluation(working.id, actor);
+
     let saved;
-    if (working?.status === 'DRAFT') {
+    if (working?.status === 'DRAFT' && !working.evalVerdict) {
       saved = await this.prisma.agentConfigVersion.update({
         where: { id: working.id },
-        data: { ...input, createdBy: actor, evalSummary: Prisma.DbNull },
+        data: {
+          ...input,
+          createdBy: actor,
+          evalSummary: Prisma.DbNull,
+          ...(changeNote !== undefined ? { changeNote } : {}),
+        },
         select: CONTENT_SELECT,
       });
     } else {
-      saved = await this.createVersion(actor, input);
+      saved = await this.createVersion(actor, input, changeNote ?? null);
     }
     await this.audit(actor, 'AGENT_DRAFT_SAVED', `v${saved.version}`);
+    if (evaluate) return this.startEvaluation(actor, saved.id);
     return saved;
   }
 
-  /** Por qué no se puede publicar (null = se puede). También lo usan los Brains (v1.9). */
+  /**
+   * D-005: evalúa cualquier versión guardada (borrador, publicada o archivada) para dejar la
+   * evidencia en su historial. No cambia su estado ni la publica.
+   */
+  async evaluate(actor: string, id: string) {
+    this.requireEvaluator();
+    await this.expireStale();
+    const row = await this.prisma.agentConfigVersion.findUnique({
+      where: { id },
+      select: { evalVerdict: true },
+    });
+    if (!row) throw new ServiceError(404, 'Versión no encontrada');
+    if (row.evalVerdict === 'RUNNING') {
+      throw new ServiceError(409, 'Esta versión ya se está evaluando.');
+    }
+    return this.startEvaluation(actor, id);
+  }
+
+  /**
+   * Por qué no se puede evaluar (null = se puede): sin LLM real o sin API key. D-005: ya no frena
+   * la publicación del agente; los Brains (v1.9) lo siguen usando para publicar.
+   */
   publishBlocker(): string | null {
     if (this.opts.provider === 'simulado') {
-      return 'Publicar requiere un proveedor de LLM real: la suite de evaluación no puede validar el guion con LLM_PROVIDER=simulado.';
+      return 'Evaluar requiere un proveedor de LLM real: la suite de evaluación no puede validar el guion con LLM_PROVIDER=simulado.';
     }
     if (this.opts.providerReady === false) {
-      return `Publicar requiere la API key del proveedor ${this.opts.provider} en el servidor para correr la suite de evaluación.`;
+      return `Evaluar requiere la API key del proveedor ${this.opts.provider} en el servidor para correr la suite de evaluación.`;
     }
     return null;
   }
 
-  async publish(actor: string) {
-    const blocker = this.publishBlocker();
-    if (blocker) throw new ServiceError(409, blocker);
+  /**
+   * D-005: publica al instante la versión indicada (o la de trabajo), pase o no la evaluación.
+   * Después lanza la suite en segundo plano como evidencia (`evaluate`, por defecto sí) si la versión
+   * no tiene resultado y el servidor puede evaluar. `reason` es una nota opcional. `applyToOpen`
+   * (urgencia) pasa a la versión nueva también las conversaciones en curso; si no, terminan con la
+   * versión con la que empezaron.
+   */
+  async publish(actor: string, body?: unknown) {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 500) : '';
+    const applyToOpen = b.applyToOpen === true;
+    const evaluate = b.evaluate !== false;
     await this.expireStale();
     const working = await this.working();
-    if (!working || working.status !== 'DRAFT') {
-      throw new ServiceError(409, 'No hay un borrador para publicar: guarda los cambios primero.');
+    const id = typeof b.versionId === 'string' ? b.versionId : working?.id;
+    if (!id)
+      throw new ServiceError(409, 'No hay una versión para publicar: guarda los cambios primero.');
+    const row = await this.prisma.agentConfigVersion.findUnique({ where: { id } });
+    if (!row) throw new ServiceError(404, 'Versión no encontrada');
+    if (row.status === 'PUBLISHED')
+      throw new ServiceError(409, `La v${row.version} ya está publicada.`);
+    if (row.status === 'ARCHIVED') {
+      throw new ServiceError(
+        409,
+        'La versión está archivada: restáurala como borrador para volver a publicarla.',
+      );
     }
-    const full = await this.prisma.agentConfigVersion.findUniqueOrThrow({
-      where: { id: working.id },
-    });
-    const issues = this.issues(full);
+    const issues = this.issues(row);
     if (issues.length) throw new AgentReviewError(issues);
-    const r = await this.prisma.agentConfigVersion.updateMany({
-      where: { id: working.id, status: 'DRAFT' },
-      data: { status: 'EVALUATING', evalSummary: Prisma.DbNull },
-    });
-    if (!r.count) throw new ServiceError(409, 'El borrador cambió: vuelve a intentarlo.');
-    try {
-      await this.queue.enqueue({ versionId: working.id, requestedBy: actor });
-    } catch {
-      await this.prisma.agentConfigVersion.update({
-        where: { id: working.id },
-        data: { status: 'DRAFT' },
-      });
-      throw new ServiceError(503, 'No se pudo encolar la evaluación (Redis no disponible).');
+    const verdict = (row.evalVerdict as EvalVerdict | null) ?? null;
+
+    const r = await withSerializableRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const current = await tx.agentConfigVersion.findUnique({ where: { id } });
+          if (!current || current.status !== row.status) {
+            throw new ServiceError(
+              409,
+              'La versión cambió mientras se publicaba: vuelve a intentarlo.',
+            );
+          }
+          await tx.agentConfigVersion.updateMany({
+            where: { status: 'PUBLISHED' },
+            data: { status: 'ARCHIVED' },
+          });
+          const now = new Date();
+          await tx.agentConfigVersion.update({
+            where: { id },
+            data: {
+              status: 'PUBLISHED',
+              publishedBy: actor,
+              publishedAt: now,
+              publishReason: reason || null,
+              appliedToOpen: applyToOpen,
+            },
+          });
+          const moved = applyToOpen
+            ? (
+                await tx.conversation.updateMany({
+                  where: { status: { in: [...OPEN_CONVERSATION_STATUSES] } },
+                  data: { agentVersionId: id },
+                })
+              ).count
+            : 0;
+          await tx.adminAuditLog.create({
+            data: {
+              actor: actor.slice(0, 60),
+              action: 'AGENT_PUBLISHED',
+              target: `v${row.version}`,
+              detail: {
+                verdict,
+                ...(reason ? { reason } : {}),
+                applyToOpen,
+                ...(applyToOpen ? { openConversations: moved } : {}),
+              },
+            },
+          });
+          return { moved };
+        },
+        { isolationLevel: 'Serializable' },
+      ),
+    );
+
+    // Evidencia: la evaluación corre después de publicar y nunca deshace la publicación.
+    let evaluation: 'STARTED' | 'RUNNING' | 'DONE' | 'SKIPPED' | 'UNAVAILABLE' | 'FAILED';
+    if (verdict === 'RUNNING') evaluation = 'RUNNING';
+    else if (verdict === 'OK' || verdict === 'WARN' || verdict === 'BLOCKED') evaluation = 'DONE';
+    else if (!evaluate) evaluation = 'SKIPPED';
+    else if (this.publishBlocker()) evaluation = 'UNAVAILABLE';
+    else {
+      try {
+        await this.startEvaluation(actor, id);
+        evaluation = 'STARTED';
+      } catch {
+        evaluation = 'FAILED';
+      }
     }
-    await this.audit(actor, 'AGENT_PUBLISH_REQUESTED', `v${working.version}`);
-    return { version: working.version, status: 'EVALUATING' as const };
+    return {
+      version: row.version,
+      status: 'PUBLISHED' as const,
+      verdict,
+      applyToOpen,
+      openConversations: r.moved,
+      evaluation,
+      ...(evaluation === 'UNAVAILABLE' ? { evaluationBlocker: this.publishBlocker() } : {}),
+    };
   }
 
-  versions(limit = 50) {
-    return this.prisma.agentConfigVersion.findMany({
-      orderBy: { version: 'desc' },
-      take: limit,
-      select: VERSION_SELECT,
-    });
+  /** Historial: cada versión con su nota, resultado, pruebas guardadas y conversaciones atendidas. */
+  async versions(limit = 50) {
+    const [rows, convs, tests] = await Promise.all([
+      this.prisma.agentConfigVersion.findMany({
+        orderBy: { version: 'desc' },
+        take: limit,
+        select: VERSION_SELECT,
+      }),
+      this.prisma.conversation.groupBy({
+        by: ['agentVersionId'],
+        where: { agentVersionId: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.agentTestRecord.groupBy({
+        by: ['versionId'],
+        where: { versionId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+    const nConv = new Map(convs.map((c) => [c.agentVersionId, c._count._all]));
+    const nTests = new Map(tests.map((t) => [t.versionId, t._count._all]));
+    return rows.map((r) => ({
+      ...r,
+      conversations: nConv.get(r.id) ?? 0,
+      tests: nTests.get(r.id) ?? 0,
+    }));
   }
 
   async version(id: string) {
@@ -232,6 +393,7 @@ export class AgentConfigService {
     const src = await this.prisma.agentConfigVersion.findUnique({ where: { id } });
     if (!src) throw new ServiceError(404, 'Versión no encontrada');
     const draft = await this.saveDraft(actor, {
+      changeNote: `Restaurada desde la v${src.version}`,
       agentName: src.agentName,
       companyName: src.companyName,
       companyInfo: src.companyInfo,
@@ -293,7 +455,122 @@ export class AgentConfigService {
     }
   }
 
+  /**
+   * Guarda una prueba de "Probar agente" en el historial (texto de simulación, nunca datos de
+   * clientes). `versionId` = versión probada; sin él, contenido del editor sin guardar.
+   */
+  async saveTest(actor: string, body: unknown) {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const source = b.source === 'published' ? 'published' : 'editor';
+    let version: { id: string; version: number } | null = null;
+    if (typeof b.versionId === 'string' && b.versionId) {
+      version = await this.prisma.agentConfigVersion.findUnique({
+        where: { id: b.versionId },
+        select: { id: true, version: true },
+      });
+      if (!version) throw new ServiceError(404, 'Versión no encontrada');
+    }
+    if (!Array.isArray(b.transcript) || !b.transcript.length) {
+      throw new ServiceError(400, 'transcript: la prueba no tiene mensajes');
+    }
+    const transcript = b.transcript.slice(0, MAX_TEST_LINES).map((m: unknown) => {
+      const r = (m ?? {}) as Record<string, unknown>;
+      if (typeof r.role !== 'string' || !TEST_ROLES.has(r.role) || typeof r.text !== 'string') {
+        throw new ServiceError(
+          400,
+          'transcript: cada línea es { role: customer | bot | event, text }',
+        );
+      }
+      return { role: r.role, text: r.text.slice(0, MAX_TEST_TEXT) };
+    });
+    const finalStage = typeof b.finalStage === 'string' ? b.finalStage.slice(0, 40) : 'MENU';
+    const rec = await this.prisma.agentTestRecord.create({
+      data: {
+        versionId: version?.id ?? null,
+        version: version?.version ?? null,
+        source,
+        note: parseNote(b.note) ?? null,
+        transcript,
+        finalStage,
+        createdBy: actor,
+      },
+    });
+    await this.audit(actor, 'AGENT_TEST_SAVED', version ? `v${version.version}` : 'editor');
+    return rec;
+  }
+
+  tests(versionId: string) {
+    return this.prisma.agentTestRecord.findMany({
+      where: { versionId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
   // ---------- internos ----------
+
+  private requireEvaluator() {
+    const blocker = this.publishBlocker();
+    if (blocker) throw new ServiceError(409, blocker);
+  }
+
+  private async startEvaluation(actor: string, id: string) {
+    const before = await this.prisma.agentConfigVersion.findUnique({
+      where: { id },
+      select: { evalVerdict: true, evalSummary: true, evaluatedAt: true },
+    });
+    // D-005: la evaluación no cambia el estado de la versión (puede estar publicada).
+    const r = await this.prisma.agentConfigVersion.updateMany({
+      where: { id, OR: [{ evalVerdict: null }, { evalVerdict: { not: 'RUNNING' } }] },
+      data: {
+        evalVerdict: 'RUNNING',
+        evaluatedAt: null,
+        evalSummary: { progress: { done: 0, total: null }, startedAt: new Date().toISOString() },
+      },
+    });
+    if (!r.count) throw new ServiceError(409, 'La versión cambió: vuelve a intentarlo.');
+    try {
+      await this.queue.enqueue({ versionId: id, requestedBy: actor });
+    } catch {
+      await this.prisma.agentConfigVersion.update({
+        where: { id },
+        data: {
+          evalVerdict: before?.evalVerdict ?? null,
+          evaluatedAt: before?.evaluatedAt ?? null,
+          evalSummary: (before?.evalSummary as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
+        },
+      });
+      throw new ServiceError(503, 'No se pudo encolar la evaluación (Redis no disponible).');
+    }
+    const v = await this.prisma.agentConfigVersion.findUniqueOrThrow({
+      where: { id },
+      select: CONTENT_SELECT,
+    });
+    await this.audit(actor, 'AGENT_EVALUATION_REQUESTED', `v${v.version}`);
+    return v;
+  }
+
+  /** Cancela una evaluación en curso (el worker la ve y se detiene). */
+  private async cancelEvaluation(id: string, actor: string) {
+    const r = await this.prisma.agentConfigVersion.updateMany({
+      where: { id, evalVerdict: 'RUNNING' },
+      data: {
+        evalVerdict: 'CANCELLED',
+        evaluatedAt: new Date(),
+        evalSummary: {
+          problems: ['evaluación cancelada: se guardó una versión más nueva'],
+          finishedAt: new Date().toISOString(),
+        },
+      },
+    });
+    if (r.count) {
+      const v = await this.prisma.agentConfigVersion.findUnique({
+        where: { id },
+        select: { version: true },
+      });
+      await this.audit(actor, 'AGENT_EVALUATION_CANCELLED', `v${v?.version ?? '?'}`);
+    }
+  }
 
   private parseTestState(raw: unknown): AgentTestJob['state'] {
     const s = (raw ?? {}) as Record<string, unknown>;
@@ -301,9 +578,10 @@ export class AgentConfigService {
     if (typeof stage !== 'string' || !(STAGES as readonly string[]).includes(stage)) {
       throw new ServiceError(400, 'state.stage inválido');
     }
-    const profile: Record<string, string> = {};
+    const profile: Record<string, string | boolean> = {};
     for (const [k, v] of Object.entries((s.profile ?? {}) as Record<string, unknown>)) {
       if (PROFILE_KEYS.has(k) && typeof v === 'string') profile[k] = v.slice(0, 200);
+      if (PROFILE_FLAGS.has(k) && typeof v === 'boolean') profile[k] = v;
     }
     const history = Array.isArray(s.history) ? s.history.slice(-40) : [];
     return {
@@ -332,7 +610,11 @@ export class AgentConfigService {
     return latest;
   }
 
-  private async createVersion(actor: string, input: AgentConfigInput) {
+  private async createVersion(
+    actor: string,
+    input: AgentConfigInput,
+    changeNote: string | null = null,
+  ) {
     // `version` es única: si dos ADMIN guardan a la vez, uno reintenta con el siguiente número.
     for (let attempt = 0; attempt < 3; attempt++) {
       const max = await this.prisma.agentConfigVersion.aggregate({ _max: { version: true } });
@@ -340,7 +622,7 @@ export class AgentConfigService {
       const next = Math.max(max._max.version ?? 0, DEFAULT_AGENT_CONFIG.version) + 1;
       try {
         return await this.prisma.agentConfigVersion.create({
-          data: { ...input, version: next, status: 'DRAFT', createdBy: actor },
+          data: { ...input, version: next, status: 'DRAFT', createdBy: actor, changeNote },
           select: CONTENT_SELECT,
         });
       } catch (err) {
@@ -352,21 +634,22 @@ export class AgentConfigService {
 
   private async expireStale() {
     const stale = await this.prisma.agentConfigVersion.findMany({
-      where: { status: 'EVALUATING', updatedAt: { lt: new Date(Date.now() - this.staleMs) } },
+      where: { evalVerdict: 'RUNNING', updatedAt: { lt: new Date(Date.now() - this.staleMs) } },
       select: { id: true, version: true },
     });
     for (const s of stale) {
       const r = await this.prisma.agentConfigVersion.updateMany({
-        where: { id: s.id, status: 'EVALUATING' },
+        where: { id: s.id, evalVerdict: 'RUNNING' },
         data: {
-          status: 'REJECTED',
+          evalVerdict: 'ERROR',
+          evaluatedAt: new Date(),
           evalSummary: {
             problems: ['la evaluación no respondió a tiempo (¿worker detenido?)'],
             finishedAt: new Date().toISOString(),
           },
         },
       });
-      if (r.count) await this.audit('sistema', 'AGENT_REJECTED', `v${s.version}`);
+      if (r.count) await this.audit('sistema', 'AGENT_EVALUATION_FAILED', `v${s.version}`);
     }
   }
 
@@ -405,4 +688,12 @@ export class AgentConfigService {
   private async audit(actor: string, action: string, target?: string) {
     await this.prisma.adminAuditLog.create({ data: { actor, action, target: target ?? null } });
   }
+}
+
+/** Nota del cambio o de una prueba: texto corto opcional. */
+function parseNote(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string') throw new ServiceError(400, 'la nota debe ser texto');
+  const t = v.trim().slice(0, 300);
+  return t || undefined;
 }

@@ -88,6 +88,13 @@ export const envSchema = z.object({
   /** Cierre por inactividad del cliente (sección 6.6). */
   INACTIVITY_MINUTES: z.coerce.number().int().positive().default(120),
   /**
+   * Trazabilidad (D-002): días que se conserva el contenido de las conversaciones cerradas
+   * (mensajes, perfil, resumen de la venta y respuesta del consentimiento). Vacío = no se borra.
+   */
+  CONVERSATION_RETENTION_DAYS: z
+    .union([z.literal('').transform(() => undefined), z.coerce.number().int().positive()])
+    .optional(),
+  /**
    * Cookie de sesión del panel con `Secure` (solo viaja por HTTPS; los navegadores la aceptan
    * también en http://localhost). `false` únicamente para desarrollo por HTTP en otra máquina.
    */

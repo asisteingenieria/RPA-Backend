@@ -33,11 +33,14 @@ export const ALLOWED_INTENTS: Record<Stage, readonly Intent[]> = {
   ESCALAR: [],
 };
 
-export const OPTION_PROCESS: Record<Exclude<MenuOption, 'D'>, SaleProcess> = {
+/** Opciones del menú que llevan a una venta (D-003). C y D son soporte: fuera de alcance. */
+export const OPTION_PROCESS: Partial<Record<MenuOption, SaleProcess>> = {
   A: 'PORTABILIDAD',
   B: 'MIGRACION',
-  C: 'LINEA_NUEVA',
 };
+
+/** Opciones del menú que se atienden con el mensaje de soporte y cierran el chat. */
+export const isSupportOption = (o: MenuOption) => !OPTION_PROCESS[o];
 
 /** Datos mínimos del perfil para pasar a OFERTA, por proceso. */
 export const REQUIRED_PROFILE: Record<SaleProcess, readonly (keyof Profile)[]> = {
@@ -79,7 +82,7 @@ export function transition(i: TransitionInput): Transition {
     case 'MENU':
       if (intent === 'ELIGE_OPCION') {
         if (!i.option) return { ok: false, reason: 'ELIGE_OPCION sin opción' };
-        return { ok: true, to: i.option === 'D' ? 'SOPORTE' : 'PERFIL' };
+        return { ok: true, to: isSupportOption(i.option) ? 'SOPORTE' : 'PERFIL' };
       }
       if (intent === 'NO_INTERESADO') return { ok: true, to: 'CIERRE_SIN_VENTA' };
       return { ok: true, to: 'MENU' };
@@ -133,6 +136,9 @@ export function parseMenuOption(text: string): MenuOption | undefined {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[.!)*"']/g, '')
     .trim();
+  // Las letras en círculo del menú (🅐 🅑 🅒 🅓) también cuentan.
+  const circled: Record<string, string> = { '🅐': 'a', '🅑': 'b', '🅒': 'c', '🅓': 'd' };
+  if (circled[t]) return circled[t]!.toUpperCase() as MenuOption;
   const m = /^(?:la\s+)?(?:opcion\s+)?([abcd1-4])$/.exec(t);
   if (!m) return undefined;
   const map: Record<string, MenuOption> = {

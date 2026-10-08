@@ -1,9 +1,4 @@
-import {
-  LlmProviderError,
-  type LlmPort,
-  type LlmRequest,
-  type LlmResponse,
-} from '@abaya/domain';
+import { LlmProviderError, type LlmPort, type LlmRequest, type LlmResponse } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import { FallbackLlmAdapter } from './fallback.adapter.js';

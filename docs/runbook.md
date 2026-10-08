@@ -85,6 +85,18 @@ ver la auditoría) y **OPERADOR** (consulta, revisión y apagado de emergencia).
   `pnpm --filter @abaya/api create-admin -- <usuario> --reset`. Queda auditado como `consola`.
 - Sesión: máximo 8 h y 30 min de inactividad; luego hay que volver a entrar.
 
+### 6.b Trazabilidad: ver conversaciones (D-002)
+
+- La pestaña **Trazabilidad** del panel muestra cada conversación completa, **sin enmascarar**.
+  La ve **todo ADMIN** (no hay permiso aparte); el OPERADOR no. Tratar las cuentas ADMIN como
+  acceso a datos personales: nominales, nunca compartidas.
+- Cada apertura de una conversación (`CONVERSATION_VIEWED`, una vez cada 10 min por persona) y
+  cada exportación (`CONVERSATIONS_EXPORTED`, CSV sin texto o transcripción) queda en Auditoría.
+- **Retención:** `CONVERSATION_RETENTION_DAYS` (vacío = no se borra). El worker revisa cada hora y
+  borra mensajes, perfil, resumen de la venta y respuesta del consentimiento de las conversaciones
+  **cerradas** hace más de N días; la conversación queda con su tipificación y `contentPurgedAt`.
+  Cambiar el plazo = cambiar la variable y reiniciar el worker. No hay vuelta atrás (salvo respaldo).
+
 ## 7. Robots por equipo (padre / hijos)
 
 Cada computador es un robot hijo con su propio usuario de Abaya. El servidor (padre) guarda las

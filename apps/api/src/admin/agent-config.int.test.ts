@@ -80,6 +80,7 @@ const put = (path: string, body: unknown, cookie: string) =>
   call(path, { method: 'PUT', body: JSON.stringify(body) }, cookie);
 const post = (path: string, body: unknown, cookie?: string) =>
   call(path, { method: 'POST', body: JSON.stringify(body) }, cookie);
+const get = (path: string, cookie: string) => call(path, {}, cookie);
 
 async function ready(username: string, role: 'ADMIN' | 'OPERADOR') {
   const { temporaryPassword } = await users.create('prueba', { username, role });
@@ -111,7 +112,7 @@ describe('configuración del agente (v1.8)', () => {
     expect(body.published).toMatchObject({ builtIn: true, version: 1, status: 'PUBLISHED' });
     expect(body.working).toBeNull();
     expect(body.systemRules).toContain('Reglas del sistema');
-    expect(body.menuOptions).toContain('*A.*');
+    expect(body.menuOptions).toContain('🅐 Cambiarme de operador');
     expect(body.models).toEqual(['modelo-a', 'modelo-b']);
     expect(body.canPublish).toBe(true);
     expect(body.temperatureApplies).toBe(false);
@@ -160,25 +161,71 @@ describe('configuración del agente (v1.8)', () => {
     expect(fieldsWithIssues).toEqual(expect.arrayContaining(['model', 'temperature']));
   });
 
-  it('guardar crea un borrador v2 y lo actualiza; publicar lo pone a evaluar', async () => {
+  it('guardar sin evaluar reescribe el borrador; D-005: publicar sin evaluar es inmediato y evalúa después', async () => {
     const admin = await ready('jefe', 'ADMIN');
     let r = await put('/admin/agent/draft', fields(), admin);
     expect(r.status).toBe(200);
     const v2 = await json(r);
-    expect(v2).toMatchObject({ version: 2, status: 'DRAFT', agentName: 'Sofía' });
+    expect(v2).toMatchObject({
+      version: 2,
+      status: 'DRAFT',
+      agentName: 'Sofía',
+      evalVerdict: null,
+    });
 
-    r = await put('/admin/agent/draft', fields({ agentName: 'Sofía Móvil' }), admin);
-    expect((await json(r)).id).toBe(v2.id);
+    r = await put(
+      '/admin/agent/draft',
+      { ...fields({ agentName: 'Sofía Móvil' }), changeNote: 'nombre' },
+      admin,
+    );
+    expect(await json(r)).toMatchObject({ id: v2.id, changeNote: 'nombre' });
     expect(await db.prisma.agentConfigVersion.count()).toBe(1);
+    expect(jobs).toHaveLength(0);
 
     r = await post('/admin/agent/draft/publish', {}, admin);
     expect(r.status).toBe(201);
-    expect(await json(r)).toEqual({ version: 2, status: 'EVALUATING' });
+    expect(await json(r)).toMatchObject({
+      version: 2,
+      status: 'PUBLISHED',
+      verdict: null,
+      evaluation: 'STARTED',
+    });
+    // La evaluación corre sobre la versión ya publicada, como evidencia.
+    expect(jobs).toEqual([{ versionId: v2.id, requestedBy: 'jefe' }]);
+    const pub = await db.prisma.agentConfigVersion.findUniqueOrThrow({ where: { id: v2.id } });
+    expect(pub).toMatchObject({ status: 'PUBLISHED', evalVerdict: 'RUNNING', publishReason: null });
+  });
+
+  it('D-005: publicar sin evaluar como evidencia (evaluate: false) no encola la suite', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    await put('/admin/agent/draft', fields(), admin);
+    const r = await post('/admin/agent/draft/publish', { evaluate: false, reason: 'ajuste' }, admin);
+    expect(await json(r)).toMatchObject({ status: 'PUBLISHED', evaluation: 'SKIPPED' });
+    expect(jobs).toHaveLength(0);
+    const audit = await db.prisma.adminAuditLog.findFirstOrThrow({
+      where: { action: 'AGENT_PUBLISHED' },
+    });
+    expect(audit.detail).toMatchObject({ verdict: null, reason: 'ajuste' });
+  });
+
+  it('D-004: guardar y evaluar encola la suite; guardar otra vez la cancela y crea otra versión', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    let r = await put('/admin/agent/draft', { ...fields(), evaluate: true }, admin);
+    const v2 = await json(r);
+    expect(v2).toMatchObject({ version: 2, status: 'DRAFT', evalVerdict: 'RUNNING' });
+    expect(v2.evalSummary).toMatchObject({ progress: { done: 0 } });
     expect(jobs).toEqual([{ versionId: v2.id, requestedBy: 'jefe' }]);
 
-    // Mientras evalúa no se edita ni se vuelve a publicar.
-    expect((await put('/admin/agent/draft', fields(), admin)).status).toBe(409);
-    expect((await post('/admin/agent/draft/publish', {}, admin)).status).toBe(409);
+    r = await put(
+      '/admin/agent/draft',
+      { ...fields({ agentName: 'Otra' }), evaluate: true },
+      admin,
+    );
+    const v3 = await json(r);
+    expect(v3).toMatchObject({ version: 3, status: 'DRAFT', evalVerdict: 'RUNNING' });
+    const old = await db.prisma.agentConfigVersion.findUniqueOrThrow({ where: { id: v2.id } });
+    expect(old).toMatchObject({ status: 'DRAFT', evalVerdict: 'CANCELLED' });
+    expect(jobs.map((j) => j.versionId)).toEqual([v2.id, v3.id]);
 
     const audit = await db.prisma.adminAuditLog.findMany({
       where: { action: { startsWith: 'AGENT_' } },
@@ -186,9 +233,149 @@ describe('configuración del agente (v1.8)', () => {
     });
     expect(audit.map((a) => a.action)).toEqual([
       'AGENT_DRAFT_SAVED',
+      'AGENT_EVALUATION_REQUESTED',
+      'AGENT_EVALUATION_CANCELLED',
       'AGENT_DRAFT_SAVED',
-      'AGENT_PUBLISH_REQUESTED',
+      'AGENT_EVALUATION_REQUESTED',
     ]);
+  });
+
+  it('D-004: una versión evaluada no cambia; guardar crea otra; D-005: cualquier versión se evalúa', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const v2 = await json(await put('/admin/agent/draft', fields(), admin));
+    await db.prisma.agentConfigVersion.update({
+      where: { id: v2.id },
+      data: { evalVerdict: 'WARN' },
+    });
+    const v3 = await json(
+      await put('/admin/agent/draft', fields({ agentName: 'Corregida' }), admin),
+    );
+    expect(v3.version).toBe(3);
+    const r = await post(`/admin/agent/versions/${v3.id}/evaluate`, {}, admin);
+    expect(r.status).toBe(201);
+    expect(await json(r)).toMatchObject({ version: 3, status: 'DRAFT', evalVerdict: 'RUNNING' });
+    // Una que ya se está evaluando no se vuelve a encolar.
+    expect((await post(`/admin/agent/versions/${v3.id}/evaluate`, {}, admin)).status).toBe(409);
+    // Una anterior también se puede evaluar (evidencia en su historial).
+    expect((await post(`/admin/agent/versions/${v2.id}/evaluate`, {}, admin)).status).toBe(201);
+    expect(jobs.map((j) => j.versionId)).toEqual([v3.id, v2.id]);
+  });
+
+  it('D-005: se publica con cualquier resultado (incluso bloqueada) y no se vuelve a evaluar', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const v2 = await json(await put('/admin/agent/draft', fields(), admin));
+    await db.prisma.agentConfigVersion.update({
+      where: { id: v2.id },
+      data: { evalVerdict: 'BLOCKED' },
+    });
+    let r = await post('/admin/agent/draft/publish', {}, admin);
+    expect(r.status).toBe(201);
+    expect(await json(r)).toMatchObject({
+      version: 2,
+      status: 'PUBLISHED',
+      verdict: 'BLOCKED',
+      applyToOpen: false,
+      evaluation: 'DONE',
+    });
+    expect(jobs).toHaveLength(0); // ya tiene su evaluación
+    const audit = await db.prisma.adminAuditLog.findFirstOrThrow({
+      where: { action: 'AGENT_PUBLISHED' },
+    });
+    expect(audit.detail).toMatchObject({ verdict: 'BLOCKED', applyToOpen: false });
+
+    // Un borrador cuya evaluación sigue corriendo también se publica; la suite sigue.
+    const v3 = await json(
+      await put('/admin/agent/draft', { ...fields({ agentName: 'v3' }), evaluate: true }, admin),
+    );
+    r = await post('/admin/agent/draft/publish', {}, admin);
+    expect(await json(r)).toMatchObject({ version: 3, evaluation: 'RUNNING' });
+    expect(jobs.map((j) => j.versionId)).toEqual([v3.id]);
+    const rows = await db.prisma.agentConfigVersion.findMany({ orderBy: { version: 'asc' } });
+    expect(rows.map((v) => [v.status, v.evalVerdict])).toEqual([
+      ['ARCHIVED', 'BLOCKED'],
+      ['PUBLISHED', 'RUNNING'],
+    ]);
+    // Una archivada no se vuelve a publicar directamente (se restaura como borrador).
+    r = await post('/admin/agent/draft/publish', { versionId: v2.id }, admin);
+    expect(r.status).toBe(409);
+  });
+
+  it('D-004: con urgencia, las conversaciones en curso pasan a la versión nueva; sin ella, no', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const open = await db.prisma.conversation.create({
+      data: { abayaChatId: 'AB-1', robotUser: 'r', status: 'ACTIVE', agentVersionId: 'vieja' },
+    });
+    const closed = await db.prisma.conversation.create({
+      data: {
+        abayaChatId: 'AB-2',
+        robotUser: 'r',
+        status: 'CLOSED_NO_SALE',
+        agentVersionId: 'vieja',
+      },
+    });
+    const v2 = await json(await put('/admin/agent/draft', fields(), admin));
+    await db.prisma.agentConfigVersion.update({
+      where: { id: v2.id },
+      data: { evalVerdict: 'OK' },
+    });
+    const r = await post(
+      '/admin/agent/draft/publish',
+      { applyToOpen: true, reason: 'corrige un error grave' },
+      admin,
+    );
+    expect(await json(r)).toMatchObject({ applyToOpen: true, openConversations: 1 });
+    const versionOf = async (id: string) =>
+      (await db.prisma.conversation.findUniqueOrThrow({ where: { id } })).agentVersionId;
+    expect(await versionOf(open.id)).toBe(v2.id);
+    expect(await versionOf(closed.id)).toBe('vieja');
+
+    const v3 = await json(await put('/admin/agent/draft', fields({ agentName: 'v3' }), admin));
+    await db.prisma.agentConfigVersion.update({
+      where: { id: v3.id },
+      data: { evalVerdict: 'OK' },
+    });
+    await post('/admin/agent/draft/publish', {}, admin);
+    // Sin urgencia, la conversación en curso sigue con la versión con la que iba.
+    expect(await versionOf(open.id)).toBe(v2.id);
+
+    const versions = (await json(await get('/admin/agent/versions', admin))) as {
+      version: number;
+      conversations: number;
+      appliedToOpen: boolean;
+    }[];
+    expect(versions.find((v) => v.version === 2)).toMatchObject({
+      conversations: 1,
+      appliedToOpen: true,
+    });
+  });
+
+  it('D-004: las pruebas de «Probar agente» se guardan en el historial de la versión', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const v2 = await json(await put('/admin/agent/draft', fields(), admin));
+    const transcript = [
+      { role: 'customer', text: 'Hola' },
+      { role: 'bot', text: '¡Hola! Elige una opción' },
+      { role: 'event', text: 'Chat cerrado' },
+    ];
+    let r = await post(
+      '/admin/agent/tests',
+      { versionId: v2.id, source: 'editor', transcript, finalStage: 'MENU', note: 'saludo' },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    r = await post(
+      '/admin/agent/tests',
+      { source: 'editor', transcript: [{ role: 'hacker', text: 'x' }] },
+      admin,
+    );
+    expect(r.status).toBe(400);
+    const list = (await json(
+      await get(`/admin/agent/versions/${v2.id}/tests`, admin),
+    )) as unknown[];
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ version: 2, note: 'saludo', transcript });
+    const versions = (await json(await get('/admin/agent/versions', admin))) as { tests: number }[];
+    expect(versions[0]!.tests).toBe(1);
   });
 
   it('tras un rechazo, guardar crea una versión nueva (el rechazo queda en el historial)', async () => {
@@ -219,37 +406,43 @@ describe('configuración del agente (v1.8)', () => {
     expect(overview.working.version).toBe(4);
   });
 
-  it('con LLM_PROVIDER=simulado no se puede publicar (regla 13)', async () => {
+  it('D-005: sin LLM real o sin API key se publica igual, pero no se puede evaluar', async () => {
     const svc = new AgentConfigService(
       db.prisma,
       { provider: 'simulado', defaultModel: null, allowedModels: [] },
       { enqueue: async () => undefined },
     );
-    await svc.saveDraft('jefe', fields());
-    await expect(svc.publish('jefe')).rejects.toMatchObject({ status: 409 });
-    expect((await svc.overview()).canPublish).toBe(false);
+    const v2 = await svc.saveDraft('jefe', fields());
+    await expect(svc.evaluate('jefe', v2.id)).rejects.toMatchObject({ status: 409 });
+    expect(await svc.publish('jefe')).toMatchObject({
+      status: 'PUBLISHED',
+      evaluation: 'UNAVAILABLE',
+    });
+    const o = await svc.overview();
+    expect(o).toMatchObject({ canPublish: true, canEvaluate: false });
 
-    // Proveedor real pero sin API key: tampoco (la suite fallaría por falta de credenciales).
+    // Proveedor real pero sin API key: la suite fallaría por falta de credenciales.
     const noKey = new AgentConfigService(
       db.prisma,
       { provider: 'anthropic', defaultModel: null, allowedModels: [], providerReady: false },
       { enqueue: async () => undefined },
     );
-    await expect(noKey.publish('jefe')).rejects.toMatchObject({ status: 409 });
-    expect((await noKey.overview()).publishBlocker).toMatch(/API key/);
+    await expect(noKey.saveDraft('jefe', { ...fields(), evaluate: true })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect((await noKey.overview()).evaluateBlocker).toMatch(/API key/);
   });
 
-  it('una evaluación sin respuesta por más del límite se da por rechazada', async () => {
+  it('una evaluación sin respuesta por más del límite queda como error (se puede reintentar)', async () => {
     const svc = new AgentConfigService(
       db.prisma,
       { provider: 'anthropic', defaultModel: null, allowedModels: [], staleEvaluationMs: 0 },
       { enqueue: async () => undefined },
     );
-    await svc.saveDraft('jefe', fields());
-    await svc.publish('jefe');
+    await svc.saveDraft('jefe', { ...fields(), evaluate: true });
     await new Promise((r) => setTimeout(r, 5));
     const o = await svc.overview();
-    expect(o.working?.status).toBe('REJECTED');
+    expect(o.working).toMatchObject({ status: 'DRAFT', evalVerdict: 'ERROR' });
   });
 });
 
@@ -267,6 +460,32 @@ describe('probar agente (chat de simulación)', () => {
     expect(await json(r)).toMatchObject({ stage: 'PERFIL', replies: ['¿Me compartes tu nombre?'] });
     expect(tests[0]).toMatchObject({ message: 'A', agent: { agentName: 'Borrador' } });
     expect(await db.prisma.agentConfigVersion.count()).toBe(0);
+  });
+
+  it('D-003: la simulación conserva las marcas del flujo y descarta lo desconocido', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const withFlags = {
+      stage: 'AUTORIZACION',
+      profile: {
+        name: 'Ana',
+        authorizationDeclined: true,
+        supportRedirected: false,
+        otra: true,
+        name2: 1,
+      },
+      history: [],
+    };
+    const r = await post(
+      '/admin/agent/test',
+      { source: 'editor', fields: fields(), state: withFlags, message: 'sí' },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    expect(tests[0]!.state.profile).toEqual({
+      name: 'Ana',
+      authorizationDeclined: true,
+      supportRedirected: false,
+    });
   });
 
   it('el borrador con precios no se puede probar (misma revisión que al guardar)', async () => {

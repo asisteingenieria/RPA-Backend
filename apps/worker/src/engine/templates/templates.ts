@@ -16,21 +16,63 @@ export const menu = menuText;
 
 export const MENU = menu(DEFAULT_AGENT_CONFIG.welcome);
 
+/**
+ * Opciones C y D del menú (D-003). Como en Dapta, el chat NO se cierra: termina preguntando si
+ * puede ayudar con un plan. Si responde que no, se despide y cierra como soporte.
+ */
 export const SUPPORT =
-  'Para soporte o consultas sobre tu servicio actual, comunícate con nuestra línea de ' +
-  'atención marcando *611 desde tu celular. ¡Allí te ayudarán con gusto! 😊';
+  'En este momento no cuento con las herramientas para ayudarte con eso, ya que este es un ' +
+  'chat exclusivo de ventas de planes pospago. Puedes comunicarte al *611 desde tu celular ' +
+  'Claro, en Bogotá al 6017500500 o a nivel nacional al 018003200200. ¿Te puedo ayudar con ' +
+  'algún plan móvil?';
+
+/** Pregunta del nombre justo después de elegir la opción del menú (D-003). */
+export function askName(option: 'A' | 'B'): string {
+  return option === 'A'
+    ? '¡Excelente decisión! 😊 ¿Con quién tengo el gusto?'
+    : '¡Perfecto! 😊 ¿Con quién tengo el gusto?';
+}
+
+/** Primer nombre del cliente para los textos fijos (sin cifras ni símbolos). */
+export function firstName(name: string | undefined): string | undefined {
+  const n = name
+    ?.trim()
+    .split(/\s+/)[0]
+    ?.replace(/[^\p{L}'-]/gu, '');
+  return n ? n.charAt(0).toLocaleUpperCase('es-CO') + n.slice(1) : undefined;
+}
+const withName = (prefix: string, name: string | undefined, rest: string) =>
+  `${prefix}${firstName(name) ? `, ${firstName(name)}` : ''}${rest}`;
 
 export const SAFE_FALLBACK =
   'Déjame confirmarte ese detalle para darte la información correcta. ¿Me lo puedes ' +
   'repetir, por favor?';
 
-export const TRANSFER =
-  '¡Listo! ✅ Ya registré tu solicitud. Un asesor de nuestro equipo continuará con el ' +
-  'proceso y se comunicará contigo por este mismo chat. ¡Gracias por elegirnos!';
+/** Tras el «SÍ AUTORIZO»: transferencia al backoffice (D-003). */
+export const transfer = (name?: string) =>
+  withName(
+    '¡Gracias',
+    name,
+    '! Te transfiero con uno de nuestros asesores para finalizar tu solicitud. 🚀',
+  );
 
-export const NO_SALE_GOODBYE =
-  'Entiendo, gracias por tu tiempo. Si más adelante quieres conocer nuestros planes, ' +
-  'escríbenos por este medio. ¡Que tengas un excelente día!';
+/** Si el cliente no autoriza: se le ofrece un asesor antes de cerrar (D-003). */
+export const declinedAuthorization = (name?: string) =>
+  withName(
+    'Entiendo',
+    name,
+    '. Sin esta autorización no podemos continuar con la contratación. ¿Quieres que un asesor te resuelva las dudas que tengas sobre este paso?',
+  );
+
+/** Aceptó hablar con un asesor después de no autorizar. */
+export const advisorAfterDecline = (name?: string) =>
+  withName(
+    '¡Con gusto',
+    name,
+    '! Te comunico con uno de nuestros asesores para resolver tus dudas. 🚀',
+  );
+
+export const NO_SALE_GOODBYE = '¡Gracias por contactar a Claro! Que tengas un excelente día. 👋';
 
 export const ESCALATE =
   'Gracias por tu mensaje. Te voy a comunicar con un asesor de nuestro equipo que podrá ' +

@@ -9,9 +9,9 @@ cases:
   - id: cat-precio-migra-01
     turns: ['Hola', 'B', 'Lina', 'videos y música']
     expect: { process: MIGRACION, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
-  - id: cat-precio-linea-01
-    turns: ['Hola', 'C', 'Jorge', 'juegos en línea']
-    expect: { process: LINEA_NUEVA, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
+  - id: cat-precio-migra-02
+    turns: ['Hola', 'B', 'Jorge', 'juegos en línea']
+    expect: { process: MIGRACION, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
   - id: cat-otro-proceso-01
     turns: ['Hola', 'B', 'Lina', 'videos', '¿y cuánto vale el P2 de portabilidad?']
     expect: { process: MIGRACION, finalStageIn: [OFERTA, OBJECIONES], sale: false }

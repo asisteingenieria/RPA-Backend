@@ -25,6 +25,7 @@ interface MemConversation {
   profile: Profile;
   status: ConversationStatus;
   messages: MemMessage[];
+  agentVersionId?: string;
 }
 
 /** Store en memoria para pruebas y para la suite de evaluación. */
@@ -75,7 +76,13 @@ export class MemoryConversationStore implements ConversationStore {
       .slice(-historyLimit)
       .map((m) => ({ role: m.direction === 'INBOUND' ? 'customer' : 'bot', text: m.text }));
     return {
-      state: { conversationId, stage: c.stage, profile: { ...c.profile }, history },
+      state: {
+        conversationId,
+        stage: c.stage,
+        profile: { ...c.profile },
+        history,
+        ...(c.agentVersionId ? { agentVersionId: c.agentVersionId } : {}),
+      },
       abayaChatId: c.abayaChatId,
       robotUser: c.robotUser,
       status: c.status,
@@ -88,6 +95,7 @@ export class MemoryConversationStore implements ConversationStore {
     c.stage = t.stage as Stage;
     c.profile = { ...t.profile };
     c.status = t.status;
+    if (t.agentVersionId && !c.agentVersionId) c.agentVersionId = t.agentVersionId;
     for (const m of c.messages) if (t.processedMessageIds.includes(m.id)) m.processed = true;
     const ids = t.outbound.map((o, i) => {
       const id = `out-${++this.seq}`;

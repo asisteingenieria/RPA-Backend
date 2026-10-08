@@ -1,5 +1,126 @@
 # Decisiones de diseño
 
+## D-005 · Publicar el agente sin depender de la evaluación (la evaluación es evidencia) · APROBADA — implementada
+
+Fecha: 2026-10-08 · Estado: **aprobada e implementada** (backend y panel) · Afecta:
+`apps/api` (configuración del agente), `apps/worker` (evaluación), `packages/db` (migración de
+datos `20261018000000_agente_publicar_directo`), panel. **Reemplaza** las reglas de publicación de
+D-004 y la parte de la regla 13 que exigía evaluar antes de publicar el agente.
+
+Pedido del responsable del proyecto: poder modificar o agregar cosas al guion y que se publique de
+inmediato, pase o no las pruebas; las pruebas sirven como evidencia del entrenamiento del robot y
+para llevar un historial.
+
+- **Publicar** es inmediato con cualquier versión no archivada (borrador sin evaluar, con alertas,
+  con datos inventados o con la evaluación en curso). Si el editor tiene cambios, el panel los
+  guarda como versión nueva y la publica. La nota es opcional (queda como `publishReason` y en
+  Auditoría con el resultado que tenía, `verdict`, que puede ser `null`). Una versión archivada se
+  restaura como borrador para volver a publicarla.
+- **Evaluación como evidencia**: después de publicar, la suite corre en segundo plano si la versión
+  no tiene resultado y el servidor puede evaluar (casilla «Evaluar después de publicar», marcada por
+  defecto). También se puede evaluar cualquier versión desde el historial. El resultado
+  (OK / WARN / BLOCKED / ERROR) queda en la versión y nunca la publica ni la despublica.
+- La evaluación deja de ser un estado de la versión: `evalVerdict = 'RUNNING'` mientras corre
+  (antes `status = EVALUATING`). Guardar otro borrador sigue cancelando la evaluación del borrador
+  anterior; la de una versión publicada no se cancela.
+- Sin LLM real o sin API key se puede guardar y publicar; solo la evaluación queda deshabilitada
+  con el motivo.
+- Se mantienen: la revisión del guion al guardar (regla 11: sin precios, gigas ni porcentajes en el
+  guion), los validadores de cada respuesta del robot (regla 10: sin cifras fuera de las fichas, sin
+  promesas prohibidas, sin planes inexistentes; si fallan, regenera y luego responde con una frase
+  segura), la versión fijada por conversación y la urgencia de D-004.
+- Riesgo aceptado: una versión que en la evaluación inventó datos puede quedar publicada. Lo
+  mitigan los validadores de la regla 10, que se aplican igual a cada respuesta real, y el reporte
+  de la evaluación en el historial.
+- Pendiente: los Brains (catálogo) siguen exigiendo la evaluación para publicar.
+
+## D-004 · Evaluar al guardar, publicar al instante y versión por conversación · APROBADA — implementada (publicación reemplazada por D-005)
+
+Fecha: 2026-10-08 · Estado: **aprobada e implementada** (backend y panel) · Afecta:
+`apps/api` (configuración del agente, Trazabilidad), `apps/worker` (evaluación, turnos),
+`packages/db`.
+
+Antes publicar = evaluar y, si pasaba, publicar: había que esperar la suite para saber si el
+cambio servía. Ahora se separan:
+
+| Paso                     | Qué hace                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Guardar                  | Sin evaluar: reescribe el borrador si aún no se evaluó. Con evaluar (`evaluate: true`): lanza la suite en segundo plano. Una versión evaluada no cambia: guardar después crea otra. Guardar mientras evalúa cancela esa evaluación (`CANCELLED`).                                                                                                            |
+| Evaluar                  | `POST /admin/agent/versions/:id/evaluate` (la más reciente sin publicar). El worker deja el avance (`evalSummary.progress`) y el resultado en `evalVerdict`: **OK** (0 inventados y ≥ 95 %), **WARN** (0 inventados, bajo la meta), **BLOCKED** (inventó datos), **ERROR** (no se pudo evaluar). Guarda los casos fallidos con su conversación (sintéticos). |
+| Publicar                 | `POST /admin/agent/draft/publish` usa el resultado ya calculado: OK directo; WARN con motivo (≥ 10 caracteres, queda en `publishReason` y en Auditoría); BLOCKED, ERROR, CANCELLED o sin evaluar → 409.                                                                                                                                                      |
+| Versión por conversación | `Conversation.agentVersionId`: cada chat termina con la versión con la que empezó; los nuevos usan la publicada. Urgencia (`applyToOpen`): al publicar, los chats en curso pasan a la versión nueva (`appliedToOpen`, Auditoría con cuántos).                                                                                                                |
+| Historial                | Nota del cambio (`changeNote`), resultado, conversaciones atendidas y pruebas guardadas por versión (`AgentTestRecord`, `POST /admin/agent/tests`, `GET /admin/agent/versions/:id/tests`).                                                                                                                                                                   |
+| Trazabilidad             | Columna y filtro `version` (número del guion) en la lista, el detalle y el CSV.                                                                                                                                                                                                                                                                              |
+
+La barrera de la regla 13 se mantiene: nada que haya inventado datos llega a producción.
+Pendiente: llevar los Brains al mismo esquema (hoy siguen evaluando al publicar).
+
+## D-003 · Flujo de la campaña igual al agente de Dapta · APROBADA — implementada
+
+Fecha: 2026-10-07 · Estado: **aprobada e implementada** · Afecta: `packages/domain`
+(`MENU_OPTIONS`), `apps/worker` (máquina de estados, motor, plantillas, suite de evaluación).
+
+El prompt de referencia es el del agente de texto de Dapta que la campaña ya usa. El guion
+adaptado al motor está fuera del repo (`guion-sofia.md`).
+
+| Pieza                 | Antes                                                    | Ahora                                                                                                                                                                                                                                                                                                       |
+| --------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Menú                  | A portabilidad · B migración · C línea nueva · D soporte | 🅐 Cambiarme de operador · 🅑 Pasarme de recargas a plan pospago · 🅒 Ya tengo plan: soporte, factura o cambio · 🅓 Cancelar mi plan pospago. C y D → `SOPORTE`. Línea nueva no se ofrece (el proceso y sus planes siguen en el código y el catálogo).                                                          |
+| Pregunta tras el menú | genérica                                                 | A «¡Excelente decisión! 😊 ¿Con quién tengo el gusto?» · B «¡Perfecto! 😊 ¿Con quién tengo el gusto?»                                                                                                                                                                                                       |
+| Soporte               | *611 y cierre                                            | *611, 6017500500 (Bogotá) y 018003200200 (nacional) + «¿Te puedo ayudar con algún plan móvil?». **No cierra** (`Profile.supportRedirected`, el chat sigue en `MENU`): «no» → despedida y cierre como soporte; A/B → venta; sin respuesta → cierre por inactividad (ocupa un cupo del robot mientras tanto). |
+| Transferencia         | texto genérico                                           | «¡Gracias, [Nombre]! Te transfiero con uno de nuestros asesores para finalizar tu solicitud. 🚀»                                                                                                                                                                                                            |
+| No autoriza           | cierre sin venta                                         | Se ofrece un asesor (`Profile.authorizationDeclined`): «sí» → `ESCALAR` sin venta ni consentimiento; «no» → cierre sin venta; «SÍ AUTORIZO» → venta.                                                                                                                                                        |
+| Despedida             | texto genérico                                           | «¡Gracias por contactar a Claro! Que tengas un excelente día. 👋»                                                                                                                                                                                                                                           |
+
+Sin cambios: el texto legal de autorización (pendiente del texto aprobado por Claro) y que solo
+«SÍ AUTORIZO» explícito cuenta como consentimiento; máximo dos planes por mensaje.
+
+Suite de evaluación: los casos que usaban la opción C (línea nueva) pasan a la B; nuevos casos
+`fda-soporte-02` (C → soporte) y `aut-no-asesor-01`; `aut-cambia-02` termina en venta. 68 casos.
+
+## D-002 · Trazabilidad (conversaciones completas en el panel) · APROBADA — implementada
+
+Fecha: 2026-10-07 · Estado: **aprobada e implementada** · Afecta: `apps/api`, `apps/worker`,
+`packages/db`, `packages/config`, panel (`interfazRPA`, pestaña **Trazabilidad**).
+
+### Autorización
+
+- Asiste ING informa que **Claro autoriza** mostrar en el panel el contenido de las conversaciones
+  reales, **sin enmascarar**, para hacer seguimiento al rendimiento de cada robot (confirmado por el
+  responsable del proyecto el 07/10/2026).
+- **Pendiente: adjuntar aquí la referencia del documento escrito** (correo o acta: fecha, remitente
+  y asunto). Es el respaldo ante una auditoría por la Ley 1581.
+- **Acceso: todo ADMIN** (decisión del responsable del proyecto, 07/10/2026: un solo administrador
+  configura el robot y "el ADMIN ve todo"). No hay permiso aparte; el OPERADOR no la ve.
+- Cambia la regla «sin contenido de mensajes en el panel» (spec del panel, regla 7.1) **solo** para
+  esta pestaña. La regla 6 (sin datos personales en logs) sigue igual: el contenido se descifra solo
+  para la respuesta HTTP y nunca se registra.
+
+### Qué se hizo
+
+| Pieza     | Detalle                                                                                                                                                                                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Acceso    | Solo ADMIN (todo ADMIN, sin permiso aparte); OPERADOR → 403.                                                                                                                                                                                                   |
+| API       | `GET /admin/conversations` (filtros, KPIs, cursor), `/stats` (rendimiento por robot), `/:id` (detalle completo, `nav` con los filtros), `/export` (CSV sin texto; `?id=` transcripción). OPERADOR → 403.                                                       |
+| Auditoría | `CONVERSATION_VIEWED` (una vez cada 10 min por persona y conversación), `CONVERSATIONS_EXPORTED` (con los filtros en `detail`).                                                                                                                                |
+| Búsqueda  | Id del chat, nombre y **texto de los mensajes**. El texto está cifrado: el servidor descifra y busca; con búsqueda el rango máximo es 30 días (si no, 400). Tope de 20 000 conversaciones por consulta.                                                        |
+| Retención | `CONVERSATION_RETENTION_DAYS` (vacío = no borra). Tarea horaria del worker: borra mensajes, perfil, resumen y respuesta del consentimiento de las **cerradas** vencidas; marca `contentPurgedAt`; conserva tipificación, venta (plan, transferencia) y hashes. |
+| Base      | Migraciones `20261015000000_trazabilidad` y `20261016000000_trazabilidad_admin` (retira el permiso aparte): `Conversation.contentPurgedAt` e índices `(robotUser, createdAt)`, `(status, createdAt)`, `(createdAt)`.                                           |
+
+### Datos faltantes (se devuelven como `null` / se muestran «—»)
+
+| Dato                        | Hoy                                                                        | Qué haría falta                                  |
+| --------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
+| Teléfono del cliente        | No se guarda (solo `customerRefHash`)                                      | Que el robot lo capture y lo guarde cifrado      |
+| Origen de cada respuesta    | `LlmCall` es por turno/etapa, sin id del mensaje                           | Agregar `messageId` a `LlmCall`                  |
+| Recorrido de etapas exacto  | No hay historial de etapas: se arma con las etapas de `LlmCall` + la final | Guardar cada cambio de etapa                     |
+| Después de la transferencia | Vive en Abaya                                                              | Integración con el backoffice (fuera de alcance) |
+
+### Pendiente con Claro
+
+1. Referencia del documento de autorización (arriba).
+2. Plazo de retención y si las ventas/consentimientos tienen uno distinto.
+
 ## D-001 · Brains (bases de conocimiento) · APROBADA — K1 a K5 implementadas
 
 Fecha: 2026-10-07 · Estado: **aprobada**; fase K1 (catálogo, backend) implementada · Afecta: `apps/worker`,

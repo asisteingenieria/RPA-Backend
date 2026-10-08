@@ -42,17 +42,20 @@ export const AGENT_PROMPT_STAGES = [
   'AUTORIZACION',
 ] as const satisfies readonly Stage[];
 
-/** Opciones del menú inicial: fijas, porque la máquina de estados depende de las letras A–D. */
+/**
+ * Opciones del menú inicial: fijas, porque la máquina de estados depende de las letras A–D
+ * (D-003, menú de la campaña): A portabilidad · B migración · C y D soporte (fuera de alcance).
+ * Línea nueva no se ofrece en este chat.
+ */
 export const MENU_OPTIONS =
-  '*A.* Traer tu número desde otro operador (portabilidad)\n' +
-  '*B.* Pasar tu línea prepago a un plan pospago (migración)\n' +
-  '*C.* Adquirir una línea nueva\n' +
-  '*D.* Soporte o consultas sobre tu servicio actual\n\n' +
-  'Responde con la letra de la opción.';
+  '🅐 Cambiarme de operador\n' +
+  '🅑 Pasarme de recargas a plan pospago\n' +
+  '🅒 Ya tengo plan: soporte, factura o cambio\n' +
+  '🅓 Cancelar mi plan pospago';
 
 /** Menú inicial: saludo de la configuración del agente (revisado al guardar) + opciones. */
 export function menuText(welcome: string): string {
-  return `${welcome.trim()}\n\n${MENU_OPTIONS}`;
+  return `${welcome.trim()}\n${MENU_OPTIONS}`;
 }
 
 /** Frases que el modelo no puede prometer (solo pueden venir de una plantilla). */
@@ -120,8 +123,8 @@ const DEFAULT_PROMPT = `# Rol
 # Flujo por etapa
 
 ## MENU
-- El cliente acaba de recibir el menú de opciones (A portabilidad, B migración prepago a pospago, C línea nueva, D soporte).
-- Si elige una opción, usa ELIGE_OPCION.
+- El cliente acaba de recibir el menú de opciones (A cambiarse de operador, B pasar de recargas a pospago, C soporte, factura o cambio de plan, D cancelar su plan).
+- Si elige una opción, usa ELIGE_OPCION. Facturas, cambios de plan, cancelaciones y otros temas que no son comprar un plan van por la opción C.
 - Si saluda o pregunta, responde breve y pídele que elija una letra.
 
 ## PERFIL
@@ -151,7 +154,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   companyName: 'Operador móvil',
   companyInfo:
     'Operador de telefonía móvil en Colombia. (Texto de ejemplo: reemplazar por la descripción aprobada por Claro.)',
-  welcome: '¡Hola! 👋 Soy el asistente virtual de ventas. ¿En qué te puedo ayudar hoy?',
+  welcome: '¡Hola! 👋 Soy el asistente virtual de ventas.\n\n📲 Elige una de nuestras opciones:',
   prompt: DEFAULT_PROMPT,
   model: null,
   temperature: 0.2,

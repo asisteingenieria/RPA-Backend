@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import type { EvalJob, LlmPort } from '@abaya/domain';
-import { withSerializableRetry, type Prisma, type PrismaClient } from '@abaya/db';
+import type { Prisma, PrismaClient } from '@abaya/db';
 import type { Logger } from '@abaya/logger';
 import { agentConfigFromRow } from '../catalog/agent-config.js';
 import { loadAgentCatalog } from '@abaya/knowledge';
 import type { TurnKnowledge } from '../engine/conversation-engine.js';
-import { gateFailures, loadCases, runSuite, summarize } from './suite.js';
+import { gateFailures, loadCases, runSuite, SuiteCancelled, summarize } from './suite.js';
 
 export const DEFAULT_CASES_DIR = fileURLToPath(
   new URL('../../../../evals/conversations', import.meta.url),
@@ -23,73 +23,116 @@ export interface AgentEvaluationDeps {
   knowledge?: TurnKnowledge;
 }
 
-export type AgentEvaluationOutcome = 'PUBLISHED' | 'REJECTED' | 'SKIPPED';
+/** Resultado de evaluar una versión (D-004). SKIPPED = ya no estaba en evaluación. */
+export type AgentEvaluationOutcome = 'OK' | 'WARN' | 'BLOCKED' | 'ERROR' | 'CANCELLED' | 'SKIPPED';
+
+/** Cada cuánto se guarda el avance en la versión (casos). */
+const PROGRESS_EVERY = 3;
 
 /**
- * Evalúa un borrador del agente con la suite completa (v1.8, sección 6.3.8) y lo publica
- * solo si cumple la meta (0 inventados, ≥ 95 %). Al publicar, la versión anterior queda
- * ARCHIVED en la misma transacción: nunca hay dos publicadas.
+ * Evalúa una versión del agente con la suite completa (regla 13) y deja el resultado en la
+ * versión como evidencia, sin cambiar su estado (D-005: puede estar ya publicada): OK (0 inventados
+ * y ≥ 95 %), WARN (0 inventados pero bajo la meta), BLOCKED (inventó datos) o ERROR (no se pudo
+ * evaluar). Si la evaluación deja de estar en curso (RUNNING: se canceló porque se guardó otro
+ * borrador), la suite se detiene y no escribe nada.
  */
 export async function evaluateAgentVersion(
   d: AgentEvaluationDeps,
   job: EvalJob,
 ): Promise<AgentEvaluationOutcome> {
   const row = await d.prisma.agentConfigVersion.findUnique({ where: { id: job.versionId } });
-  if (!row || row.status !== 'EVALUATING') return 'SKIPPED';
+  if (!row || row.evalVerdict !== 'RUNNING') return 'SKIPPED';
   const agent = agentConfigFromRow(row);
   const startedAt = new Date();
+  const stillEvaluating = async () =>
+    (await d.prisma.agentConfigVersion.count({ where: { id: row.id, evalVerdict: 'RUNNING' } })) >
+    0;
 
-  const reject = async (problems: string[], extra: Record<string, unknown> = {}) => {
+  /** Escribe el resultado solo si la evaluación sigue en curso (no pisa una cancelación). */
+  const finish = async (
+    verdict: Exclude<AgentEvaluationOutcome, 'SKIPPED' | 'CANCELLED'>,
+    problems: string[],
+    extra: Record<string, unknown> = {},
+  ): Promise<AgentEvaluationOutcome> => {
     const summary = {
       provider: d.provider,
       startedAt: startedAt.toISOString(),
       finishedAt: new Date().toISOString(),
+      verdict,
       problems,
       ...extra,
     };
-    await d.prisma.$transaction([
-      d.prisma.agentConfigVersion.update({
-        where: { id: row.id },
-        data: { status: 'REJECTED', evalSummary: summary as Prisma.InputJsonValue },
-      }),
-      d.prisma.adminAuditLog.create({
-        data: { actor: job.requestedBy, action: 'AGENT_REJECTED', target: `v${row.version}` },
-      }),
-    ]);
-    d.logger.warn({ version: row.version, problems }, 'versión del agente rechazada');
-    return 'REJECTED' as const;
+    const done = await d.prisma.$transaction(async (tx) => {
+      const r = await tx.agentConfigVersion.updateMany({
+        where: { id: row.id, evalVerdict: 'RUNNING' },
+        data: {
+          evalVerdict: verdict,
+          evaluatedAt: new Date(),
+          evalSummary: summary as Prisma.InputJsonValue,
+        },
+      });
+      if (!r.count) return false;
+      await tx.adminAuditLog.create({
+        data: {
+          actor: job.requestedBy,
+          action: 'AGENT_EVALUATED',
+          target: `v${row.version}`,
+          detail: { verdict, problems } as Prisma.InputJsonValue,
+        },
+      });
+      return true;
+    });
+    if (!done) return 'CANCELLED';
+    d.logger.info({ version: row.version, verdict, problems }, 'versión del agente evaluada');
+    return verdict;
   };
 
   if (d.provider === 'simulado') {
-    return reject([
+    return finish('ERROR', [
       'requiere un proveedor de LLM real (LLM_PROVIDER=simulado no sirve para evaluar el guion)',
     ]);
   }
 
   let results;
-  let plans;
   try {
     // El agente se evalúa con el catálogo PUBLICADO que va a usar (v1.9).
     const catalog = await loadAgentCatalog(d.prisma);
-    if (!catalog) return reject(['no hay un catálogo publicado conectado al agente']);
-    plans = catalog.records;
+    if (!catalog) return finish('ERROR', ['no hay un catálogo publicado conectado al agente']);
     const cases = loadCases(d.casesDir ?? DEFAULT_CASES_DIR);
     results = await runSuite(cases, {
       provider: d.provider,
       llm: d.llm,
-      plans,
+      plans: catalog.records,
       agent,
       ...(d.knowledge ? { knowledge: d.knowledge } : {}),
+      shouldContinue: stillEvaluating,
+      onProgress: async (done, total) => {
+        if (done % PROGRESS_EVERY && done !== total && done !== 0) return;
+        await d.prisma.agentConfigVersion.updateMany({
+          where: { id: row.id, evalVerdict: 'RUNNING' },
+          data: {
+            evalSummary: {
+              startedAt: startedAt.toISOString(),
+              progress: { done, total },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      },
     });
   } catch (err) {
-    return reject([
+    if (err instanceof SuiteCancelled) {
+      d.logger.info({ version: row.version }, 'evaluación cancelada');
+      return 'CANCELLED';
+    }
+    return finish('ERROR', [
       `la evaluación no pudo completarse (${err instanceof Error ? err.name : 'error'})`,
     ]);
   }
 
   const s = summarize(results, d.provider);
   const problems = gateFailures(s);
-  const extra = {
+  const verdict = s.invented > 0 ? 'BLOCKED' : problems.length ? 'WARN' : 'OK';
+  return finish(verdict, problems, {
     model: agent.model,
     cases: s.cases,
     passed: s.passed,
@@ -98,48 +141,15 @@ export async function evaluateAgentVersion(
     fallbackRate: s.fallbackRate,
     p50: s.p50,
     p95: s.p95,
-    // Solo ids y motivos: los casos son guionados (sintéticos), sin datos de clientes.
+    // Casos guionados (sintéticos, sin datos de clientes): motivos y la conversación de cada falla.
     failedCases: results
       .filter((r) => !r.passed)
       .slice(0, 30)
-      .map((r) => ({ id: r.id, failures: r.failures.slice(0, 5) })),
-  };
-  if (problems.length) return reject(problems, extra);
-
-  const summary = {
-    provider: d.provider,
-    startedAt: startedAt.toISOString(),
-    finishedAt: new Date().toISOString(),
-    problems: [],
-    ...extra,
-  };
-  const published = await withSerializableRetry(() =>
-    d.prisma.$transaction(
-      async (tx) => {
-        const current = await tx.agentConfigVersion.findUnique({ where: { id: row.id } });
-        if (current?.status !== 'EVALUATING') return false;
-        await tx.agentConfigVersion.updateMany({
-          where: { status: 'PUBLISHED' },
-          data: { status: 'ARCHIVED' },
-        });
-        await tx.agentConfigVersion.update({
-          where: { id: row.id },
-          data: {
-            status: 'PUBLISHED',
-            evalSummary: summary as Prisma.InputJsonValue,
-            publishedBy: job.requestedBy,
-            publishedAt: new Date(),
-          },
-        });
-        await tx.adminAuditLog.create({
-          data: { actor: job.requestedBy, action: 'AGENT_PUBLISHED', target: `v${row.version}` },
-        });
-        return true;
-      },
-      { isolationLevel: 'Serializable' },
-    ),
-  );
-  if (!published) return 'SKIPPED';
-  d.logger.info({ version: row.version }, 'versión del agente publicada');
-  return 'PUBLISHED';
+      .map((r) => ({
+        id: r.id,
+        group: r.group,
+        failures: r.failures.slice(0, 5),
+        transcript: r.transcript.slice(0, 40),
+      })),
+  });
 }

@@ -33,6 +33,10 @@ export interface Profile {
   /** Versión de la plantilla legal y hash del texto exacto mostrado (evidencia, sección 8). */
   authorizationTemplateVersion?: string;
   authorizationTextHash?: string;
+  /** D-003: el cliente no autorizó y se le ofreció un asesor (siguiente respuesta: sí/no). */
+  authorizationDeclined?: boolean;
+  /** D-003: se le enviaron los canales de soporte y el chat sigue abierto en el menú. */
+  supportRedirected?: boolean;
   /** v1.9: versión del catálogo (Brain) y hash del registro del plan aceptado (trazabilidad). */
   planCatalogVersionId?: string;
   planRecordHash?: string;
@@ -49,6 +53,8 @@ export interface ConversationState {
   profile: Profile;
   /** Últimos mensajes (los más recientes al final), ya descifrados. */
   history: ChatTurnMessage[];
+  /** D-004: versión del agente con la que empezó la conversación (la conserva hasta el final). */
+  agentVersionId?: string;
 }
 
 /** Lo que debe pasar fuera del motor después del turno. */

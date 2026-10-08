@@ -30,7 +30,8 @@ export interface AgentTestJob {
   agent: AgentConfig;
   state: {
     stage: Stage;
-    profile: Record<string, string>;
+    /** Datos del perfil (texto) y marcas del flujo (sí/no, D-003). */
+    profile: Record<string, string | boolean>;
     history: { role: 'customer' | 'bot'; text: string }[];
   };
   message: string;
@@ -38,7 +39,7 @@ export interface AgentTestJob {
 
 export interface AgentTestResult {
   stage: Stage;
-  profile: Record<string, string>;
+  profile: Record<string, string | boolean>;
   /** Mensajes que el robot enviaría, en orden. */
   replies: string[];
   /** Acciones que no son mensajes (transferir, cerrar, escalar, revisión, consentimiento). */
