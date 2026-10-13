@@ -9,7 +9,12 @@ const reply = (text: string, finishReason = 'STOP') =>
 
 describe('D-011: lectura de imágenes de planes', () => {
   it('limpia lo que devuelve el modelo: descarta tarjetas sin datos o sin precio', () => {
-    const none = { sharedDataText: null, includesText: null, unlimitedAppsText: null, callsText: null };
+    const none = {
+      sharedDataText: null,
+      includesText: null,
+      unlimitedAppsText: null,
+      callsText: null,
+    };
     expect(
       toCards([
         { code: '38327', dataText: '65 GB', priceCop: 56900 },

@@ -151,7 +151,7 @@ reglas de negocio escritas en el motor.
        asesor;
      - orden de las imágenes: primero la del plan más caro, o en el orden en que se cargaron en
        el Brain.
-     Son listas cerradas: no se puede configurar algo que rompa las reglas de la sección 7.
+       Son listas cerradas: no se puede configurar algo que rompa las reglas de la sección 7.
 3. **Código**, solo para lo que protege la venta y para acciones nuevas en Abaya: la máquina de
    estados como motor (lee el flujo), el consentimiento («SÍ AUTORIZO» por regex), el texto legal
    con su hash, los validadores de cifras y marcadores, la identidad del chat, el KillSwitch, el

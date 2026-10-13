@@ -133,7 +133,9 @@ try {
   await wait(1_500);
   await new ChatListPage(robot).open(noVenta);
   await wait(1_500);
-  await responder('¡Hola! El plan más económico para portabilidad es el *Plan Porta Básico (DEMO)*.\n¿Te gustaría tomarlo?');
+  await responder(
+    '¡Hola! El plan más económico para portabilidad es el *Plan Porta Básico (DEMO)*.\n¿Te gustaría tomarlo?',
+  );
 
   mock.addCustomerMessage(noVenta, 'No gracias, prefiero prepago');
   await wait(2_000);
@@ -144,7 +146,10 @@ try {
   await new FinishPage(robot).finishCloseCase(
     'No venta - Ecommerce Movil - Cliente prefiere Prepago',
   );
-  await paso(robot, 'Caso cerrado con etiqueta. Fin de la demostración (cierra las ventanas cuando quieras)');
+  await paso(
+    robot,
+    'Caso cerrado con etiqueta. Fin de la demostración (cierra las ventanas cuando quieras)',
+  );
 
   console.log('\nResumen del simulador:');
   console.log('  Ventas entregadas al backoffice (Finalizar):', mock.transfers);
