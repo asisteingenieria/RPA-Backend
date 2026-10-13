@@ -15,6 +15,7 @@ import {
   TextExtractor,
   publishEvaluatedVersion,
   type KnowledgeIngestJob,
+  type PlanImageCard,
 } from '@abaya/knowledge';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AdminAuthGuard } from './admin-auth.guard.js';
@@ -38,6 +39,8 @@ let base: string;
 let users: UsersService;
 let blocker: string | null = null;
 const evals: EvalJob[] = [];
+/** D-011: lo que «lee» el lector de imágenes simulado en la próxima imagen. */
+let imageCards: PlanImageCard[] = [];
 const cipher = new FieldCipher(randomBytes(32).toString('base64'));
 
 beforeAll(async () => {
@@ -55,6 +58,7 @@ beforeAll(async () => {
             blobs,
             parser: new CatalogTableParser(),
             documents: new TextExtractor(),
+            images: { model: 'simulado', read: async () => imageCards },
           },
           job,
         );
@@ -464,5 +468,268 @@ describe('Brains: permiso, documentos y web (K3–K5)', () => {
     expect(
       await db.prisma.adminAuditLog.count({ where: { action: 'USER_KNOWLEDGE_PUBLISHER_ON' } }),
     ).toBe(1);
+  });
+});
+
+describe('D-011: imágenes de planes', () => {
+  // PNG de 1×1 válido (firma real: el servidor revisa el contenido, no la extensión).
+  const PNG = Uint8Array.from(
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  );
+  const uploadImage = (
+    brainId: string,
+    name: string,
+    procesos: string,
+    cookie: string,
+    bytes: Uint8Array = PNG,
+  ) => {
+    const form = new FormData();
+    form.append('use', 'IMAGE');
+    form.append('procesos', procesos);
+    form.append('file', new Blob([bytes]), name);
+    return call(
+      `/admin/knowledge/brains/${brainId}/sources`,
+      { method: 'POST', body: form },
+      cookie,
+    );
+  };
+
+  it('valida contra el catálogo: no publica si la imagen muestra un plan que no existe', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const id = await brainWithPublished(admin);
+    // Mismo plan de 10 GB a $39.900: existe en Portabilidad, no en Migración.
+    imageCards = [{ code: null, dataText: '10 GB', priceCop: 39_900 }];
+    const r = await uploadImage(id, 'planes.png', 'PORTABILIDAD,MIGRACION', admin);
+    expect(r.status).toBe(201);
+    const brain = await json(await call(`/admin/knowledge/brains/${id}`, {}, admin));
+    const img = brain.sources.find((x: { use: string }) => x.use === 'IMAGE');
+    expect(img).toMatchObject({
+      status: 'READY',
+      image: {
+        processes: ['PORTABILIDAD', 'MIGRACION'],
+        cards: imageCards,
+        codes: { PORTABILIDAD: ['P1'], MIGRACION: [] },
+        problems: ['el plan 10 GB · $39.900 no está en el catálogo de Migración'],
+      },
+    });
+    expect(brain.versions[0]).toMatchObject({ version: 2, status: 'DRAFT', images: 1 });
+    expect(brain.versions[0].diff.images.added).toEqual([
+      { source: 'planes.png', processes: ['PORTABILIDAD', 'MIGRACION'] },
+    ]);
+    const pub = await post(`/admin/knowledge/brains/${id}/draft/publish`, {}, admin);
+    expect(pub.status).toBe(409);
+    expect((await json(pub)).message).toContain('no está en el catálogo de Migración');
+    expect(evals).toEqual([]);
+
+    // La vista previa del borrador muestra lo mismo.
+    const preview = await json(await call(`/admin/knowledge/brains/${id}/versions/2`, {}, admin));
+    expect(preview.imageProblems).toEqual([
+      'Imagen «planes.png»: el plan 10 GB · $39.900 no está en el catálogo de Migración',
+    ]);
+
+    // Rechazos de contenido: sin proceso, tipo falso.
+    expect((await uploadImage(id, 'otra.png', '', admin)).status).toBe(400);
+    expect(
+      (await uploadImage(id, 'falsa.png', 'PORTABILIDAD', admin, new TextEncoder().encode('hola')))
+        .status,
+    ).toBe(400);
+  });
+
+  it('una imagen válida se publica y se puede ver; al quitar la fuente la versión la conserva', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const ops = await ready('ana.ops', 'OPERADOR');
+    const id = await brainWithPublished(admin);
+    imageCards = [{ code: 'P1', dataText: '10 GB', priceCop: 39_900 }];
+    expect((await uploadImage(id, 'porta.png', 'PORTABILIDAD', admin)).status).toBe(201);
+    expect(
+      await json(await post(`/admin/knowledge/brains/${id}/draft/publish`, {}, admin)),
+    ).toMatchObject({ version: 2, status: 'EVALUATING' });
+    await publishEvaluatedVersion(db.prisma, {
+      versionId: evals[0]!.versionId,
+      actor: 'jefe',
+      evalSummary: { problems: [] },
+    });
+    const v2 = await json(await call(`/admin/knowledge/brains/${id}/versions/2`, {}, ops));
+    expect(v2.images).toMatchObject([
+      { sourceName: 'porta.png', processes: ['PORTABILIDAD'], codes: { PORTABILIDAD: ['P1'] } },
+    ]);
+    const bytes = await call(
+      `/admin/knowledge/brains/${id}/versions/2/images/${v2.images[0].id}`,
+      {},
+      ops,
+    );
+    expect(bytes.status).toBe(200);
+    expect(bytes.headers.get('content-type')).toBe('image/png');
+    expect(new Uint8Array(await bytes.arrayBuffer())).toEqual(PNG);
+
+    const brain = await json(await call(`/admin/knowledge/brains/${id}`, {}, admin));
+    const src = brain.sources.find((x: { use: string }) => x.use === 'IMAGE');
+    expect(
+      (await call(`/admin/knowledge/brains/${id}/sources/${src.id}/image`, {}, ops)).status,
+    ).toBe(200);
+    await call(`/admin/knowledge/brains/${id}/sources/${src.id}`, { method: 'DELETE' }, admin);
+    // La versión publicada todavía la usa: el archivo no se borra.
+    expect(
+      (await call(`/admin/knowledge/brains/${id}/versions/2/images/${v2.images[0].id}`, {}, ops))
+        .status,
+    ).toBe(200);
+  });
+
+  it('D-019: exportar un Brain e importarlo en otro ambiente: mismas fuentes, imágenes sin releer', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const ops = await ready('ana.ops', 'OPERADOR');
+    const created = await json(await post('/admin/knowledge/brains', { name: 'Planes' }, admin));
+    const id = created.id as string;
+    imageCards = [{ code: '37230', dataText: 'GB ILIMITADAS', priceCop: 99_900 }];
+    const form = new FormData();
+    form.append('use', 'IMAGE');
+    form.append('procesos', 'PORTABILIDAD,MIGRACION');
+    form.append('descuento_PORTABILIDAD', 'Descuento 20% CFM en mes 1, 2, 3, 4 y 5');
+    form.append('file', new Blob([PNG]), 'todos.png');
+    expect(
+      (await call(`/admin/knowledge/brains/${id}/sources`, { method: 'POST', body: form }, admin))
+        .status,
+    ).toBe(201);
+    expect(
+      (
+        await post(
+          `/admin/knowledge/brains/${id}/sources/text`,
+          { name: 'Preguntas', text: 'La portabilidad tarda un día hábil.', use: 'FULL_CONTEXT' },
+          admin,
+        )
+      ).status,
+    ).toBe(201);
+
+    expect((await call(`/admin/knowledge/brains/${id}/export`, {}, ops)).status).toBe(403);
+    const exported = await json(await call(`/admin/knowledge/brains/${id}/export`, {}, admin));
+    expect(exported).toMatchObject({ formato: 'abaya-brain', version: 1, nombre: 'Planes' });
+    expect(exported.fuentes).toHaveLength(2);
+
+    // Si se volviera a leer la imagen, saldría sin planes: así se comprueba que no se relee.
+    imageCards = [];
+    const importForm = (body: unknown, nombre?: string) => {
+      const f = new FormData();
+      if (nombre) f.append('nombre', nombre);
+      f.append('file', new Blob([JSON.stringify(body)]), 'brain.json');
+      return f;
+    };
+    // Mismo nombre que uno existente: se pide otro.
+    expect(
+      (
+        await call(
+          '/admin/knowledge/brains/import',
+          { method: 'POST', body: importForm(exported) },
+          admin,
+        )
+      ).status,
+    ).toBe(409);
+    const r = await call(
+      '/admin/knowledge/brains/import',
+      { method: 'POST', body: importForm(exported, 'Planes (producción)') },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    const imported = await json(r);
+    expect(imported).toMatchObject({ name: 'Planes (producción)', sources: 2, draftVersion: 1 });
+    const brain = await json(await call(`/admin/knowledge/brains/${imported.id}`, {}, admin));
+    const img = brain.sources.find((x: { use: string }) => x.use === 'IMAGE');
+    expect(img).toMatchObject({
+      status: 'READY',
+      metadata: {
+        procesos: 'PORTABILIDAD,MIGRACION',
+        descuento_PORTABILIDAD: 'Descuento 20% CFM en mes 1, 2, 3, 4 y 5',
+      },
+    });
+    const records = (
+      await json(await call(`/admin/knowledge/brains/${imported.id}/versions/1`, {}, admin))
+    ).records as { code: string; discountText: string | null }[];
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'P37230',
+          discountText: 'Descuento 20% CFM en mes 1, 2, 3, 4 y 5',
+        }),
+        expect.objectContaining({ code: 'M37230', discountText: null }),
+      ]),
+    );
+    expect(brain.sources.some((x: { kind: string }) => x.kind === 'TEXT')).toBe(true);
+    // Archivo que no es una exportación de Brain.
+    expect(
+      (
+        await call(
+          '/admin/knowledge/brains/import',
+          { method: 'POST', body: importForm({ formato: 'abaya-agente' }, 'X') },
+          admin,
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it('D-016: el comentario de descuento por proceso llega al Descuento de los planes y se edita sin releer', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const ops = await ready('ana.ops', 'OPERADOR');
+    // Brain solo con imágenes (D-014): el catálogo sale de lo leído.
+    const created = await json(await post('/admin/knowledge/brains', { name: 'Planes' }, admin));
+    const id = created.id as string;
+    imageCards = [{ code: '37230', dataText: 'GB ILIMITADAS', priceCop: 99_900 }];
+    const DESCUENTO = '✅Descuento del 25% en la 1 y 2 facturación';
+    const form = new FormData();
+    form.append('use', 'IMAGE');
+    form.append('procesos', 'PORTABILIDAD,MIGRACION');
+    form.append('descuento_PORTABILIDAD', DESCUENTO);
+    form.append('descuento_LINEA_NUEVA', 'no es de esta imagen: se ignora');
+    form.append('file', new Blob([PNG]), 'todos.png');
+    const r = await call(
+      `/admin/knowledge/brains/${id}/sources`,
+      { method: 'POST', body: form },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    const records = async () =>
+      (await json(await call(`/admin/knowledge/brains/${id}/versions/1`, {}, admin))).records as {
+        code: string;
+        discountText: string | null;
+      }[];
+    expect(await records()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'P37230', discountText: DESCUENTO }),
+        expect.objectContaining({ code: 'M37230', discountText: null }),
+      ]),
+    );
+    const src = (await json(await call(`/admin/knowledge/brains/${id}`, {}, admin))).sources[0];
+    expect(src.metadata).toMatchObject({ descuento_PORTABILIDAD: DESCUENTO });
+    expect(src.metadata.descuento_LINEA_NUEVA).toBeUndefined();
+
+    // Editar: agrega Línea nueva con su descuento y quita el de Portabilidad; no se vuelve a leer.
+    const path = `/admin/knowledge/brains/${id}/sources/${src.id}/image`;
+    const patch = (body: unknown, cookie = admin) =>
+      call(path, { method: 'PATCH', body: JSON.stringify(body) }, cookie);
+    const edited = await patch({
+      procesos: 'PORTABILIDAD,MIGRACION,LINEA_NUEVA',
+      descuentos: { LINEA_NUEVA: '✅Descuento del 20% en la 1,2,3,4 y 5 facturación' },
+    });
+    expect(edited.status).toBe(200);
+    expect(await records()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'P37230', discountText: null }),
+        expect.objectContaining({
+          code: 'L37230',
+          discountText: '✅Descuento del 20% en la 1,2,3,4 y 5 facturación',
+        }),
+      ]),
+    );
+    // Validaciones y permisos.
+    expect((await patch({ descuentos: { MIGRACION: 'mira https://x.co' } })).status).toBe(400);
+    expect((await patch({ descuentos: { MIGRACION: 'x'.repeat(301) } })).status).toBe(400);
+    expect((await patch({ procesos: '' })).status).toBe(400);
+    expect((await patch({ procesos: 'NINGUNO' })).status).toBe(400);
+    // Sin `procesos` conserva los que tenía; sin descuentos, los planes quedan sin descuento.
+    expect((await patch({ descuentos: {} })).status).toBe(200);
+    expect((await records()).every((x) => x.discountText === null)).toBe(true);
+    expect((await records()).some((x) => x.code === 'L37230')).toBe(true);
+    expect((await patch({ descuentos: {} }, ops)).status).toBe(403);
   });
 });

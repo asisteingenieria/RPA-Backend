@@ -64,7 +64,7 @@ test('trazas solo en error: cifradas, referenciadas en la auditoría; los éxito
     const key = randomUUID();
     outbound.messages.set(id, {
       id,
-      abayaChatId: 'CH-1001',
+      abayaChatId: '1001',
       idempotencyKey: key,
       text,
       status: 'PENDING',

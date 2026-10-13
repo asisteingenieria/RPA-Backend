@@ -2,22 +2,65 @@
 group: autorizacion
 cases:
   - id: aut-si-01
-    turns: ['Hola', 'B', 'Mónica', 'redes', 'lo tomo', 'SÍ AUTORIZO']
+    turns: ['Hola', 'B', 'Mónica', 'uso diario', 'Instagram', 'lo tomo', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, sale: true }
+  # 13/10/2026: tras el «SÍ» los datos llegan en mensajes separados; transfiere al tener los tres.
+  - id: aut-datos-separados-01
+    turns:
+      [
+        'Hola',
+        'B',
+        'uso diario',
+        'Instagram',
+        'lo tomo',
+        'SÍ AUTORIZO',
+        '1020304050',
+        'Mónica Andrea Ruiz',
+        'monica.ruiz@ejemplo.test',
+      ]
+    expect: { finalStage: TRANSFERENCIA, sale: true }
+  # D-010: la autorización solo vale por escrito; por nota de voz se pide escribirla.
+  - id: voz-autoriza-01
+    turns: ['Hola', 'B', 'Mónica', 'redes', 'Instagram', 'lo tomo', '🎤 sí, sí autorizo']
+    expect: { finalStage: AUTORIZACION, sale: false }
+  - id: voz-autoriza-luego-escribe-01
+    turns: ['Hola', 'B', 'Mónica', 'redes', 'Instagram', 'lo tomo', '🎤 sí autorizo', 'SI']
     expect: { finalStage: TRANSFERENCIA, sale: true }
   - id: aut-no-01
-    turns: ['Hola', 'B', 'Hernán', 'redes', 'lo tomo', 'No', 'no gracias']
+    turns: ['Hola', 'B', 'Hernán', 'redes', 'Facebook', 'lo tomo', 'No', 'no gracias']
     expect: { finalStage: CIERRE_SIN_VENTA, sale: false }
   - id: aut-no-asesor-01
-    turns: ['Hola', 'A', 'Patricia', 'Tigo', 'trabajo', 'ese me sirve', 'No', 'sí, por favor']
+    turns:
+      [
+        'Hola',
+        'A',
+        'Patricia',
+        'Tigo',
+        'trabajo',
+        'WhatsApp',
+        'ese me sirve',
+        'No',
+        'sí, por favor',
+      ]
     expect: { finalStage: ESCALAR, sale: false }
   - id: aut-ambigua-01
-    turns: ['Hola', 'B', 'Liliana', 'videos', 'me quedo con ese', 'ok']
+    turns: ['Hola', 'B', 'Liliana', 'videos', 'YouTube', 'me quedo con ese', 'ok']
     expect: { finalStage: AUTORIZACION, sale: false }
   - id: aut-ambigua-02
-    turns: ['Hola', 'A', 'Fernando', 'Tigo', 'llamadas', 'listo, ese', 'bueno dale']
+    turns: ['Hola', 'A', 'Fernando', 'Tigo', 'llamadas', 'Facebook', 'listo, ese', 'bueno dale']
     expect: { finalStage: AUTORIZACION, sale: false }
   - id: aut-cambia-01
-    turns: ['Hola', 'B', 'Alicia', 'redes', 'lo quiero', '¿para qué es eso?', 'SÍ AUTORIZO']
+    turns:
+      [
+        'Hola',
+        'B',
+        'Alicia',
+        'uso diario',
+        'Facebook',
+        'lo quiero',
+        '¿para qué es eso?',
+        'SÍ AUTORIZO',
+      ]
     expect: { finalStage: TRANSFERENCIA, sale: true }
   - id: aut-cambia-02
     turns:
@@ -26,6 +69,7 @@ cases:
         'B',
         'Rubén',
         'videos',
+        'YouTube',
         'ese me sirve',
         'no sé, me da desconfianza',
         'No',

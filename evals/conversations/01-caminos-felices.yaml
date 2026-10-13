@@ -34,6 +34,7 @@ cases:
         'Soy Andrea Gómez',
         'WOM',
         'casi todo es llamadas y algo de correo',
+        'WhatsApp',
         'perfecto, ese me sirve',
         'Acepto',
       ]
@@ -85,13 +86,22 @@ cases:
         '2',
         'Soy Diego',
         'mucho streaming y videollamadas',
+        'YouTube y WhatsApp',
         'dale, lo quiero',
         'Sí, autorizo',
       ]
     expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
   - id: feliz-recargas-01
     turns:
-      ['Hola', 'B', 'Valentina', 'para mi hija, redes y tareas', 'me sirve, lo tomo', 'SÍ AUTORIZO']
+      [
+        'Hola',
+        'B',
+        'Valentina',
+        'para mi hija, redes y tareas',
+        'TikTok e Instagram',
+        'me sirve, lo tomo',
+        'SÍ AUTORIZO',
+      ]
     expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
   - id: feliz-recargas-02
     turns:
@@ -124,7 +134,20 @@ cases:
         'B',
         'Ricardo',
         'GPS y apps de domicilios, trabajo de repartidor',
+        'WhatsApp y Rappi',
         'Lo tomo',
         'si autorizo',
       ]
     expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  # Línea nueva: no está en el menú; solo si el cliente la pide explícitamente.
+  - id: feliz-linea-nueva-01
+    turns:
+      [
+        'Hola',
+        'quiero comprar un número nuevo',
+        'uso diario',
+        'Instagram',
+        'me gusta, lo tomo',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: LINEA_NUEVA, sale: true }

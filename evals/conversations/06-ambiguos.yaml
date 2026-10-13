@@ -10,6 +10,26 @@ cases:
   - id: amb-audio-01
     turns: ['Hola', 'B', '[audio]']
     expect: { finalStage: PERFIL }
+  # D-010: notas de voz (🎤 = nota de voz con la transcripción simulada; 🎤 ~ = no se entiende).
+  - id: voz-perfil-01
+    turns: ['Hola', 'B', '🎤 Me llamo Sofía y uso el celular para redes sociales y música']
+    expect: { finalStageIn: [PERFIL, OFERTA], process: MIGRACION }
+  - id: voz-menu-01
+    turns: ['Hola', '🎤 la opción A, quiero traer mi número de Movistar']
+    expect: { finalStageIn: [PERFIL, OFERTA], process: PORTABILIDAD }
+  - id: voz-ininteligible-01
+    turns: ['Hola', 'B', '🎤 ~']
+    expect: { finalStage: PERFIL, forbidden: ['precio'] }
+  - id: voz-objecion-01
+    turns:
+      [
+        'Hola',
+        'B',
+        'Mi nombre es Andrés',
+        'redes sociales y videos',
+        '🎤 uy no, está muy caro, ¿no hay algo más barato?',
+      ]
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: amb-imagen-01
     turns: ['Hola', 'B', 'Diana', '[imagen]']
     expect: { finalStage: PERFIL }

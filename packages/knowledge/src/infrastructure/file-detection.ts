@@ -1,4 +1,5 @@
 import { fileTypeFromBuffer } from 'file-type';
+import { IMAGE_MIMES, type ImageExt } from '../domain/images.js';
 import type { DetectedFile, FileKind } from '../domain/ports.js';
 
 const EXTENSIONS: Record<string, FileKind> = {
@@ -66,6 +67,25 @@ export async function detectFile(
   if (bytes.includes(0)) throw new FileRejected('el contenido no es texto (bytes nulos)');
   const { warnings } = decodeText(bytes);
   return { kind, mime: TEXT_MIME[kind]!, warnings };
+}
+
+const IMAGE_EXT: Record<string, ImageExt> = { jpg: 'jpg', jpeg: 'jpg', png: 'png', webp: 'webp' };
+
+/** D-011: imagen de planes. JPG, PNG o WEBP por su firma, y debe coincidir con la extensión. */
+export async function detectImage(
+  bytes: Uint8Array,
+  filename: string,
+): Promise<{ ext: ImageExt; mime: string }> {
+  const ext = IMAGE_EXT[extensionOf(filename)];
+  if (!ext) throw new FileRejected('tipo de imagen no permitido (usa .jpg, .png o .webp)');
+  if (!bytes.length) throw new FileRejected('el archivo está vacío');
+  const sniffed = await fileTypeFromBuffer(bytes);
+  if (sniffed?.ext !== ext) {
+    throw new FileRejected(
+      `el contenido no es una imagen .${ext} válida${sniffed ? ` (parece .${sniffed.ext})` : ''}`,
+    );
+  }
+  return { ext, mime: IMAGE_MIMES[ext] };
 }
 
 /** UTF-8 estricto; si no lo es, Windows-1252 con aviso. */

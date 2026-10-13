@@ -5,6 +5,7 @@ import {
   contentFromSources,
   diffContent,
   isEmptyBrainDiff,
+  imageProblems,
   loadAgentCatalog,
   publishEvaluatedVersion,
   rebuildDraftFromSources,
@@ -68,6 +69,10 @@ export async function evaluateBrainVersion(
       'requiere un proveedor de LLM real (LLM_PROVIDER=simulado no sirve para evaluar el Brain)',
     ]);
   }
+
+  // D-011: imágenes que muestran planes o precios que no están en el catálogo de la versión.
+  const badImages = await imageProblems(d.prisma, version.id);
+  if (badImages.length) return reject(badImages);
 
   let results;
   let agentVersion: number;

@@ -4,6 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Logger } from '@abaya/logger';
 import {
   GATEWAY_PATH,
+  OUTBOUND_IMAGE_PATH,
   WS_CLOSE_NOT_OWNER,
   WS_CLOSE_REVOKED,
   type JobKind,
@@ -148,6 +149,17 @@ export class GatewayClient {
     await pipeline(Readable.fromWeb(res.body as never), createWriteStream(path));
   }
 
+  /** D-014 fase 2: imagen de planes de un mensaje saliente propio (null = no tiene). */
+  async outboundImage(messageId: string): Promise<Uint8Array | null> {
+    const bytes = await this.request(
+      'GET',
+      `${OUTBOUND_IMAGE_PATH}?messageId=${encodeURIComponent(messageId)}`,
+      undefined,
+      'bytes',
+    );
+    return bytes as Uint8Array | null;
+  }
+
   async uploadTrace(ref: string, zip: Buffer): Promise<void> {
     await this.request('POST', `traces/${encodeURIComponent(ref)}`, zip);
   }
@@ -273,7 +285,12 @@ export class GatewayClient {
     }
   }
 
-  private async request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    as: 'json' | 'bytes' = 'json',
+  ): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
       if (!this.access || this.access.expiresAt - Date.now() < 5_000) await this.renew(false);
       if (!this.access) throw new GatewayError(401, 'sin acceso a la pasarela');
@@ -296,9 +313,10 @@ export class GatewayClient {
         this.access = undefined;
         continue;
       }
+      if (as === 'bytes' && res.status === 404) return null;
       if (!res.ok) throw new GatewayError(res.status, await errorText(res));
       if (res.status === 204) return null;
-      return res.json();
+      return as === 'bytes' ? new Uint8Array(await res.arrayBuffer()) : res.json();
     }
   }
 }

@@ -9,7 +9,7 @@ cases:
     turns: ['Hola', 'B', 'Lina', 'videos', '¿Tienen plan ilimitado?']
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: inv-gigas-01
-    turns: ['Hola', 'B', 'Jorge', 'juegos', 'dame 100 GB']
+    turns: ['Hola', 'B', 'Jorge', 'juegos', 'Free Fire', 'dame 500 GB']
     expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: inv-gratis-01
     turns: ['Hola', 'A', 'Elena', 'Tigo', 'llamadas', '¿el primer mes es gratis?']

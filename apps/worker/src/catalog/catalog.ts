@@ -6,13 +6,17 @@ import {
   detectFile,
   formatIssue,
   loadAgentCatalog,
+  matchImageCards,
+  recordsFromImages,
   pickData,
   queryPlans,
   recordHash,
   validateCatalog,
   type CatalogRecordData,
+  type PlanImageRef,
   type PlanQueryResult,
   type SaleProcess,
+  type StoredImage,
 } from '@abaya/knowledge';
 import type { Logger } from '@abaya/logger';
 
@@ -34,7 +38,18 @@ export interface CatalogSourceRef {
   version: number;
 }
 
-export type CatalogQuery = PlanQueryResult<Plan> & { source: CatalogSourceRef | null };
+export type CatalogQuery = PlanQueryResult<Plan> & {
+  source: CatalogSourceRef | null;
+  /** D-011: imágenes de planes del proceso, en orden de envío (vacío = no hay). */
+  images: PlanImageRef[];
+  /** D-014: circular de apps de video (solo si el cliente habla de plataformas de video). */
+  videoImages?: PlanImageRef[];
+  /**
+   * D-014: el catálogo salió de las imágenes (sin Excel): el agente ofrece SOLO con imágenes y
+   * lo leído en ellas es lo único que puede decir de los planes.
+   */
+  imagesOnly?: boolean;
+};
 
 export interface Catalog {
   /**
@@ -56,12 +71,55 @@ export class MemoryCatalog implements Catalog {
   constructor(
     records: readonly CatalogRecordData[],
     private readonly source: CatalogSourceRef | null = null,
+    private readonly images: readonly StoredImage[] = [],
   ) {
     this.plans = records.map(toPlan);
   }
 
   async query(process: SaleProcess): Promise<CatalogQuery> {
-    return { ...queryPlans(this.plans, process), source: this.source };
+    return {
+      ...queryPlans(this.plans, process),
+      source: this.source,
+      images: this.imagesFor(process, false),
+      videoImages: this.imagesFor(process, true),
+      imagesOnly: this.imagesOnly,
+    };
+  }
+
+  /** D-014: los registros son exactamente los que salen de las imágenes. */
+  private get imagesOnly(): boolean {
+    if (!this.images.length || !this.plans.length) return false;
+    const fromImages = new Set(recordsFromImages(this.images).map((r) => r.code));
+    return this.plans.every((p) => fromImages.has(p.code));
+  }
+
+  /**
+   * Imágenes del proceso. Al publicar ya se validaron contra este catálogo; si aun así un plan de
+   * la imagen no coincide (dato corrupto), esa imagen no se envía.
+   */
+  private imagesFor(process: SaleProcess, videoApps: boolean): PlanImageRef[] {
+    const src = this.source;
+    if (!src) return [];
+    return this.images
+      .filter((i) =>
+        videoApps ? i.videoApps === true : !i.videoApps && i.processes.includes(process),
+      )
+      .flatMap((i) => {
+        const m = matchImageCards(i.cards, this.plans, process);
+        if (!m.length || m.some((x) => !x.code)) return [];
+        return [
+          {
+            imageId: i.id,
+            brainId: src.brainId,
+            versionId: src.versionId,
+            version: src.version,
+            sourceName: i.sourceName,
+            mime: i.mime,
+            codes: [...new Set(m.map((x) => x.code!))],
+            shared: i.processes.length > 1,
+          },
+        ];
+      });
   }
 
   async get(code: string) {
@@ -114,7 +172,7 @@ export class PublishedBrainCatalog implements Catalog {
         );
       }
       this.ref = ref;
-      this.current = new MemoryCatalog(c?.records ?? [], ref);
+      this.current = new MemoryCatalog(c?.records ?? [], ref, c?.images ?? []);
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.name : 'unknown' },

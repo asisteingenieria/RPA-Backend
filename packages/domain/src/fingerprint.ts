@@ -13,7 +13,9 @@ export function fingerprintInput(m: InboundMessage): string {
     m.abayaChatId,
     m.sender,
     m.occurredAt.toISOString(),
-    m.text,
+    // D-010: una nota de voz no tiene texto propio (la red lo deja vacío y el DOM pinta la
+    // duración): la identifica su archivo.
+    m.media ? `audio:${m.media.url}` : m.text,
     String(m.position ?? ''),
   ].join('\u001f');
 }

@@ -7,7 +7,9 @@ import type { TurnOutput } from '../../engine/output-schema.js';
  * plantillas y los validadores.
  */
 const OUT_OF_SCOPE =
-  /\b(factura|cobraron|cobro|reclam\w*|queja|abuso|cancelar|ladron\w*|tarea|partido|matem\w*)\b/i;
+  /\b(factura|cobraron|cobro|roaming|rooming|saldo|reclam\w*|queja|abuso|cancelar|tarea|partido|matem\w*)\b/i;
+/** D-018: insultos y amenazas: se pone un límite y se retoma el paso (no es fuera de alcance). */
+const RUDE = /\b(ladron\w*|in[uú]til\w*|est[uú]pid\w*|idiota\w*|bombas?|matar\w*)\b/i;
 const NOT_INTERESTED = /no me interesa|no quiero nada|por ahora no|no, gracias|no gracias/i;
 const ACCEPT =
   /el m[aá]s (barato|econ[oó]mico)|lo tomo|quiero ese|me quedo|lo quiero|^dale|^listo|me sirve|ese plan|tomo ese|kiero ese|^ese$/i;
@@ -33,18 +35,25 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
   const offered = /"offeredPlanCode":"([A-Z0-9]+)"/.exec(req.systemDynamic)?.[1];
   const missing = /Datos que faltan: (.*)/.exec(req.systemDynamic)?.[1] ?? '';
 
+  if (RUDE.test(lower))
+    return base({
+      intent: 'PREGUNTA',
+      reply: 'Así no puedo ayudarte, pero con gusto te ayudo con tu plan. ¿Seguimos?',
+    });
   if (OUT_OF_SCOPE.test(lower))
     return base({ intent: 'FUERA_DE_ALCANCE', reply: 'Te comunico con un asesor.' });
 
   switch (stage) {
     case 'MENU': {
-      const option = /prepago|pospago/.test(lower)
-        ? 'B'
-        : /portar|traer|cambiarme/.test(lower)
-          ? 'A'
-          : /factura|soporte|cancelar|cambio de plan/.test(lower)
-            ? 'C'
-            : null;
+      const option = /n[uú]mero nuevo|l[ií]nea nueva|otra l[ií]nea/.test(lower)
+        ? 'E'
+        : /prepago|pospago/.test(lower)
+          ? 'B'
+          : /portar|traer|cambiarme/.test(lower)
+            ? 'A'
+            : /factura|soporte|cancelar|cambio de plan/.test(lower)
+              ? 'C'
+              : null;
       return option
         ? base({ intent: 'ELIGE_OPCION', option, reply: '¡Perfecto! ¿Cuál es tu nombre?' })
         : base({ reply: 'Con gusto te ayudo. Por favor elige una letra del menú.' });

@@ -2,7 +2,13 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import type { FieldCipher } from '@abaya/crypto';
 import type { PrismaClient } from '@abaya/db';
-import { QUEUES, robotQueue, type AlertPort } from '@abaya/domain';
+import {
+  MAX_AUDIO_BYTES,
+  QUEUES,
+  normalizeAudioMime,
+  robotQueue,
+  type AlertPort,
+} from '@abaya/domain';
 import {
   BullInboundQueue,
   DirectInboundSink,
@@ -15,6 +21,7 @@ import {
   PrismaSessionRepository,
   PrismaSweepRepository,
   TRACE_REF_RE,
+  inboundAudioParams,
   rpcParams,
   traceAad,
   type InboundQueue,
@@ -179,6 +186,43 @@ export class RobotGateway {
     if (!parsed.success) throw new ServiceError(400, `Parámetros inválidos para ${method}`);
     const handler = this.handlers[method] as Handler<RpcMethod>;
     return (await handler(robotUser, parsed.data as never)) ?? null;
+  }
+
+  /**
+   * D-010: nota de voz del cliente. Se guarda como cualquier entrante (huella única, cola del
+   * motor) con el audio cifrado hasta que el worker lo transcriba. Cuerpo vacío o formato no
+   * aceptado = sin audio: el mensaje queda FAILED y el robot le pide al cliente que escriba.
+   */
+  async storeInboundAudio(robotUser: string, rawParams: unknown, audio: Buffer) {
+    const parsed = inboundAudioParams.safeParse(rawParams ?? {});
+    if (!parsed.success) throw new ServiceError(400, 'Parámetros inválidos para la nota de voz');
+    if (audio.length > MAX_AUDIO_BYTES) throw new ServiceError(400, 'Audio demasiado grande');
+    const p = parsed.data;
+    const mimeType = normalizeAudioMime(p.mimeType);
+    return this.sink(robotUser).store({
+      abayaChatId: p.abayaChatId,
+      fingerprint: p.fingerprint,
+      text: '',
+      via: p.via,
+      occurredAt: new Date(p.occurredAt),
+      media: {
+        kind: 'AUDIO',
+        mimeType,
+        durationSec: p.durationSec ?? null,
+        data: audio.length && mimeType ? audio : null,
+      },
+    });
+  }
+
+  /** D-014 fase 2: bytes de la imagen de un mensaje saliente PROPIO del robot. */
+  async outboundImage(robotUser: string, rawMessageId: unknown): Promise<Uint8Array> {
+    if (typeof rawMessageId !== 'string' || !/^[a-z0-9]{1,40}$/i.test(rawMessageId)) {
+      throw new ServiceError(400, 'messageId inválido');
+    }
+    await this.ownMessage(robotUser, rawMessageId);
+    const bytes = await this.outbound.imageBytes(rawMessageId);
+    if (!bytes) throw new ServiceError(404, 'El mensaje no tiene imagen');
+    return bytes;
   }
 
   /** Guarda cifrada una traza de error subida por el robot (retención 7 días). */

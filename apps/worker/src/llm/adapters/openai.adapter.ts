@@ -64,6 +64,7 @@ export class OpenAiLlmAdapter implements LlmPort {
         `openai ${choice?.finish_reason ?? 'vacío'}`,
         this.provider,
         false,
+        false,
       );
     }
     let json: unknown;

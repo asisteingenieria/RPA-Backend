@@ -3,6 +3,7 @@ import { FieldCipher } from '@abaya/crypto';
 import type { InboundMessage } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { expect, test } from '@playwright/test';
+import { ChatListPage } from '../../src/abaya/pages/chat-list.page.js';
 import { ActorGate } from '../../src/actor/actor-gate.js';
 import { MemoryAlertAdapter } from '@abaya/alerts';
 import { InboundProcessor } from '../../src/inbound/inbound-processor.js';
@@ -15,12 +16,12 @@ import { MemorySessionRepository } from '../../src/session/session.repository.js
 import { MemoryStorageStateStore } from '../../src/session/storage-state.store.js';
 import { MockAbayaServer } from '../mock-abaya/mock-server.js';
 
-// E2E de F3 contra el Abaya simulado (WebSocket + polling + DOM).
+// E2E de F3 contra el Abaya (ySocial) simulado: caso completo por red, SignalR y DOM.
 
 const cipher = new FieldCipher(randomBytes(32).toString('base64'));
 const silent = createLogger('e2e', { level: 'silent' });
 
-async function boot(mock: MockAbayaServer, startPath = '/inbox?chat=CH-1001') {
+async function boot(mock: MockAbayaServer, openChat: string | null = '1001') {
   const repo = new MemoryInboundRepository();
   const queue = new MemoryInboundQueue();
   const storedAt = new Map<string, { at: number; via: string }>();
@@ -33,7 +34,7 @@ async function boot(mock: MockAbayaServer, startPath = '/inbox?chat=CH-1001') {
     onStored: (m: InboundMessage, via) => storedAt.set(m.messageId!, { at: Date.now(), via }),
   });
   const watcher = new InboundWatcher(processor, silent);
-  const driver = new PlaywrightSessionDriver({ baseUrl: mock.url + startPath, headless: true });
+  const driver = new PlaywrightSessionDriver({ baseUrl: mock.url + '/agent/', headless: true });
   driver.onPage = (page) => watcher.attach(page);
   const mgr = new SessionManager({
     robotUser: mock.username,
@@ -47,8 +48,11 @@ async function boot(mock: MockAbayaServer, startPath = '/inbox?chat=CH-1001') {
     heartbeatMs: 1_000,
   });
   expect(await mgr.start()).toBe('ACTIVE');
-  // Tras el login, ir al chat activo (el login redirige a /inbox).
-  await driver.page.goto(mock.url + startPath);
+  // Abrir un caso, como haría el robot (en la prueba, sin pasar por el BrowserActor).
+  if (openChat)
+    await expect
+      .poll(() => new ChatListPage(driver.page).open(openChat), { timeout: 5_000 })
+      .toBe(true);
   return { mgr, driver, processor, watcher, repo, queue, storedAt };
 }
 
@@ -62,11 +66,11 @@ test.afterEach(async () => {
 });
 
 test('50 mensajes en 5 chats: 0 pérdidas, 0 duplicados, detección < 3 s', async () => {
-  const chats = ['CH-1001', 'CH-1002', 'CH-2001', 'CH-2002', 'CH-2003'];
+  const chats = ['1001', '1002', '2001', '2002', '2003'];
   for (const c of chats.slice(2)) mock.assignChat(c);
   const t = await boot(mock);
-  // El historial previo (mensajes de cliente de los fixtures) también se registra.
-  await expect.poll(() => t.processor.stats.stored, { timeout: 5_000 }).toBeGreaterThan(0);
+  // El historial previo (los 3 mensajes de cliente de los fixtures) también se registra.
+  await expect.poll(() => t.processor.stats.stored, { timeout: 5_000 }).toBe(3);
   const baseline = t.repo.messages.size;
 
   const sent = new Map<string, number>();
@@ -92,7 +96,7 @@ test('mensaje del chat abierto llega por red y por DOM y se guarda una sola vez'
   const t = await boot(mock);
   await expect.poll(() => t.processor.stats.stored, { timeout: 5_000 }).toBeGreaterThan(0);
   const before = t.processor.stats.received;
-  const m = mock.addCustomerMessage('CH-1001', 'Quiero portar mi número');
+  const m = mock.addCustomerMessage('1001', 'Quiero portar mi número');
   await expect.poll(() => t.storedAt.has(m.id), { timeout: 5_000 }).toBe(true);
   // Esperar al siguiente poll y re-render del DOM: más lecturas del mismo mensaje.
   await expect
@@ -110,7 +114,7 @@ test('mensaje del chat abierto llega por red y por DOM y se guarda una sola vez'
 test('mensajes propios del robot y del sistema se ignoran', async () => {
   const t = await boot(mock);
   await expect.poll(() => t.processor.stats.ignoredSystem, { timeout: 5_000 }).toBeGreaterThan(0);
-  // El fixture CH-1001 tiene 1 mensaje de sistema y 1 del asesor; solo los 2 del cliente cuentan.
+  // El fixture 1001 tiene 1 mensaje de sistema y 1 del asesor; solo los 2 del cliente cuentan.
   await t.processor.drain();
   const texts = [...t.repo.messages.values()].map((x) =>
     cipher.decryptString(x.bodyEncrypted, `msg:${x.fingerprint}`),
@@ -123,7 +127,7 @@ test('mensajes propios del robot y del sistema se ignoran', async () => {
 
 test('chat nuevo asignado crea Conversation', async () => {
   const t = await boot(mock);
-  mock.assignChat('CH-3001');
-  await expect.poll(() => t.repo.conversations.has('CH-3001'), { timeout: 5_000 }).toBe(true);
+  mock.assignChat('3001');
+  await expect.poll(() => t.repo.conversations.has('3001'), { timeout: 5_000 }).toBe(true);
   await t.mgr.stop();
 });

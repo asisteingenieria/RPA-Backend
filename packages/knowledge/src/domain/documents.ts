@@ -7,7 +7,7 @@ import type { KnowledgeUse } from './brain.js';
  * los validadores: un documento nunca puede poner precios ni cambiar el flujo (reglas 10–12).
  */
 
-export type DocumentUse = Exclude<KnowledgeUse, 'CATALOG'>;
+export type DocumentUse = Exclude<KnowledgeUse, 'CATALOG' | 'IMAGE'>;
 
 export interface ChunkData {
   ord: number;

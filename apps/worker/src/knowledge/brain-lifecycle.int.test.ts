@@ -14,7 +14,10 @@ import {
   type CatalogDiff,
 } from '@abaya/knowledge';
 import { createLogger } from '@abaya/logger';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Cada publicación corre la suite de evaluación completa (D-013: un turno más por venta).
+vi.setConfig({ testTimeout: 30_000 });
 import { PublishedBrainCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { PrismaConversationStore } from '../conversation/prisma.store.js';
 import { TurnService } from '../conversation/turn.service.js';

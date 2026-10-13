@@ -126,6 +126,7 @@ export async function createChildBackend(
     setStatus: async (messageId, status: OutboundStatus, incrementAttempts = false) => {
       await call('outbound.setStatus', { messageId, status, incrementAttempts });
     },
+    imageBytes: (messageId) => client.outboundImage(messageId),
   };
 
   const handoff: HandoffRepository = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_AGENT_CONFIG,
+  MENU_OPTIONS,
   SYSTEM_RULES,
   buildSystemPrompt,
   menuText,
@@ -76,5 +77,15 @@ describe('armado del prompt', () => {
     // D-003: menú de la campaña (🅐–🅓) justo después de la bienvenida.
     expect(m.startsWith('Hola, soy Sofía\n🅐 Cambiarme de operador')).toBe(true);
     expect(m.endsWith('🅓 Cancelar mi plan pospago')).toBe(true);
+  });
+
+  it('no duplica las opciones si la bienvenida ya las trae', () => {
+    const welcome =
+      '¡Hola! Soy Sofía.\n\n📲 Elige una de nuestras opciones:\n🅐 Cambiarme de operador\n' +
+      '🅑 Pasarme de recargas a plan pospago\nC) Ya tengo plan: soporte, factura o cambio\n' +
+      '*🅓 Cancelar mi plan pospago*\n';
+    expect(menuText(welcome)).toBe(
+      `¡Hola! Soy Sofía.\n\n📲 Elige una de nuestras opciones:\n${MENU_OPTIONS}`,
+    );
   });
 });

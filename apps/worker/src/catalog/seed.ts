@@ -89,7 +89,8 @@ async function main() {
     // Nunca pisa versiones creadas desde el panel.
     let agentCreated = false;
     if (!(await prisma.agentConfigVersion.count())) {
-      const { id: _id, ...v1 } = DEFAULT_AGENT_CONFIG;
+      // Plantillas, reactivación y flujo en null = los de la campaña (D-013, D-015).
+      const { id: _id, templates: _t, reactivation: _r, flow: _f, ...v1 } = DEFAULT_AGENT_CONFIG;
       await prisma.agentConfigVersion.create({
         data: {
           ...v1,

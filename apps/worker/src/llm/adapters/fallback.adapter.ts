@@ -3,8 +3,8 @@ import type { Logger } from '@abaya/logger';
 
 /**
  * Proveedor de respaldo (v1.5, sección 6.3.6): si el principal falla (caído, timeout, cuota),
- * la misma solicitud va al respaldo. Si también falla, el error sube y la conversación pasa a
- * NEEDS_REVIEW como siempre. La salida del respaldo pasa por los mismos validadores.
+ * la misma solicitud va al respaldo. Si también falla, el error sube y se pausan los robots
+ * (D-009). La salida del respaldo pasa por los mismos validadores.
  */
 export class FallbackLlmAdapter implements LlmPort {
   readonly provider: string;

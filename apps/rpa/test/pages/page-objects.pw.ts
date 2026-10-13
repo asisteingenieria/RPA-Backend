@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
 import {
+  AgentStatePage,
   ChatListPage,
   ChatPage,
+  FinishPage,
   LoginPage,
-  NotePage,
-  TransferPage,
 } from '../../src/abaya/pages/index.js';
 import { inboxHtml, loginHtml, sampleChats } from '../mock-abaya/templates.js';
 
-// Pruebas de page objects contra el markup (F1) con page.setContent.
+// Pruebas de page objects contra el markup de ySocial simulado, con page.setContent.
 
 test.describe('LoginPage', () => {
   test('detecta la pantalla de login', async ({ page }) => {
@@ -18,10 +18,6 @@ test.describe('LoginPage', () => {
 
   test('informa credenciales inválidas cuando aparece el error', async ({ page }) => {
     await page.setContent(loginHtml({ error: 'Usuario o contraseña incorrectos' }));
-    // En modo estático el formulario no navega: el error ya está visible.
-    await page.evaluate(() =>
-      document.querySelector('form')!.addEventListener('submit', (e) => e.preventDefault()),
-    );
     const r = await new LoginPage(page).login({ username: 'u', password: 'p' }, 2_000);
     expect(r).toBe('INVALID_CREDENTIALS');
   });
@@ -32,38 +28,54 @@ test.describe('LoginPage', () => {
   });
 });
 
+test.describe('AgentStatePage', () => {
+  test('al entrar está en «Login» y pasa a «Disponible»', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats()));
+    const state = new AgentStatePage(page);
+    expect(await state.current()).toBe('Login');
+    expect(await state.isReceiving()).toBe(false);
+    expect(await state.ensureAvailable(3_000)).toBe(true);
+    expect(await state.current()).toBe('Disponible');
+  });
+});
+
 test.describe('ChatListPage', () => {
-  test('lista chats con no leídos y chat activo', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
+  test('lista los casos con no leídos y el abierto (número leído del modelo, no del DOM)', async ({
+    page,
+  }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
     const list = new ChatListPage(page);
     expect(await list.isVisible()).toBe(true);
-    expect(await list.listChats()).toEqual([
-      { abayaChatId: 'CH-1001', unread: 2, active: true },
-      { abayaChatId: 'CH-1002', unread: 0, active: false },
-    ]);
+    await expect
+      .poll(() => list.listChats())
+      .toEqual([
+        { abayaChatId: '1001', unread: 0, active: true },
+        { abayaChatId: '1002', unread: 0, active: false },
+      ]);
   });
 
-  test('abre un chat por id', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
+  test('abre un caso por número y el encabezado lo confirma', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
     const list = new ChatListPage(page);
-    await list.open('CH-1002');
-    const chats = await list.listChats();
-    expect(chats.find((c) => c.active)?.abayaChatId).toBe('CH-1002');
+    expect(await list.open('1002')).toBe(true);
+    await expect.poll(() => new ChatPage(page).currentChatId()).toBe('1002');
+    expect((await list.listChats()).find((c) => c.active)?.abayaChatId).toBe('1002');
+    expect(await list.open('9999')).toBe(false);
   });
 });
 
 test.describe('ChatPage', () => {
-  test('identifica el chat abierto y lee mensajes con remitente', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
+  test('identifica el caso abierto y lee mensajes con remitente e id', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
     const chat = new ChatPage(page);
-    expect(await chat.currentChatId()).toBe('CH-1001');
-    expect(await chat.headingText()).toBe('Chat CH-1001');
+    await expect.poll(() => chat.currentChatId()).toBe('1001');
+    expect(await chat.headingText()).toBe('Caso #1001');
     const msgs = await chat.readMessages();
     expect(msgs.map((m) => m.sender)).toEqual(['SYSTEM', 'CUSTOMER', 'AGENT', 'CUSTOMER']);
-    expect(msgs[1]).toMatchObject({ messageId: 'm-2', text: 'Hola, quiero información de planes' });
+    expect(msgs[1]).toMatchObject({ messageId: '502', text: 'Hola, quiero información de planes' });
   });
 
-  test('sin chat abierto no devuelve id ni mensajes', async ({ page }) => {
+  test('sin caso abierto no devuelve id ni mensajes', async ({ page }) => {
     await page.setContent(inboxHtml(sampleChats()));
     const chat = new ChatPage(page);
     expect(await chat.currentChatId()).toBeNull();
@@ -71,8 +83,9 @@ test.describe('ChatPage', () => {
   });
 
   test('escribe y envía respetando saltos de línea y formato', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
     const chat = new ChatPage(page);
+    await expect.poll(() => chat.currentChatId()).toBe('1001');
     const text = '*Plan M2*\nTe cuento los detalles';
     await chat.typeMessage(text);
     await chat.clickSend();
@@ -81,22 +94,28 @@ test.describe('ChatPage', () => {
   });
 
   test('waitForAgentMessage devuelve false si el mensaje no aparece', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
     expect(await new ChatPage(page).waitForAgentMessage('nunca enviado', 500)).toBe(false);
   });
 });
 
-test.describe('NotePage y TransferPage', () => {
-  test('escribe una nota interna', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
-    expect(await new NotePage(page).writeNote('Venta: portabilidad, plan M2')).toBe(true);
+test.describe('FinishPage', () => {
+  test('venta: «Finalizar» sin cerrar y el caso sale de la bandeja', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
+    await expect.poll(() => new ChatPage(page).currentChatId()).toBe('1001');
+    await new FinishPage(page).finishKeepCase();
+    const ids = (await new ChatListPage(page).listChats()).map((c) => c.abayaChatId);
+    expect(ids).not.toContain('1001');
+    expect(await new ChatPage(page).currentChatId()).toBeNull();
   });
 
-  test('transfiere a backoffice y el chat sale de la bandeja', async ({ page }) => {
-    await page.setContent(inboxHtml(sampleChats(), 'CH-1001'));
-    await new TransferPage(page).transferTo();
+  test('no venta: «Finalizar y cerrar el caso» con etiqueta', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
+    await expect.poll(() => new ChatPage(page).currentChatId()).toBe('1001');
+    await new FinishPage(page).finishCloseCase(
+      'No venta - Ecommerce Movil -Cliente abandona conversación',
+    );
     const ids = (await new ChatListPage(page).listChats()).map((c) => c.abayaChatId);
-    expect(ids).not.toContain('CH-1001');
-    expect(await new ChatPage(page).currentChatId()).toBeNull();
+    expect(ids).toEqual(['1002']);
   });
 });

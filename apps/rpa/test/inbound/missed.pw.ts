@@ -31,7 +31,7 @@ const silent = createLogger('e2e', { level: 'silent' });
 let mock: MockAbayaServer;
 test.beforeEach(async () => {
   mock = new MockAbayaServer({ chats: [] });
-  for (const c of ['CH-3001', 'CH-3002', 'CH-3003']) mock.assignChat(c);
+  for (const c of ['3001', '3002', '3003']) mock.assignChat(c);
   await mock.start();
 });
 test.afterEach(async () => {
@@ -83,21 +83,21 @@ test('mensaje no avisado por WebSocket: la bandeja lo marca y el barrido lo recu
   });
 
   // 1. Normal: llega por WebSocket.
-  mock.addCustomerMessage('CH-3001', 'hola, quiero un plan');
+  mock.addCustomerMessage('3001', 'hola, quiero un plan');
   await expect.poll(() => processor.stats.stored, { timeout: 5_000 }).toBe(1);
 
   // 2. Corte: el mensaje existe en Abaya pero el navegador no recibe el aviso.
-  mock.addCustomerMessage('CH-3002', 'este se pierde', { broadcast: false });
+  mock.addCustomerMessage('3002', 'este se pierde', { broadcast: false });
   await driver.page.waitForTimeout(1_500);
   expect(processor.stats.stored).toBe(1);
 
-  // 3. El robot abre otro chat (recarga): la bandeja ahora muestra el no leído de CH-3002.
-  expect(await actor.openChat('CH-3003')).toBe(true);
-  expect((await actor.readInbox()).find((c) => c.abayaChatId === 'CH-3002')?.unread).toBe(1);
+  // 3. El robot abre otro chat (recarga): la bandeja ahora muestra el no leído de 3002.
+  expect(await actor.openChat('3003')).toBe(true);
+  expect((await actor.readInbox()).find((c) => c.abayaChatId === '3002')?.unread).toBe(1);
 
   // 4. El barrido lo detecta y lo recupera.
   const opened = await sweeper.sweep();
-  expect(opened).toContain('CH-3002');
+  expect(opened).toContain('3002');
   await expect.poll(() => processor.stats.stored, { timeout: 5_000 }).toBe(2);
   const texts = [...repo.messages.values()].map((m) =>
     cipher.decryptString(m.bodyEncrypted, inboundAad(m.fingerprint)),

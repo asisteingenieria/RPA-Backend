@@ -22,7 +22,7 @@ describe('transiciones del diagrama (sección 6.3.2)', () => {
     ['MENU', 'ELIGE_OPCION', { option: 'B' }, 'PERFIL'],
     ['MENU', 'ELIGE_OPCION', { option: 'C' }, 'SOPORTE'],
     ['MENU', 'ELIGE_OPCION', { option: 'D' }, 'SOPORTE'],
-    ['MENU', 'FUERA_DE_ALCANCE', {}, 'ESCALAR'],
+    ['MENU', 'FUERA_DE_ALCANCE', {}, 'SOPORTE'],
     ['PERFIL', 'DA_DATO', { profile: fullPorta }, 'OFERTA'],
     ['PERFIL', 'DA_DATO', { profile: { process: 'PORTABILIDAD', name: 'Ana' } }, 'PERFIL'],
     ['PERFIL', 'FUERA_DE_ALCANCE', {}, 'ESCALAR'],

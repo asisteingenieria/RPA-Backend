@@ -5,17 +5,32 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AgentConfig, LlmPort } from '@abaya/domain';
-import { STAGES } from '@abaya/domain';
+import { DEFAULT_AGENT_CONFIG, STAGES, renderTemplate } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { CatalogRecordData } from '@abaya/knowledge';
 import { MemoryCatalog, toPlan, type Plan } from '../catalog/catalog.js';
 import { MemoryConversationStore } from '../conversation/memory.store.js';
+import { ScriptedSpeechAdapter } from '../speech/from-config.js';
 import { TurnService } from '../conversation/turn.service.js';
-import { ConversationEngine, type TurnKnowledge } from '../engine/conversation-engine.js';
+import {
+  ConversationEngine,
+  EXPLICIT_YES,
+  type TurnKnowledge,
+} from '../engine/conversation-engine.js';
 import * as T from '../engine/templates/templates.js';
-import { FORBIDDEN_PROMISES } from '../engine/validators/validators.js';
+import {
+  discountedPriceCop,
+  unapprovedPhrases,
+  unverifiedFigures,
+} from '../engine/validators/figures.js';
+
+/**
+ * D-010: un turno que empieza con 🎤 es una nota de voz; lo que sigue es lo que «dice» (la
+ * transcripción simulada). `🎤 ~` = audio que no se entiende.
+ */
+export const VOICE_TURN = '🎤';
 
 const caseSchema = z.object({
   id: z.string(),
@@ -27,6 +42,8 @@ const caseSchema = z.object({
       process: z.enum(['PORTABILIDAD', 'MIGRACION', 'LINEA_NUEVA']).optional(),
       sale: z.boolean().optional(),
       forbidden: z.array(z.string()).optional(),
+      /** Frases que el bot debe haber dicho (p. ej. una plantilla). */
+      required: z.array(z.string()).optional(),
       /** v1.9: el bot mostró al menos una ficha con precio (y todos los precios son del catálogo). */
       pricesShown: z.boolean().optional(),
     })
@@ -72,14 +89,27 @@ export function loadCases(dir: string, filter?: string): EvalCase[] {
 
 // ---------- chequeos globales ----------
 
-const EXPLICIT_YES =
-  /^\s*(s[ií]\s*,?\s*(lo\s+)?autorizo|autorizo|acepto(\s+la\s+autorizaci[oó]n)?)\s*[.!]*\s*$/i;
+/** D-013: respuesta del cliente de prueba cuando el robot le pide los datos (sintética). */
+export const SYNTHETIC_CUSTOMER_DATA = '1000000000 Cliente Demo cliente.demo@ejemplo.test';
 
 /** Quita de un mensaje todo el texto que proviene de plantillas del código. */
 function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentConfig): string {
   let t = text;
+  const cfg = agent ?? DEFAULT_AGENT_CONFIG;
+  const auth = T.authorizationFor(cfg, now);
+  // D-013: plantillas de la campaña que inserta el código (texto aprobado, palabra por palabra).
+  const campaign = cfg.templates
+    .filter((x) => x.role !== 'REFERENCIA')
+    .flatMap((x) => [
+      renderTemplate(x.text, { agentName: cfg.agentName, now }),
+      renderTemplate(x.text, { agentName: cfg.agentName, customerName: 'Ana', now }),
+    ]);
   const fixed = [
-    agent ? T.menu(agent.welcome) : T.MENU,
+    ...campaign,
+    ...(auth.intro ? [auth.intro] : []),
+    auth.text,
+    T.noSaleGoodbyeFor(cfg, now),
+    T.menu(cfg),
     T.SUPPORT,
     T.SAFE_FALLBACK,
     T.NO_SALE_GOODBYE,
@@ -93,9 +123,13 @@ function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentCon
   for (const f of fixed) t = t.split(f).join(' ');
   // Plantillas con el nombre del cliente (D-003): transferencia, no autoriza y asesor.
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  for (const fn of [T.transfer, T.declinedAuthorization, T.advisorAfterDecline]) {
-    const [head, tail] = fn('Ana').split(', Ana') as [string, string];
-    t = t.replace(new RegExp(`${esc(head)}(, [^!.?]+)?${esc(tail)}`, 'g'), ' ');
+  for (const role of ['TRANSFERENCIA', 'NO_AUTORIZA', 'ASESOR_TRAS_NO_AUTORIZAR'] as const) {
+    const full = T.systemText(cfg, role, 'Ana', now);
+    const at = full.indexOf('Ana');
+    if (at < 0) continue;
+    const head = full.slice(0, at).replace(/,?\s*$/, '');
+    const tail = full.slice(at + 'Ana'.length);
+    t = t.replace(new RegExp(`${esc(head)}(,?\\s[^!.?]+)?${esc(tail)}`, 'g'), ' ');
   }
   for (const n of ['A', 'B'] as const) t = t.split(T.askName(n)).join(' ');
   return t;
@@ -108,7 +142,7 @@ export function pricesIn(text: string): string[] {
   );
 }
 
-function globalChecks(
+export function globalChecks(
   transcript: CaseResult['transcript'],
   sale: boolean,
   now: Date,
@@ -118,9 +152,23 @@ function globalChecks(
 ): string[] {
   const errs: string[] = [];
   // v1.9: todo precio mostrado es LITERAL del catálogo publicado y del proceso del cliente.
-  const allowed = new Set(
-    plans.filter((p) => p.process === process).map((p) => T.formatCop(p.priceCop)),
-  );
+  const own = plans.filter((p) => p.process === process);
+  const allowed = new Set(own.map((p) => T.formatCop(p.priceCop)));
+  // El precio con descuento lo calcula el código (discountedPriceCop): también es del catálogo.
+  for (const p of own) {
+    const discounted = discountedPriceCop(p);
+    if (discounted !== null) allowed.add(T.formatCop(discounted));
+  }
+  // D-007: el modelo puede escribir cifras y beneficios si salen del catálogo o del guion.
+  const cfg = agent ?? DEFAULT_AGENT_CONFIG;
+  const sources = {
+    plans: own,
+    approvedTexts: [
+      cfg.prompt,
+      cfg.companyInfo,
+      ...cfg.templates.filter((x) => x.role === 'RESPUESTA').map((x) => x.text),
+    ],
+  };
   for (const m of transcript.filter((x) => x.role === 'bot')) {
     for (const price of pricesIn(m.text)) {
       if (!allowed.has(price)) {
@@ -131,10 +179,9 @@ function globalChecks(
     }
     if (m.text.includes('{{')) errs.push('INVENTADO: marcador sin reemplazar');
     const free = stripTemplates(m.text, now, plans, agent);
-    if (/\d|[$%]|\b(gb|gigas?|megas?)\b/i.test(free))
-      errs.push(`INVENTADO: cifra fuera de plantilla: "${free.trim().slice(0, 80)}"`);
-    for (const p of FORBIDDEN_PROMISES) {
-      if (free.toLowerCase().includes(p)) errs.push(`INVENTADO: promesa prohibida "${p}"`);
+    for (const e of unverifiedFigures(free, sources)) errs.push(`INVENTADO: ${e}`);
+    for (const p of unapprovedPhrases(free, sources)) {
+      errs.push(`INVENTADO: promesa prohibida "${p}"`);
     }
   }
   if (sale && !transcript.some((m) => m.role === 'cliente' && EXPLICIT_YES.test(m.text))) {
@@ -185,20 +232,29 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     store,
     engine,
     catalog,
+    speech: new ScriptedSpeechAdapter(),
     alerts: { raise: async () => undefined },
     logger: createLogger('evals', { level: 'silent' }),
     now: () => now,
   });
   store.create(c.id);
   const transcript: CaseResult['transcript'] = [];
-  for (const turn of c.turns) {
-    store.addInbound(c.id, turn);
+  const say = async (turn: string) => {
+    if (turn.startsWith(VOICE_TURN)) {
+      store.addVoice(c.id, Buffer.from(turn.slice(VOICE_TURN.length).trim(), 'utf8'), 10);
+    } else {
+      store.addInbound(c.id, turn);
+    }
     transcript.push({ role: 'cliente', text: turn });
     const before = store.outboundTexts(c.id).length;
     await svc.handle(c.id);
     for (const t of store.outboundTexts(c.id).slice(before))
       transcript.push({ role: 'bot', text: t });
-  }
+  };
+  for (const turn of c.turns) await say(turn);
+  // D-013: tras el «SÍ» el robot pide los datos; el cliente de la prueba los manda (sintéticos)
+  // para que el caso termine como en la vida real: finalizado y pasado al backoffice.
+  if (store.get(c.id).profile.dataRequested) await say(SYNTHETIC_CUSTOMER_DATA);
 
   const conv = store.get(c.id);
   const sale = store.sales.length > 0;
@@ -217,6 +273,13 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
       transcript.some((m) => m.role === 'bot' && m.text.toLowerCase().includes(f.toLowerCase()))
     ) {
       failures.push(`frase prohibida: "${f}"`);
+    }
+  }
+  for (const r of e.required ?? []) {
+    if (
+      !transcript.some((m) => m.role === 'bot' && m.text.toLowerCase().includes(r.toLowerCase()))
+    ) {
+      failures.push(`falta la frase: "${r}"`);
     }
   }
   if (e.pricesShown && !transcript.some((m) => m.role === 'bot' && pricesIn(m.text).length)) {

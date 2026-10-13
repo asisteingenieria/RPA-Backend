@@ -2,8 +2,10 @@
 // domain/: reglas puras · application/: casos de uso · infrastructure/: adaptadores.
 
 export * from './domain/brain.js';
+export * from './domain/brain-export.js';
 export * from './domain/catalog.js';
 export * from './domain/documents.js';
+export * from './domain/images.js';
 export * from './domain/injection.js';
 export * from './domain/ports.js';
 

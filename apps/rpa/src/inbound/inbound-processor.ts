@@ -119,7 +119,9 @@ export class InboundProcessor {
     const r = await this.sink.store({
       abayaChatId: m.abayaChatId,
       fingerprint,
-      text: m.text,
+      // D-010: mientras el robot no descarga la nota de voz (captura pendiente), llega como
+      // `[audio]`, igual que antes: el motor no recibe un mensaje vacío.
+      text: m.media && !m.text.trim() ? '[audio]' : m.text,
       via,
       occurredAt: m.occurredAt,
     });

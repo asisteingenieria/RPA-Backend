@@ -1,3 +1,5 @@
+import type { UsageRecorder } from '@abaya/domain';
+import { estimateTokens } from '../domain/documents.js';
 import type { EmbeddingProvider } from '../domain/ports.js';
 
 /**
@@ -146,4 +148,31 @@ export function embeddingsFromConfig(cfg: {
     return new GeminiEmbeddings({ apiKey: cfg.GEMINI_API_KEY, model: model('gemini') });
   }
   return null;
+}
+
+/**
+ * Registra el consumo de un proveedor de embeddings (vista «Consumo»). Los proveedores no siempre
+ * informan tokens: se calculan aproximados (~4 caracteres por token) y quedan marcados así.
+ */
+export function withEmbeddingUsage<T extends EmbeddingProvider>(
+  provider: T,
+  recorder: UsageRecorder,
+): T {
+  const embed = provider.embed.bind(provider);
+  return Object.assign(Object.create(provider) as T, {
+    embed: async (texts: string[], purpose: 'document' | 'query') => {
+      const started = Date.now();
+      const vectors = await embed(texts, purpose);
+      recorder.record({
+        kind: 'EMBEDDING',
+        provider: provider.id,
+        model: provider.model,
+        inputTokens: texts.reduce((n, t) => n + estimateTokens(t), 0),
+        outputTokens: 0,
+        latencyMs: Date.now() - started,
+        estimated: true,
+      });
+      return vectors;
+    },
+  });
 }

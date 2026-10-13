@@ -13,7 +13,10 @@ import {
   TextExtractor,
 } from '@abaya/knowledge';
 import { createLogger } from '@abaya/logger';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Cada publicación corre la suite de evaluación completa (D-013: un turno más por venta).
+vi.setConfig({ testTimeout: 30_000 });
 import { MemoryCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { ConversationEngine } from '../engine/conversation-engine.js';
 import type { TurnOutput } from '../engine/output-schema.js';

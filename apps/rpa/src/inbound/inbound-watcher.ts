@@ -3,8 +3,8 @@ import type { Logger } from '@abaya/logger';
 import type { Page, Response, WebSocket } from 'playwright';
 import {
   MESSAGE_URL_PATTERNS,
-  parseChatMessagesResponse,
-  parseWsFrame,
+  parseCaseResponse,
+  parseSignalRFrame,
 } from '../abaya/network/parsers.js';
 import { sel } from '../abaya/selectors.js';
 import { z } from 'zod';
@@ -17,30 +17,19 @@ import type { InboundProcessor } from './inbound-processor.js';
 const domRowsSchema = z
   .array(
     z.object({
-      kind: z.enum(['message', 'chat']),
-      chatId: z.string().max(200).nullable(),
-      id: z.string().max(200).nullable().optional(),
-      sender: z.string().max(40).nullable().optional(),
-      ts: z.string().max(60).nullable().optional(),
-      text: z.string().max(10_000).optional(),
+      chatId: z.string().max(40).nullable(),
+      id: z.string().max(40).nullable(),
+      sender: z.string().max(40).nullable(),
+      text: z.string().max(10_000),
     }),
   )
   .max(2_000);
 
 const DOM_BINDING = '__abayaInboundDom';
 
-interface DomRow {
-  kind: 'message' | 'chat';
-  chatId: string | null;
-  id?: string | null;
-  sender?: string | null;
-  ts?: string | null;
-  text?: string;
-}
-
 /**
- * Sección 6.2: escucha la red (XHR + WebSocket) y, de respaldo, el DOM con un
- * MutationObserver. NUNCA hace clics ni escribe (regla 4): solo lee.
+ * Sección 6.2: escucha la red (el caso completo y el tiempo real de ySocial) y, de respaldo, el
+ * DOM con un MutationObserver. NUNCA hace clics ni escribe (regla 4): solo lee.
  */
 export class InboundWatcher {
   /** Respuestas o frames que no cumplieron el esquema (posible cambio de interfaz). */
@@ -63,55 +52,61 @@ export class InboundWatcher {
     await page.addInitScript(installDomObserver, {
       binding: DOM_BINDING,
       messageItem: sel.dom.messageItem,
-      chatContainer: sel.dom.chatContainer,
-      chatListItem: sel.dom.chatListItem,
-      attrs: sel.dom.attrs,
+      idPrefix: sel.dom.messageIdPrefix,
+      body: sel.dom.body,
+      caseHeader: sel.dom.caseHeader,
+      headerCaseId: sel.dom.headerCaseId,
+      senders: sel.dom.senders,
     });
   }
 
   private async onResponse(r: Response) {
-    const m = MESSAGE_URL_PATTERNS.chatMessages.exec(r.url());
-    if (!m || !r.ok() || r.request().method() !== 'GET') return;
+    if (!MESSAGE_URL_PATTERNS.caseMessages.test(r.url())) return;
+    if (!r.ok() || r.request().method() !== 'GET') return;
     let body: unknown;
     try {
       body = await r.json();
     } catch {
       return; // página cerrada o cuerpo no JSON
     }
-    const parsed = parseChatMessagesResponse(body);
+    const parsed = parseCaseResponse(body);
     if (!parsed.ok) return this.parseFailed('xhr', parsed.error);
-    for (const msg of parsed.value) void this.processor.handle(msg, 'network');
+    // La consola pide el caso al recibirlo y con cada mensaje nuevo: también es la señal de
+    // caso asignado (crea la Conversation la primera vez).
+    await this.processor.chatAssigned(parsed.value.abayaChatId);
+    for (const msg of parsed.value.messages) void this.processor.handle(msg, 'network');
   }
 
+  /**
+   * SignalR solo trae ids («llegó un mensaje al caso N»): el contenido llega cuando la consola
+   * pide el caso completo. Aquí solo se valida la forma, para detectar cambios de interfaz.
+   */
   private onWebSocket(ws: WebSocket) {
     if (!MESSAGE_URL_PATTERNS.websocket.test(ws.url())) return;
     ws.on('framereceived', ({ payload }) => {
-      const parsed = parseWsFrame(payload);
-      if (!parsed.ok) return this.parseFailed('ws', parsed.error);
-      const ev = parsed.value;
-      if (ev.kind === 'message') void this.processor.handle(ev.message, 'network');
-      else if (ev.kind === 'chatAssigned') void this.processor.chatAssigned(ev.abayaChatId);
+      const parsed = parseSignalRFrame(payload);
+      if (!parsed.ok) this.parseFailed('ws', parsed.error);
     });
   }
 
+  /**
+   * Respaldo por DOM: solo el caso abierto (el encabezado «Caso #N» da el id). La pantalla no
+   * trae la hora exacta: se usa la de detección; la huella usa el id del mensaje.
+   */
   private onDomRows(raw: unknown) {
     const parsed = domRowsSchema.safeParse(raw);
     if (!parsed.success) return this.parseFailed('dom', 'filas del DOM con forma inválida');
-    const rows: DomRow[] = parsed.data;
-    for (const row of rows) {
-      if (!row.chatId) continue;
-      if (row.kind === 'chat') {
-        void this.processor.chatAssigned(row.chatId);
-        continue;
-      }
+    const now = new Date();
+    for (const row of parsed.data) {
+      if (!row.chatId || !row.id) continue;
       const sender = (sel.dom.senders as Record<string, SenderType>)[row.sender ?? ''];
-      if (!sender || !row.ts || Number.isNaN(Date.parse(row.ts))) continue;
+      if (!sender) continue;
       const msg: InboundMessage = {
         abayaChatId: row.chatId,
-        ...(row.id ? { messageId: row.id } : {}),
+        messageId: row.id,
         sender,
-        text: (row.text ?? '').trim(),
-        occurredAt: new Date(row.ts),
+        text: row.text.trim(),
+        occurredAt: now,
       };
       void this.processor.handle(msg, 'dom');
     }
@@ -127,34 +122,33 @@ export class InboundWatcher {
 function installDomObserver(cfg: {
   binding: string;
   messageItem: string;
-  chatContainer: string;
-  chatListItem: string;
-  attrs: { messageId: string; chatId: string; sender: string; timestamp: string };
+  idPrefix: string;
+  body: string;
+  caseHeader: string;
+  headerCaseId: string;
+  senders: Record<string, string>;
 }) {
   const w = window as unknown as Record<string, (rows: unknown[]) => void>;
+  const caseId = () => {
+    const h = document.querySelector(cfg.caseHeader) as HTMLElement | null;
+    return h ? (new RegExp(cfg.headerCaseId).exec(h.innerText)?.[1] ?? null) : null;
+  };
   const collect = (roots: Node[]) => {
     const rows: unknown[] = [];
+    const chatId = caseId();
     for (const root of roots) {
       if (!(root instanceof Element)) continue;
       const msgs = root.matches(cfg.messageItem)
         ? [root]
         : Array.from(root.querySelectorAll(cfg.messageItem));
       for (const el of msgs) {
-        const chat = el.closest(cfg.chatContainer);
+        const cls = Object.keys(cfg.senders).find((c) => el.classList.contains(c)) ?? null;
         rows.push({
-          kind: 'message',
-          chatId: chat?.getAttribute(cfg.attrs.chatId) ?? null,
-          id: el.getAttribute(cfg.attrs.messageId),
-          sender: el.getAttribute(cfg.attrs.sender),
-          ts: el.getAttribute(cfg.attrs.timestamp),
-          text: (el as HTMLElement).innerText,
+          chatId,
+          id: el.id.startsWith(cfg.idPrefix) ? el.id.slice(cfg.idPrefix.length) : null,
+          sender: cls,
+          text: (el.querySelector(cfg.body) as HTMLElement | null)?.innerText ?? '',
         });
-      }
-      const chats = root.matches(cfg.chatListItem)
-        ? [root]
-        : Array.from(root.querySelectorAll(cfg.chatListItem));
-      for (const el of chats) {
-        rows.push({ kind: 'chat', chatId: el.getAttribute(cfg.attrs.chatId) });
       }
     }
     if (rows.length && typeof w[cfg.binding] === 'function') w[cfg.binding]!(rows);

@@ -1,6 +1,6 @@
 import type { AlertPort, CloseJob, TransferJob } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
-import type { HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
+import type { CloseRequest, HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
 import { sel } from '../abaya/selectors.js';
 import type { HandoffRepository } from './handoff.repository.js';
 
@@ -20,7 +20,7 @@ export const MAX_TRANSFER_RETRIES = 2;
 
 export interface HandoffActor {
   transfer(req: TransferRequest): Promise<HandoffOutcome>;
-  closeConversation(abayaChatId: string): Promise<HandoffOutcome>;
+  closeConversation(req: CloseRequest): Promise<HandoffOutcome>;
 }
 
 /**
@@ -41,30 +41,14 @@ export class HandoffProcessor {
   async transfer(job: TransferJob, attemptsMade: number): Promise<HandoffDecision> {
     if (!(await this.previousMessagesSettled(job.afterMessageIds))) return 'WAIT';
 
-    let note: string | undefined;
-    if (job.target === 'BACKOFFICE') {
-      const sale = await this.d.repo.sale(job.conversationId);
-      if (!sale) return this.review(job, 'transferencia a backoffice sin venta registrada');
-      note = sale.noteOk ? undefined : sale.summary;
-    } else {
-      note = `Escalado por el agente RPA: el cliente necesita atención humana.\nConversación: ${job.conversationId}`;
-    }
+    if (job.target === 'BACKOFFICE' && !(await this.d.repo.sale(job.conversationId)))
+      return this.review(job, 'transferencia a backoffice sin venta registrada');
 
+    // ySocial: la venta se entrega con «Finalizar» (el resumen queda en la venta del panel).
     const outcome = await this.d.actor.transfer({
       abayaChatId: job.abayaChatId,
-      ...(note ? { note } : {}),
-      queueLabel:
-        job.target === 'BACKOFFICE'
-          ? sel.transfer.backofficeQueueLabel
-          : sel.transfer.humanQueueLabel,
+      target: job.target,
     });
-    if (
-      outcome.result !== 'BLOCKED_KILL_SWITCH' &&
-      outcome.noteWritten &&
-      job.target === 'BACKOFFICE'
-    ) {
-      await this.d.repo.markNoteOk(job.conversationId);
-    }
 
     switch (outcome.result) {
       case 'OK':
@@ -87,7 +71,10 @@ export class HandoffProcessor {
 
   async close(job: CloseJob): Promise<HandoffDecision> {
     if (!(await this.previousMessagesSettled(job.afterMessageIds))) return 'WAIT';
-    const outcome = await this.d.actor.closeConversation(job.abayaChatId);
+    const outcome = await this.d.actor.closeConversation({
+      abayaChatId: job.abayaChatId,
+      tag: sel.finish.tags[job.reason],
+    });
     if (outcome.result === 'OK') return 'DONE';
     if (outcome.result === 'BLOCKED_KILL_SWITCH') return 'BLOCKED';
     // Un cierre fallido no pierde ventas: alerta alta y revisión.

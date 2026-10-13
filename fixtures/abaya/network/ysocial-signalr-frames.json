@@ -1,0 +1,8 @@
+[
+  "{\"protocol\":\"json\",\"version\":1}\u001e",
+  "{}\u001e",
+  "{\"type\":6}\u001e",
+  "{\"type\":1,\"target\":\"receive\",\"arguments\":[{\"forAgents\":true,\"method\":\"NewMessageFromAssignedCase\",\"createdAt\":\"2026-10-09T08:54:15.1-05:00\",\"moreInfo\":{\"caseId\":9000000001,\"messageId\":7000000004,\"inAgentQueues\":true,\"queueName\":\"Servicios Moviles Organica\"}}]}\u001e",
+  "{\"type\":1,\"target\":\"receive\",\"arguments\":[{\"forAgents\":true,\"method\":\"WhatsappMessageStatusChange\",\"createdAt\":\"2026-10-09T08:51:49.7-05:00\",\"moreInfo\":{\"caseId\":9000000001,\"messageId\":7000000003,\"parameters\":{\"Reply\":\"x\",\"MessageType\":\"1\",\"wid\":\"w\",\"Sent\":\"True\",\"SentDate\":\"2026-10-09T13:51:49.0000000Z\",\"SentAt\":\"1791549109\"}}}]}\u001e{\"type\":1,\"target\":\"receive\",\"arguments\":[{\"forAgents\":true,\"method\":\"WhatsappMessageStatusChange\",\"createdAt\":\"2026-10-09T08:51:50.7-05:00\",\"moreInfo\":{\"caseId\":9000000001,\"messageId\":7000000003,\"parameters\":{\"Sent\":\"True\",\"Delivered\":\"True\",\"Read\":\"True\"}}}]}\u001e",
+  "{\"type\":1,\"target\":\"receive\",\"arguments\":[{\"forAgents\":true,\"method\":\"ServiceChanged\",\"createdAt\":\"2026-10-09T08:55:00.0-05:00\",\"moreInfo\":{\"serviceId\":2,\"eventType\":1,\"service\":{}}}]}\u001e"
+]

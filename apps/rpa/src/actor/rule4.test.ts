@@ -49,8 +49,9 @@ describe('regla 3: selectores solo en selectors.ts', () => {
     const allowed = new Set(['abaya/selectors.ts']);
     const offenders = sources
       .filter((s) => !allowed.has(s.path))
-      // El observador del DOM recibe sus selectores desde selectors.ts como parámetros.
-      .filter((s) => SELECTOR_CALL.test(s.code.replace(/querySelectorAll?\(cfg\.\w+\)/g, '')))
+      // El código que corre en la página recibe sus selectores desde selectors.ts como
+      // parámetros (`cfg.*`).
+      .filter((s) => SELECTOR_CALL.test(s.code.replace(/querySelector(All)?\(cfg\.\w+\)/g, '')))
       .map((s) => s.path);
     expect(offenders).toEqual([]);
   });

@@ -1,5 +1,5 @@
 import type { FieldCipher } from '@abaya/crypto';
-import { inboundAad } from '@abaya/domain';
+import { audioAad, inboundAad } from '@abaya/domain';
 import type { InboundQueue } from './inbound-queue.js';
 import type { InboundRepository } from './inbound.repository.js';
 
@@ -10,6 +10,15 @@ export interface InboundToStore {
   text: string;
   via: 'network' | 'dom';
   occurredAt: Date;
+  /** D-010: nota de voz. `data` null = el robot no pudo descargarla (se responde con plantilla). */
+  media?: InboundAudioToStore;
+}
+
+export interface InboundAudioToStore {
+  kind: 'AUDIO';
+  mimeType: string | null;
+  durationSec: number | null;
+  data: Buffer | null;
 }
 
 /**
@@ -38,6 +47,10 @@ export class DirectInboundSink implements InboundSink {
 
   async chatAssigned(abayaChatId: string) {
     const c = await this.conversation(abayaChatId);
+    // D-017: caso nuevo → turno de apertura (el robot saluda con el menú sin esperar mensaje).
+    if (c.created) {
+      await this.d.queue.enqueue({ conversationId: c.id, abayaChatId, opening: true });
+    }
     return { created: c.created };
   }
 
@@ -45,9 +58,22 @@ export class DirectInboundSink implements InboundSink {
     const conv = await this.conversation(m.abayaChatId);
     const r = await this.d.repo.insertInbound(conv.id, {
       fingerprint: m.fingerprint,
-      bodyEncrypted: this.d.cipher.encrypt(m.text, inboundAad(m.fingerprint)),
+      // D-010: el texto de una nota de voz es su transcripción; hasta tenerla, vacío.
+      bodyEncrypted: this.d.cipher.encrypt(m.media ? '' : m.text, inboundAad(m.fingerprint)),
       detectedVia: m.via,
       occurredAt: m.occurredAt,
+      ...(m.media
+        ? {
+            media: {
+              mimeType: m.media.mimeType,
+              durationSec: m.media.durationSec,
+              audioEncrypted:
+                m.media.data && m.media.data.length
+                  ? this.d.cipher.encrypt(m.media.data, audioAad(m.fingerprint))
+                  : null,
+            },
+          }
+        : {}),
     });
     if (r.inserted) {
       await this.d.queue.enqueue({

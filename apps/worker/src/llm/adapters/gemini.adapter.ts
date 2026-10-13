@@ -75,6 +75,7 @@ export class GeminiLlmAdapter implements LlmPort {
         `gemini bloqueado ${res.promptFeedback.blockReason}`,
         this.provider,
         false,
+        false,
       );
     }
     const candidate = res.candidates?.[0];
@@ -82,6 +83,7 @@ export class GeminiLlmAdapter implements LlmPort {
       throw new LlmProviderError(
         `gemini ${candidate?.finishReason ?? 'vacío'}`,
         this.provider,
+        false,
         false,
       );
     }

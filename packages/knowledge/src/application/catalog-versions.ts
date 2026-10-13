@@ -17,6 +17,18 @@ import {
   type DocumentUse,
   type VersionChunkData,
 } from '../domain/documents.js';
+import {
+  checkPlanImages,
+  recordsFromImages,
+  diffImages,
+  isEmptyImageDiff,
+  parseImageDiscounts,
+  parseImageProcesses,
+  type ImageDiff,
+  type PlanImageCard,
+  type PlanImageSourceData,
+  type VersionImageData,
+} from '../domain/images.js';
 
 /**
  * Versiones de un Brain (D-001 D3): cada cambio de fuentes arma un BORRADOR con lo que dan las
@@ -40,20 +52,23 @@ export class KnowledgeError extends Error {
 export interface VersionContent {
   records: CatalogRecordData[];
   chunks: VersionChunkData[];
+  /** D-011: imágenes de planes (ausente = ninguna). */
+  images?: VersionImageData[];
 }
 
-/** Diferencias de una versión: catálogo (registro por registro) y documentos (por fuente). */
-export type BrainDiff = CatalogDiff & { documents: DocumentDiff };
+/** Diferencias de una versión: catálogo (registro por registro), documentos e imágenes. */
+export type BrainDiff = CatalogDiff & { documents: DocumentDiff; images?: ImageDiff };
 
 export function diffContent(before: VersionContent, after: VersionContent): BrainDiff {
   return {
     ...diffCatalogs(before.records, after.records),
     documents: diffDocuments(before.chunks, after.chunks),
+    images: diffImages(before.images ?? [], after.images ?? []),
   };
 }
 
 export function isEmptyBrainDiff(d: BrainDiff): boolean {
-  return isEmptyDiff(d) && isEmptyDocumentDiff(d.documents);
+  return isEmptyDiff(d) && isEmptyDocumentDiff(d.documents) && isEmptyImageDiff(d.images);
 }
 
 const RECORD_SELECT = {
@@ -147,12 +162,44 @@ export async function versionChunks(db: Db, versionId: string): Promise<StoredCh
   }));
 }
 
+export interface StoredImage extends VersionImageData {
+  id: string;
+}
+
+/** Imágenes de planes de una versión, en el orden en que se envían. */
+export async function versionImages(db: Db, versionId: string): Promise<StoredImage[]> {
+  const rows = await db.versionImage.findMany({
+    where: { brainVersionId: versionId },
+    orderBy: [{ ord: 'asc' }, { sourceName: 'asc' }],
+  });
+  return rows.map((i) => ({
+    id: i.id,
+    sourceName: i.sourceName,
+    sourceHash: i.sourceHash,
+    blobRef: i.blobRef,
+    mime: i.mime,
+    sizeBytes: i.sizeBytes,
+    processes: parseImageProcesses(i.processes),
+    ord: i.ord,
+    cards: (i.cards ?? []) as unknown as PlanImageCard[],
+    videoApps: i.videoApps,
+  }));
+}
+
+/** D-011: problemas de las imágenes de una versión contra su propio catálogo (vacío = publicable). */
+export async function imageProblems(db: Db, versionId: string): Promise<string[]> {
+  const images = await versionImages(db, versionId);
+  if (!images.length) return [];
+  return checkPlanImages(images, await versionRecords(db, versionId)).problems;
+}
+
 export async function versionContent(db: Db, versionId: string): Promise<VersionContent> {
-  const [records, chunks] = await Promise.all([
+  const [records, chunks, images] = await Promise.all([
     versionRecords(db, versionId),
     versionChunks(db, versionId),
+    versionImages(db, versionId),
   ]);
-  return { records, chunks };
+  return { records, chunks, images };
 }
 
 export function publishedVersion(db: Db, brainId: string) {
@@ -213,6 +260,22 @@ async function writeContent(
       })),
     });
   }
+  if (content.images?.length) {
+    await tx.versionImage.createMany({
+      data: content.images.map((i) => ({
+        brainVersionId: versionId,
+        sourceName: i.sourceName,
+        sourceHash: i.sourceHash,
+        blobRef: i.blobRef,
+        mime: i.mime,
+        sizeBytes: i.sizeBytes,
+        processes: i.processes,
+        ord: i.ord,
+        cards: i.cards as unknown as Prisma.InputJsonValue,
+        videoApps: i.videoApps ?? false,
+      })),
+    });
+  }
 }
 
 /**
@@ -249,6 +312,7 @@ export async function replaceDraft(
         if (working?.status === 'DRAFT') {
           await tx.catalogRecord.deleteMany({ where: { brainVersionId: working.id } });
           await tx.versionChunk.deleteMany({ where: { brainVersionId: working.id } });
+          await tx.versionImage.deleteMany({ where: { brainVersionId: working.id } });
           await tx.brainVersion.update({
             where: { id: working.id },
             data: {
@@ -292,7 +356,11 @@ export async function contentFromSources(db: Db, brainId: string): Promise<Versi
     orderBy: { createdAt: 'asc' },
     select: {
       use: true,
+      kind: true,
       name: true,
+      mime: true,
+      sizeBytes: true,
+      blobRef: true,
       contentHash: true,
       lastContentHash: true,
       metadata: true,
@@ -302,9 +370,33 @@ export async function contentFromSources(db: Db, brainId: string): Promise<Versi
   });
   const records: CatalogRecordData[] = [];
   const chunks: VersionChunkData[] = [];
+  const images: VersionImageData[] = [];
   for (const s of sources) {
     if (s.use === 'CATALOG') {
       if (Array.isArray(s.parsed)) records.push(...(s.parsed as unknown as CatalogRecordData[]));
+      continue;
+    }
+    if (s.use === 'IMAGE') {
+      const parsed = s.parsed as unknown as PlanImageSourceData | null;
+      if (parsed && s.blobRef && s.mime) {
+        const processes = parseImageProcesses(parsed.processes);
+        const videoApps = parsed.videoApps === true;
+        // D-016: el descuento por proceso se escribe en el panel (metadato de la fuente).
+        const discounts = parseImageDiscounts(s.metadata, videoApps ? SALE_PROCESSES : processes);
+        images.push({
+          sourceName: s.name,
+          sourceHash: s.contentHash,
+          blobRef: s.blobRef,
+          mime: s.mime,
+          sizeBytes: s.sizeBytes,
+          processes,
+          // Orden de carga: así las envía el agente.
+          ord: images.length,
+          cards: parsed.cards ?? [],
+          videoApps,
+          ...(Object.keys(discounts).length ? { discounts } : {}),
+        });
+      }
       continue;
     }
     for (const c of s.chunks) {
@@ -321,7 +413,9 @@ export async function contentFromSources(db: Db, brainId: string): Promise<Versi
       });
     }
   }
-  return { records, chunks };
+  // D-014: sin Excel, el catálogo sale de lo leído en las imágenes (verificado en el panel).
+  if (!records.length && images.length) records.push(...recordsFromImages(images));
+  return { records, chunks, images };
 }
 
 /** Registros del catálogo de las fuentes listas (compatibilidad con K1). */

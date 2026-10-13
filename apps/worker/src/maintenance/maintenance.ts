@@ -18,24 +18,37 @@ export async function conversationsWithPendingInbound(prisma: PrismaClient): Pro
 
 /**
  * Cierre por inactividad (sección 6.6): sin mensajes del cliente durante `minutes` y sin
- * nada pendiente. El cierre en Abaya lo hace el rpa al consumir el evento.
+ * nada pendiente (o, con `ids`, las que ya agotaron la reactivación, D-013). El cierre en Abaya
+ * lo hace el rpa al consumir el evento.
+ *
+ * D-013: si el cliente ya autorizó (hay venta) y se quedó callado al pedirle los datos, la
+ * venta NO se cierra: se finaliza y pasa al backoffice, que lo contacta.
  */
 export async function closeInactive(
   prisma: PrismaClient,
   now: Date,
   minutes: number,
+  ids?: readonly string[],
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - minutes * 60_000);
   const candidates = await prisma.conversation.findMany({
     where: {
       status: { in: [...OPEN_STATUSES] },
       messages: { none: { direction: 'INBOUND', processedAt: null } },
-      OR: [{ lastInboundAt: { lt: cutoff } }, { lastInboundAt: null, createdAt: { lt: cutoff } }],
+      ...(ids
+        ? { id: { in: [...ids] } }
+        : {
+            OR: [
+              { lastInboundAt: { lt: cutoff } },
+              { lastInboundAt: null, createdAt: { lt: cutoff } },
+            ],
+          }),
     },
-    select: { id: true, abayaChatId: true, robotUser: true },
+    select: { id: true, abayaChatId: true, robotUser: true, sale: { select: { id: true } } },
   });
   let closed = 0;
   for (const c of candidates) {
+    const sold = !!c.sale;
     await prisma.$transaction(async (tx) => {
       // Condición repetida: si entró un mensaje o cambió el estado mientras tanto, no cerrar.
       const r = await tx.conversation.updateMany({
@@ -44,21 +57,22 @@ export async function closeInactive(
           status: { in: [...OPEN_STATUSES] },
           messages: { none: { direction: 'INBOUND', processedAt: null } },
         },
-        data: { status: 'CLOSED_INACTIVE' },
+        data: sold
+          ? { status: 'TRANSFERRING', stage: 'TRANSFERENCIA' }
+          : { status: 'CLOSED_INACTIVE' },
       });
       if (r.count === 0) return;
       closed++;
+      const base = {
+        conversationId: c.id,
+        abayaChatId: c.abayaChatId,
+        robotUser: c.robotUser,
+        afterMessageIds: [],
+      };
       await tx.outboxEvent.create({
-        data: {
-          type: 'ConversationClosed',
-          payload: {
-            conversationId: c.id,
-            abayaChatId: c.abayaChatId,
-            robotUser: c.robotUser,
-            reason: 'INACTIVE',
-            afterMessageIds: [],
-          },
-        },
+        data: sold
+          ? { type: 'TransferRequested', payload: { ...base, target: 'BACKOFFICE' } }
+          : { type: 'ConversationClosed', payload: { ...base, reason: 'INACTIVE' } },
       });
     });
   }
@@ -121,6 +135,25 @@ export async function purgeExpiredConversations(
     purged += ids.length;
     if (ids.length < batch) return purged;
   }
+}
+
+/**
+ * D-010: borra el audio cifrado de las notas de voz que siguen esperando después de `hours`
+ * (conversación cerrada o en revisión antes del turno). La nota queda FAILED, sin audio.
+ */
+export async function purgeStaleVoiceAudio(
+  prisma: PrismaClient,
+  now: Date,
+  hours = 24,
+): Promise<number> {
+  const r = await prisma.message.updateMany({
+    where: {
+      mediaEncrypted: { not: null },
+      createdAt: { lt: new Date(now.getTime() - hours * 3_600_000) },
+    },
+    data: { mediaEncrypted: null, transcriptStatus: 'FAILED' },
+  });
+  return r.count;
 }
 
 // ---------- monitor de alertas (sección 11) ----------

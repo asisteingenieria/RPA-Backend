@@ -17,13 +17,20 @@ import {
   estimateTokens,
   normalizeDocumentText,
 } from '../domain/documents.js';
-import type {
-  BlobStore,
-  DocumentParser,
-  EmbeddingProvider,
-  FileKind,
-  TableParser,
-  WebFetcher,
+import {
+  parseImageProcesses,
+  parseVideoAppsFlag,
+  type PlanImageSourceData,
+} from '../domain/images.js';
+import {
+  ImageReadError,
+  type BlobStore,
+  type DocumentParser,
+  type EmbeddingProvider,
+  type FileKind,
+  type PlanImageReader,
+  type TableParser,
+  type WebFetcher,
 } from '../domain/ports.js';
 import { FileRejected } from '../infrastructure/file-detection.js';
 import { WebFetchError } from '../infrastructure/web-fetcher.js';
@@ -39,6 +46,8 @@ export interface IngestionDeps {
   web?: WebFetcher;
   /** K4: null o ausente = búsqueda solo por texto completo. */
   embeddings?: EmbeddingProvider | null;
+  /** D-011: lectura de los planes de una imagen (null o ausente = no se pueden cargar imágenes). */
+  images?: PlanImageReader | null;
   /** K3: máximo de tokens de una fuente de contexto completo. */
   fullContextMaxTokens?: number;
   log?: (msg: string, data: Record<string, unknown>) => void;
@@ -110,6 +119,7 @@ export async function ingestSource(
   let records = 0;
   try {
     if (source.use === 'CATALOG') records = await ingestCatalog(d, source);
+    else if (source.use === 'IMAGE') await ingestImage(d, source);
     else await ingestDocument(d, source);
   } catch (err) {
     if (err instanceof ContentError) return fail(err.message, err.issues);
@@ -192,6 +202,53 @@ async function ingestCatalog(d: IngestionDeps, source: SourceRow): Promise<numbe
     },
   });
   return records.length;
+}
+
+/**
+ * D-011: lee los planes (código, GB, precio) de la imagen. La comparación con el catálogo se
+ * hace sobre la versión (el catálogo puede cambiar después): aquí solo se guarda lo leído.
+ */
+async function ingestImage(d: IngestionDeps, source: SourceRow): Promise<void> {
+  if (!d.images) {
+    throw new ContentError(
+      'la lectura de imágenes no está configurada en el worker (requiere GEMINI_API_KEY)',
+    );
+  }
+  if (!source.blobRef || !source.mime) throw new ContentError('la imagen no tiene contenido');
+  const meta = source.metadata as Record<string, unknown> | null;
+  const processes = parseImageProcesses(meta?.procesos);
+  // D-014: circular de apps de video (aplica a todos los procesos).
+  const videoApps = parseVideoAppsFlag(meta?.appsVideo);
+  if (!processes.length) throw new ContentError('la imagen no tiene proceso asignado');
+  const bytes = await d.blobs.get(source.blobRef);
+  let cards;
+  try {
+    cards = await d.images.read(bytes, source.mime);
+  } catch (err) {
+    if (err instanceof ImageReadError && !err.transient) {
+      throw new ContentError(`no se pudo leer la imagen: ${err.message}`);
+    }
+    throw err;
+  }
+  const parsed: PlanImageSourceData = {
+    processes,
+    cards,
+    model: d.images.model,
+    ...(videoApps ? { videoApps: true } : {}),
+  };
+  await d.prisma.knowledgeSource.update({
+    where: { id: source.id },
+    data: {
+      status: 'READY',
+      errorReason: null,
+      issues: (cards.length
+        ? []
+        : [{ message: 'no se leyó ningún plan en la imagen' }]) as Prisma.InputJsonValue,
+      parsed: parsed as unknown as Prisma.InputJsonValue,
+      lastContentHash: source.contentHash,
+      lastIngestedAt: new Date(),
+    },
+  });
 }
 
 async function ingestDocument(d: IngestionDeps, source: SourceRow): Promise<void> {
