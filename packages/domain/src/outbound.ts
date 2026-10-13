@@ -10,6 +10,9 @@ export function outboundAad(idempotencyKey: string): string {
 export type RpaAction = 'LOGIN' | 'OPEN_CHAT' | 'SEND' | 'NOTE' | 'TRANSFER' | 'CLOSE';
 export type RpaActionResult = 'OK' | 'ERROR' | 'UNCERTAIN' | 'BLOCKED' | 'SKIPPED';
 
+/** AAD de un archivo de los Brains (KnowledgeBlob): lo comparten el servidor y la persistencia del robot. */
+export const knowledgeBlobAad = (id: string) => `knowledge-blob:${id}`;
+
 export const profileAad = (conversationId: string) => `profile:${conversationId}`;
 export const saleAad = (conversationId: string) => `sale:${conversationId}`;
 export const consentAad = (conversationId: string) => `consent:${conversationId}`;

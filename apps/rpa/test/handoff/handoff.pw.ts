@@ -15,11 +15,10 @@ import { MemorySessionRepository } from '../../src/session/session.repository.js
 import { MemoryStorageStateStore } from '../../src/session/storage-state.store.js';
 import { MockAbayaServer } from '../mock-abaya/mock-server.js';
 
-// E2E de F6 (secciones 6.5 y 6.6) contra el Abaya simulado.
+// E2E de F6 (secciones 6.5 y 6.6) contra el Abaya (ySocial) simulado.
 
 const silent = createLogger('e2e', { level: 'silent' });
-const SUMMARY =
-  '*VENTA AGENTE RPA*\nProceso: PORTABILIDAD\nPlan: P1 - Plan Porta Básico (DEMO)\nCliente: Ana';
+const SUMMARY = '*VENTA AGENTE RPA*\nProceso: PORTABILIDAD';
 
 async function boot(mock: MockAbayaServer) {
   const driver = new PlaywrightSessionDriver({ baseUrl: mock.url, headless: true });
@@ -64,29 +63,26 @@ test.afterEach(async () => {
   await mock.stop();
 });
 
-test('venta: nota con el resumen, transferencia al backoffice y el chat sale de la bandeja', async () => {
+test('venta: «Finalizar» sin cerrar el caso lo entrega al backoffice y sale de la bandeja', async () => {
   const t = await boot(mock);
   const decision = await t.processor.transfer(
-    { conversationId: 'conv-1', abayaChatId: 'CH-1001', target: 'BACKOFFICE', afterMessageIds: [] },
+    { conversationId: 'conv-1', abayaChatId: '1001', target: 'BACKOFFICE', afterMessageIds: [] },
     0,
   );
   expect(decision).toBe('DONE');
-  expect(mock.notes).toEqual([{ chatId: 'CH-1001', note: SUMMARY }]);
-  expect(mock.transfers).toEqual([{ chatId: 'CH-1001', queue: 'backoffice' }]);
-  expect(mock.chat('CH-1001')).toBeUndefined();
+  expect(mock.transfers).toEqual([{ chatId: '1001' }]);
+  expect(mock.closed).toEqual([]);
+  expect(mock.chat('1001')).toBeUndefined();
   expect(t.repo.transferred).toEqual([{ conversationId: 'conv-1', target: 'BACKOFFICE' }]);
-  expect(t.actionLog.entries.map((e) => `${e.action}:${e.result}`)).toEqual([
-    'NOTE:OK',
-    'TRANSFER:OK',
-  ]);
+  expect(t.actionLog.entries.map((e) => `${e.action}:${e.result}`)).toEqual(['TRANSFER:OK']);
   await t.mgr.stop();
 });
 
-test('transferencia fallida forzada: NEEDS_REVIEW y alerta crítica', async () => {
+test('finalizar fallido forzado: NEEDS_REVIEW y alerta crítica', async () => {
   const t = await boot(mock);
   mock.failTransfer = true;
   const decision = await t.processor.transfer(
-    { conversationId: 'conv-1', abayaChatId: 'CH-1001', target: 'BACKOFFICE', afterMessageIds: [] },
+    { conversationId: 'conv-1', abayaChatId: '1001', target: 'BACKOFFICE', afterMessageIds: [] },
     0,
   );
   expect(decision).toBe('NEEDS_REVIEW');
@@ -94,33 +90,38 @@ test('transferencia fallida forzada: NEEDS_REVIEW y alerta crítica', async () =
   expect(t.alerts.raised).toEqual([
     expect.objectContaining({ code: 'SALE_NOT_TRANSFERRED', severity: 'CRITICA' }),
   ]);
-  // La nota quedó escrita: un reintento manual no la duplica.
-  expect((await t.repo.sale('conv-1'))?.noteOk).toBe(true);
   await t.mgr.stop();
 });
 
-test('escalamiento: transfiere a la cola de asesores humanos', async () => {
+test('escalamiento a humano: sin definir en ySocial → no toca Abaya, revisión y alerta', async () => {
   const t = await boot(mock);
   expect(
     await t.processor.transfer(
-      { conversationId: 'conv-2', abayaChatId: 'CH-1002', target: 'HUMAN', afterMessageIds: [] },
+      { conversationId: 'conv-2', abayaChatId: '1002', target: 'HUMAN', afterMessageIds: [] },
       0,
     ),
-  ).toBe('DONE');
-  expect(mock.transfers).toEqual([{ chatId: 'CH-1002', queue: 'asesores' }]);
+  ).toBe('NEEDS_REVIEW');
+  expect(mock.transfers).toEqual([]);
+  expect(mock.chat('1002')).toBeDefined();
+  expect(t.alerts.raised).toEqual([
+    expect.objectContaining({ code: 'ESCALATION_NOT_TRANSFERRED', severity: 'ALTA' }),
+  ]);
   await t.mgr.stop();
 });
 
-test('cierre sin venta: el chat se cierra y sale de la bandeja', async () => {
+test('cierre sin venta: «Finalizar y cerrar el caso» con la etiqueta del motivo', async () => {
   const t = await boot(mock);
   expect(
     await t.processor.close({
       conversationId: 'conv-3',
-      abayaChatId: 'CH-1002',
+      abayaChatId: '1002',
       reason: 'SUPPORT',
       afterMessageIds: [],
     }),
   ).toBe('DONE');
-  expect(mock.closed).toEqual(['CH-1002']);
+  expect(mock.closed).toEqual(['1002']);
+  expect(mock.tags).toEqual([
+    { chatId: '1002', tags: ['SAC - Ecommerce Movil - Detalle plan movil'] },
+  ]);
   await t.mgr.stop();
 });

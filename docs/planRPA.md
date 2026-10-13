@@ -1,9 +1,11 @@
 # Plan del proyecto: Agente RPA de ventas en Abaya
 
-> Proyecto nuevo · Versión 1.9 · Octubre 2026
+> Proyecto nuevo · Versión 1.10 · Octubre 2026
 > Cambio v1.1: motor de conversación propio con API directa de LLM (reemplaza a Retell)
 > Cambio v1.8: configuración del agente en el panel (guion en un bloque de texto, estilo Dapta/Retell), sección 6.3.8
 > Cambio v1.9: Brains (bases de conocimiento); fase K1 = catálogo de planes versionado y publicado con evaluación, sección 6.3.9 y docs/DECISIONS.md (D-001)
+> Cambio v1.10: Abaya real es ySocial (D-012); plantillas de la campaña (D-013); oferta solo con imágenes de los planes, el robot las pega en Abaya, menú C/D y línea nueva, descripción de un plan y reactivación de la campaña (D-014). Secciones 6.3.2, 6.3.10, 6.4 y 6.6
+> Cambio v1.11: la conversación se configura en el panel (plantillas del sistema y flujo), D-015, sección 6.3.8
 > Herramienta de desarrollo: Claude Code
 > Estado: listo para iniciar
 
@@ -523,6 +525,10 @@ model Robot {                    // registro de robots hijos (v1.4, sección 2.6
 5. Chat nuevo asignado → crear `Conversation` en estado inicial.
 6. **Barrido de mensajes no detectados** *(v1.5)*: cada 15 s el robot lee la bandeja; si un chat tiene no leídos y el sistema no tiene nada en curso para él (ni entrantes sin atender ni respuestas por enviar), lo abre por el `BrowserActor` para que la lectura normal recupere el mensaje. Cubre cortes del WebSocket (recargas de página, red). Encontrado por la prueba de carga: abrir un chat recargaba la página y un mensaje de otro chat llegado en ese instante se perdía.
 
+*(D-017, 13/10/2026)* Al asignarse un caso nuevo el robot **abre la conversación**: envía el saludo
+con el menú sin esperar un mensaje del cliente (como la asesora en la grabación). Los mensajes que el
+cliente le escribió antes al bot de ySocial quedan como historial.
+
 ### 6.3 Motor de conversación
 
 **Principio:** el código decide *qué* pasa; el modelo solo decide *cómo decirlo*. El modelo nunca es fuente de datos.
@@ -604,7 +610,7 @@ Si falla: **regenerar una vez** con el error explicado al modelo. Si vuelve a fa
 - Temperatura baja (0–0.3).
 - Contexto mínimo: instrucciones del estado actual, perfil extraído, catálogo filtrado al proceso y últimos N mensajes (con resumen si la conversación es larga).
 - *Prompt caching* de la parte fija del prompt para bajar latencia y costo.
-- Timeout de 8 s y 1 reintento *(v1.5; antes 15 s)*; si el proveedor falla y hay proveedor de respaldo (`LLM_FALLBACK_PROVIDER`), se usa el respaldo; si también falla, conversación a `NEEDS_REVIEW` y alerta.
+- Timeout por llamada configurable (`LLM_TIMEOUT_MS`, 15 s con el guion de Dapta; D-007) y 1 reintento; si el proveedor falla y hay proveedor de respaldo (`LLM_FALLBACK_PROVIDER`), se usa el respaldo; si también falla, **se pausan todos los robots** (apagado de emergencia con motivo `LLM_OUTAGE`), los mensajes quedan pendientes y se responden cuando un ADMIN reanuda *(D-009; antes, conversación a `NEEDS_REVIEW`)*. Si el cliente lleva 2 min sin respuesta, recibe un mensaje de espera de plantilla.
 - Prompts versionados en `AgentConfigVersion` *(v1.8; antes `PromptVersion`, que queda como histórico)* y editados desde el panel (sección 6.3.8); ningún cambio sale a producción sin pasar la suite de evaluación (sección 12).
 
 #### 6.3.7 Elección del proveedor
@@ -624,6 +630,14 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
 - **Probar agente** (como en Dapta/Retell): chat de simulación en el panel que corre turnos del motor real (máquina de estados, catálogo, plantillas y validadores) en el worker, por la cola `abaya.agent-test`. Muestra las respuestas, su origen (plantilla, modelo validado, regenerado, respuesta segura), los eventos (consentimiento, transferencia, cierre, escalado) y el estado (etapa y datos extraídos). No toca Abaya ni guarda la conversación. Un `ADMIN` prueba lo que hay en el editor (revisado, aunque no esté guardado); un `OPERADOR`, la versión publicada.
 - Permisos: ver y probar la versión publicada, ambos roles; guardar, publicar, restaurar y probar el editor, solo `ADMIN`. Los cambios quedan en `AdminAuditLog`.
 
+- **D-015 (13/10/2026): la conversación se configura en el panel.** Además del guion, la versión
+  del agente lleva las **plantillas del sistema** (soporte, escalar, transferencia, respuesta
+  segura, espera, no autoriza, confirmaciones y nota de voz) y el **flujo**: opciones del menú y a
+  qué lleva cada una, datos que se piden por proceso y su primera plantilla, qué hacer con lo que
+  está fuera de alcance en cada etapa y el orden de las imágenes. Un cambio de conversación no toca
+  código; el código queda para la seguridad (reglas de la sección 7) y para acciones nuevas en
+  Abaya. Detalle en `docs/DECISIONS.md` (D-015).
+
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 
 Diseño completo y decisiones en `docs/DECISIONS.md` (D-001). Resumen de lo que cambia en K1:
@@ -635,6 +649,36 @@ Diseño completo y decisiones en `docs/DECISIONS.md` (D-001). Resumen de lo que 
 - Solo `ADMIN` edita y publica (permiso `publicarConocimiento` en el código). Archivos cifrados en PostgreSQL detrás del puerto `BlobStore` (no hay S3).
 - Fases siguientes (K2 panel, K3 contexto completo, K4 RAG con pgvector, K5 páginas web) en `docs/DECISIONS.md`.
 
+#### 6.3.10 Oferta con imágenes y perfilamiento de la campaña *(cambio v1.10, D-013 y D-014)*
+
+- **Menú.** A = cambio de operador (Portabilidad) y B = de recargas a pospago (Migración); cada
+  opción abre su perfilamiento con las plantillas de la campaña (A: operador → uso → red social;
+  B: uso → red social). **Línea nueva** (opción interna `E`, no está en el menú) solo si el cliente
+  pide explícitamente una línea o un número nuevo. **C y D:** el código pregunta «¿en qué te puedo
+  ayudar?»; si la respuesta es una compra sigue la venta, si no va la plantilla de chat exclusivo
+  de ventas (sin cerrar) y «no gracias» lleva a la despedida. Un tema de servicio al cliente
+  escrito en el menú sin elegir letra (roaming, saldo, señal, factura, cambio o cancelación del
+  plan, quejas) se trata como la opción C: la misma plantilla con los números de atención, nunca
+  el paso a un asesor (`FUERA_DE_ALCANCE` en `MENU` → soporte).
+- **Catálogo desde imágenes.** Un Brain sin Excel toma los planes de lo que Gemini lee en cada
+  tarjeta (código, GB, para compartir, qué incluye, apps, llamadas, precio). Se ofrece **solo con
+  imágenes** (`{{IMAGENES}}`), en el orden que fija el flujo para cada proceso (13/10/2026: en
+  Portabilidad y Migración primero las propias de la opción y después las compartidas; en Línea nueva
+  primero la del plan más caro) y, ante una objeción, las demás. El pie de foto es
+  el texto del modelo, en singular o plural según los planes que muestra la imagen (el código se lo
+  indica).
+- **Descuento por imagen** *(D-016)*: cada imagen puede llevar, por proceso, un comentario de
+  descuento («✅Descuento del 25% en la 1 y 2 facturación») que pasa al campo Descuento de sus
+  planes; el agente lo ofrece solo para esos planes y sus cifras se verifican.
+- **Circular de apps de video** (`{{IMAGENES_VIDEO}}`): nunca en la primera oferta; después, solo la
+  imagen de la plataforma que nombró el cliente (Netflix, Disney+, WIN), una vez por plataforma.
+- **Explicar un plan** (`{{DETALLE:CODIGO}}`): frase del modelo + la descripción con el formato de la
+  campaña (👉🏻 minutos, gigas, apps, lo que incluye y el cargo fijo), armada por el código con los
+  datos del registro.
+- **Reactivación:** si el cliente calla tras un mensaje del robot, cada 2 min una plantilla de
+  reactivación distinta (no se repiten en la conversación), 3 intentos; agotados, se finaliza en
+  Abaya con «Cliente abandona conversación». Una venta autorizada pasa al backoffice.
+
 ### 6.4 Envío
 
 1. Verificar `KillSwitch`.
@@ -644,6 +688,11 @@ Diseño completo y decisiones en `docs/DECISIONS.md` (D-001). Resumen de lo que 
 5. Escribir respetando saltos de línea y formato de WhatsApp (`*negrita*`).
 6. Enviar y esperar que el mensaje aparezca **confirmado por el servidor** (no basta el pintado optimista de la interfaz) y que haya **uno más** que antes de enviar (un texto repetido no se confunde con el anterior). Timeout 10 s.
 7. Resultado: `SENT_VERIFIED` o `UNCERTAIN`. Un `UNCERTAIN` **nunca** se reintenta solo: pasa a revisión.
+8. **Imagen de planes** *(v1.10, D-014)*: como la asesora, se escribe el pie de foto, se **pega** la
+   imagen en la caja (ySocial la pone en la cola de adjuntos y muestra «(1)»), se revalida la
+   identidad y se envía; se verifica una fila nueva con adjunto (`has-attach`) y ese texto. Si la
+   caja ya tenía adjuntos o el intento previo quedó en `SENDING`: `UNCERTAIN`. En conversaciones
+   reales se activa con `SEND_PLAN_IMAGES=true`.
 
 ### 6.5 Venta y transferencia al backoffice
 
@@ -681,7 +730,7 @@ Si la transferencia falla: 2 reintentos, luego estado `NEEDS_REVIEW` y alerta cr
 |---|---|
 | Soporte (redirigir a *611) | Mensaje final y cerrar o liberar el chat |
 | Cliente no interesado | Mensaje final y cerrar |
-| Inactividad (120 min) | Mensaje opcional y cerrar o liberar |
+| Inactividad | 3 plantillas de reactivación (cada 2 min) y «Finalizar y cerrar el caso» con «Cliente abandona conversación» *(v1.10)* |
 | Caso que la IA no puede manejar | Transferir a la cola humana que defina Claro |
 
 ---
@@ -700,7 +749,7 @@ Van en `CLAUDE.md`. Claude Code debe respetarlas en todas las fases.
 8. **Fixtures siempre sanitizados.**
 9. **Toda acción queda en `RpaActionLog`** con cadena de hashes.
 10. **Toda salida del LLM se valida** (sección 6.3.5) antes de enviar o actuar.
-11. **El LLM nunca escribe precios, planes, descuentos ni textos legales**: los pone el código desde el catálogo y las plantillas.
+11. **El LLM nunca escribe precios, planes, descuentos ni textos legales**: los pone el código desde el catálogo y las plantillas. *(Cambiada en D-007: el modelo puede copiar cifras y beneficios del catálogo del proceso y el validador verifica cada una; los textos legales siguen en el código.)*
 12. **El flujo lo decide la máquina de estados**, no el modelo.
 13. **Ningún cambio de prompt o de modelo sale sin pasar la suite de evaluación.**
 
@@ -871,7 +920,7 @@ el único que puede invocar métodos de page objects que modifican la interfaz.
 - Latencia p95 del motor (sin Abaya) < 4 s por turno.
 - 20 conversaciones simultáneas simuladas sin mezclar estados.
 - Ráfaga de 3 mensajes produce una sola respuesta.
-- Proveedor caído: conversación en `NEEDS_REVIEW`, alerta, sin mensajes rotos al cliente.
+- Proveedor caído: robots pausados con motivo `LLM_OUTAGE`, alerta, mensajes pendientes sin perder, sin mensajes rotos al cliente *(D-009)*.
 
 **Prompt para Claude Code**
 ```
@@ -1058,7 +1107,7 @@ Cada caso es un archivo YAML con los mensajes del cliente y lo esperado (estado 
 | Venta no transferida | Venta perdida | Verificación, alerta crítica, `NEEDS_REVIEW`. |
 | El LLM inventa planes, precios o condiciones | Riesgo comercial y legal | El modelo nunca escribe datos: catálogo + plantillas, validadores, suite de evaluación con meta 0 %. |
 | Cambio de comportamiento del modelo por el proveedor | Degradación silenciosa | Versión de modelo fijada, alerta de tasa de FALLBACK, suite de evaluación periódica. |
-| Caída del proveedor de LLM | Conversaciones detenidas | Timeout, `NEEDS_REVIEW`, proveedor de respaldo opcional. |
+| Caída del proveedor de LLM | Conversaciones detenidas | Timeout, proveedor de respaldo opcional, pausa automática de los robots hasta que un ADMIN reanude; nada se pierde (D-009). |
 | Bloqueo del usuario robot | Robot detenido | Máximo 3 intentos de login. |
 | Límite de chats por usuario | Volumen limitado | Varios usuarios robot. |
 | Fuga de datos en logs o trazas | Legal | Redacción, cifrado, retención corta. |

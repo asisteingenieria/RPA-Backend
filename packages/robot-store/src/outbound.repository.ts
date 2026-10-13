@@ -1,6 +1,15 @@
 import type { FieldCipher } from '@abaya/crypto';
 import type { PrismaClient } from '@abaya/db';
-import { outboundAad, type OutboundStatus } from '@abaya/domain';
+import { knowledgeBlobAad, outboundAad, type OutboundStatus } from '@abaya/domain';
+
+/** D-014 fase 2: imagen de planes que acompaña al mensaje (el texto es su pie de foto). */
+export interface OutboundImage {
+  /** VersionImage.id */
+  id: string;
+  mime: string;
+  /** Nombre con que se adjunta en Abaya (el de la fuente del Brain). */
+  fileName: string;
+}
 
 export interface OutboundMessage {
   id: string;
@@ -10,12 +19,16 @@ export interface OutboundMessage {
   text: string;
   status: OutboundStatus;
   attempts: number;
+  /** D-014 fase 2: null = mensaje de solo texto. */
+  image?: OutboundImage | null;
 }
 
 export interface OutboundRepository {
   get(messageId: string): Promise<OutboundMessage | null>;
   /** Cambia el estado; con `incrementAttempts` suma un intento (antes de tocar la interfaz). */
   setStatus(messageId: string, status: OutboundStatus, incrementAttempts?: boolean): Promise<void>;
+  /** D-014 fase 2: bytes de la imagen del mensaje (null = no tiene o ya no existe). */
+  imageBytes(messageId: string): Promise<Uint8Array | null>;
 }
 
 export class PrismaOutboundRepository implements OutboundRepository {
@@ -37,7 +50,34 @@ export class PrismaOutboundRepository implements OutboundRepository {
       text: this.cipher.decryptString(m.bodyEncrypted, outboundAad(m.idempotencyKey)),
       status: m.status ?? 'PENDING',
       attempts: m.attempts,
+      image: m.imageId ? await this.imageMeta(m.imageId) : null,
     };
+  }
+
+  private async imageMeta(imageId: string): Promise<OutboundImage | null> {
+    const img = await this.prisma.versionImage.findUnique({
+      where: { id: imageId },
+      select: { id: true, mime: true, sourceName: true },
+    });
+    return img ? { id: img.id, mime: img.mime, fileName: img.sourceName } : null;
+  }
+
+  async imageBytes(messageId: string): Promise<Uint8Array | null> {
+    const m = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { imageId: true, direction: true },
+    });
+    if (!m?.imageId || m.direction !== 'OUTBOUND') return null;
+    const img = await this.prisma.versionImage.findUnique({
+      where: { id: m.imageId },
+      select: { blobRef: true },
+    });
+    if (!img) return null;
+    // Mismo cifrado que PgBlobStore (@abaya/knowledge): archivo de los Brains en PostgreSQL.
+    const blob = await this.prisma.knowledgeBlob.findUnique({ where: { id: img.blobRef } });
+    return blob
+      ? new Uint8Array(this.cipher.decrypt(blob.dataEncrypted, knowledgeBlobAad(img.blobRef)))
+      : null;
   }
 
   async setStatus(messageId: string, status: OutboundStatus, incrementAttempts = false) {
@@ -63,6 +103,8 @@ export class PrismaOutboundRepository implements OutboundRepository {
 
 export class MemoryOutboundRepository implements OutboundRepository {
   readonly messages = new Map<string, OutboundMessage>();
+  /** D-014 fase 2: bytes de la imagen por id de mensaje. */
+  readonly images = new Map<string, Uint8Array>();
   readonly history: { id: string; status: OutboundStatus }[] = [];
 
   async get(id: string) {
@@ -76,5 +118,9 @@ export class MemoryOutboundRepository implements OutboundRepository {
     m.status = status;
     if (incrementAttempts) m.attempts++;
     this.history.push({ id, status });
+  }
+
+  async imageBytes(id: string) {
+    return this.images.get(id) ?? null;
   }
 }

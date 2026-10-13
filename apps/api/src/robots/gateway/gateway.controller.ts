@@ -8,14 +8,22 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   Req,
   Res,
   StreamableFile,
 } from '@nestjs/common';
 import { createReadStream } from 'node:fs';
-import { GATEWAY_PATH, rpcRequestSchema } from '@abaya/robot-store';
+import { MAX_AUDIO_BYTES } from '@abaya/domain';
+import {
+  GATEWAY_PATH,
+  INBOUND_AUDIO_PATH,
+  OUTBOUND_IMAGE_PATH,
+  rpcRequestSchema,
+} from '@abaya/robot-store';
 import { FailedAuthLimiter, type AdminRequest } from '../../admin/admin-auth.guard.js';
 import { toHttp } from '../../admin/http-errors.js';
+import { readBody, type RawRequest as BodyStream } from '../../raw-body.js';
 import { ReleaseService } from '../release.service.js';
 import { RobotsService } from '../robots.service.js';
 import { MAX_TRACE_BYTES, RobotGateway } from './robot-gateway.service.js';
@@ -38,10 +46,7 @@ class RateLimiter {
   }
 }
 
-interface RawRequest extends AdminRequest {
-  on(event: 'data', cb: (chunk: Buffer) => void): void;
-  on(event: 'end' | 'error', cb: (err?: Error) => void): void;
-}
+type RawRequest = AdminRequest & BodyStream;
 
 /** Mapea errores de la persistencia que no son de servicio (p. ej. chat de otro robot). */
 async function gatewayHttp<T>(p: Promise<T>): Promise<T> {
@@ -133,8 +138,31 @@ export class RobotGatewayController {
   @HttpCode(204)
   async trace(@Param('ref') ref: string, @Req() req: RawRequest) {
     const robotUser = await this.auth(req);
-    const zip = await readBody(req, MAX_TRACE_BYTES);
+    const zip = await readBody(req, MAX_TRACE_BYTES, 'Traza demasiado grande');
     await gatewayHttp(this.gateway.saveTrace(robotUser, ref, zip));
+  }
+
+  /** D-010: nota de voz del cliente (audio en el cuerpo, datos del mensaje en la query). */
+  @Post(INBOUND_AUDIO_PATH)
+  @HttpCode(200)
+  async inboundAudio(@Query() query: unknown, @Req() req: RawRequest) {
+    const robotUser = await this.auth(req);
+    const audio = await readBody(req, MAX_AUDIO_BYTES, 'Audio demasiado grande');
+    return { result: await gatewayHttp(this.gateway.storeInboundAudio(robotUser, query, audio)) };
+  }
+
+  /** D-014 fase 2: imagen de planes de un mensaje saliente del robot (solo de los suyos). */
+  @Get(OUTBOUND_IMAGE_PATH)
+  async outboundImage(
+    @Query('messageId') messageId: unknown,
+    @Req() req: AdminRequest,
+    @Res({ passthrough: true }) res: { setHeader(n: string, v: string): void },
+  ) {
+    const robotUser = await this.auth(req);
+    const img = await gatewayHttp(this.gateway.outboundImage(robotUser, messageId));
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(Buffer.from(img));
   }
 
   private async auth(req: AdminRequest): Promise<string> {
@@ -162,21 +190,4 @@ export class RobotGatewayController {
       throw err;
     }
   }
-}
-
-function readBody(req: RawRequest, limit: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (c: Buffer) => {
-      size += c.length;
-      if (size > limit) {
-        reject(new HttpException('Traza demasiado grande', HttpStatus.PAYLOAD_TOO_LARGE));
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', (e) => reject(e ?? new Error('error de lectura')));
-  });
 }

@@ -1,4 +1,5 @@
 import type { TableData } from './catalog.js';
+import type { PlanImageCard } from './images.js';
 
 /**
  * Puertos del módulo de conocimiento (D-001 D6). Los adaptadores viven en `infrastructure/`
@@ -63,6 +64,23 @@ export interface VectorStore {
     /** Filtro por metadatos de la fuente: el fragmento no tiene la clave o coincide. */
     filter?: Record<string, string>;
   }): Promise<SearchHit[]>;
+}
+
+/** D-011: lee los planes (código, GB, precio) de una imagen de planes. */
+export interface PlanImageReader {
+  readonly model: string;
+  read(bytes: Uint8Array, mime: string): Promise<PlanImageCard[]>;
+}
+
+/** Fallo al leer una imagen: `transient` = el proveedor no respondió (se reintenta). */
+export class ImageReadError extends Error {
+  override name = 'ImageReadError';
+  constructor(
+    message: string,
+    readonly transient: boolean,
+  ) {
+    super(message);
+  }
 }
 
 /** Descarga de páginas web con protección SSRF (K5). */

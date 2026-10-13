@@ -63,7 +63,7 @@ export function customerPageHtml(): string {
     const ended = st.transfers.find((t) => t.chatId === current) || st.closed.includes(current);
     const note = st.notes.find((n) => n.chatId === current);
     $('#state').textContent = !current ? 'Crea un cliente para empezar.'
-      : ended ? (st.transfers.find((t) => t.chatId === current) ? '✅ Chat transferido a ' + st.transfers.find((t) => t.chatId === current).queue + (note ? ' (con nota interna)' : '') : '🔒 Chat cerrado')
+      : ended ? (st.transfers.find((t) => t.chatId === current) ? '✅ Venta finalizada: el caso pasó al backoffice' + (note ? ' (con observaciones)' : '') : '🔒 Chat cerrado')
       : 'Chat ' + current + ' asignado al robot';
     if (!chat) { $('#chat').innerHTML = ''; return; }
     const atBottom = $('#chat').scrollHeight - $('#chat').scrollTop - $('#chat').clientHeight < 40;
@@ -74,12 +74,12 @@ export function customerPageHtml(): string {
   }
 
   $('#chats').onchange = (e) => { current = e.target.value; load(); };
-  $('#nuevo').onclick = () => { current = 'CH-' + Math.floor(1000 + Math.random() * 9000); $('#t').focus(); load(); };
+  $('#nuevo').onclick = () => { current = String(Math.floor(9000000000 + Math.random() * 999999999)); $('#t').focus(); load(); };
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const text = $('#t').value.trim();
     if (!text) return;
-    if (!current) current = 'CH-' + Math.floor(1000 + Math.random() * 9000);
+    if (!current) current = String(Math.floor(9000000000 + Math.random() * 999999999));
     $('#t').value = '';
     await fetch('/__cliente/api/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId: current, text }) });
     load();

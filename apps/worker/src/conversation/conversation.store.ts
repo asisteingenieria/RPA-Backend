@@ -1,12 +1,15 @@
-import type { ConversationStatus } from '@abaya/domain';
+import type { ConversationStatus, TranscriptStatus } from '@abaya/domain';
 import type { KnowledgeUsageRecord } from '@abaya/knowledge';
 import type { ConversationState, LlmCallRecord, Profile } from '../engine/types.js';
 
 export interface PendingInbound {
   id: string;
+  /** Texto del cliente; en una nota de voz, su transcripción (vacía hasta transcribir). */
   text: string;
   /** Cuándo lo detectó el robot (Message.createdAt, reloj del robot). */
   detectedAt: Date;
+  /** D-010: nota de voz. */
+  voice?: { status: TranscriptStatus; durationSec: number | null };
 }
 
 export interface TurnInput {
@@ -35,7 +38,12 @@ export interface TurnCommit {
   /** Entrantes atendidos en este turno (no se marcan si el proveedor falló). */
   processedMessageIds: string[];
   /** Respuestas a enviar, en orden. El store crea los Message salientes. */
-  outbound: { text: string; idempotencyKey: string }[];
+  outbound: {
+    text: string;
+    idempotencyKey: string;
+    /** D-014 fase 2: imagen de planes (VersionImage.id); `text` es su pie de foto. */
+    imageId?: string;
+  }[];
   /** Detección del primer mensaje de la ráfaga: se guarda en la PRIMERA respuesta (v1.5). */
   respondsToAt?: Date;
   llmCalls: LlmCallRecord[];
@@ -46,6 +54,8 @@ export interface TurnCommit {
     acceptedAt: Date;
   };
   sale?: { process: string; planCode: string; summary: string; catalogVersionId?: string };
+  /** 13/10/2026: datos del cliente tras el «SÍ»: se agregan al resumen de la venta al transferir. */
+  saleDataNote?: string;
   /** v1.9: qué Brains, versiones y registros usó el turno (KnowledgeUsage, D-001 D7). */
   knowledge?: KnowledgeUsageRecord[];
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */
@@ -62,6 +72,20 @@ export interface TurnCommit {
 export interface ConversationStore {
   loadForTurn(conversationId: string, historyLimit: number): Promise<TurnInput | null>;
   commitTurn(commit: TurnCommit): Promise<{ outboundMessageIds: string[] }>;
+  /** D-010: audio de una nota de voz que espera transcripción (null si ya no está). */
+  voiceAudio(messageId: string): Promise<{ data: Buffer; mimeType: string } | null>;
+  /**
+   * D-010: guarda la transcripción (cifrada, como cualquier mensaje) y BORRA el audio. Solo
+   * cambia notas aún PENDING: dos turnos que compitan no la pisan.
+   */
+  saveTranscript(messageId: string, t: TranscriptResult): Promise<void>;
+}
+
+export interface TranscriptResult {
+  status: Exclude<TranscriptStatus, 'PENDING'>;
+  text: string;
+  model: string | null;
+  ms: number | null;
 }
 
 export const OUTBOUND_IDS_PLACEHOLDER = '{{OUTBOUND_IDS}}';

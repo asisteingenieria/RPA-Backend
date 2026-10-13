@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { LoginPage, type LoginCredentials } from '../abaya/pages/login.page.js';
+import { AgentStatePage } from '../abaya/pages/state.page.js';
 import { sel } from '../abaya/selectors.js';
 import type { SessionDriver } from './session-driver.js';
 import type { StorageState } from './storage-state.store.js';
@@ -74,8 +75,15 @@ export class PlaywrightSessionDriver implements SessionDriver {
       .catch(() => false);
   }
 
+  /**
+   * Tras entrar, ySocial deja al asesor en «Login» (sin casos): el robot se pone «Disponible».
+   * Si no lo logra, el login no sirve para trabajar y se informa como TIMEOUT.
+   */
   async login(creds: LoginCredentials) {
-    return new LoginPage(this.page).login(creds);
+    const r = await new LoginPage(this.page).login(creds);
+    if (r !== 'OK') return r;
+    const available = await new AgentStatePage(this.page).ensureAvailable().catch(() => false);
+    return available ? r : 'TIMEOUT';
   }
 
   async exportState(): Promise<StorageState> {

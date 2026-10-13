@@ -2,96 +2,125 @@ import type { Locator, Page } from 'playwright';
 
 /**
  * ÚNICO lugar con selectores de Abaya (regla 3).
- * Solo selectores semánticos: getByRole, getByLabel, getByText o atributos data-*.
- * Prohibidas las rutas CSS largas o por posición.
  *
- * PROVISIONAL: definidos contra el Abaya simulado (apps/rpa/test/mock-abaya). En F1 real se
- * reemplazan con lo descubierto en docs/abaya-mapa-pantallas.md sin tocar los page objects.
+ * Abaya es ySocial (AngularJS) y casi no tiene atributos ARIA, así que, en este orden (D-012):
+ * 1. rol + texto visible (`getByRole`, `getByPlaceholder`, `getByLabel`);
+ * 2. ids estables de la aplicación (`#textareaActAsChat`, `divCaseConversationItem{id}`);
+ * 3. el `ng-click` de la acción, que es código de la aplicación y no cambia con el estilo.
+ * Siguen prohibidas las rutas CSS largas o por posición.
+ *
+ * Observado en vivo el 09/10/2026 (docs/abaya-mapa-pantallas.md). Los textos se comparan sin
+ * mayúsculas: la interfaz los pinta en mayúsculas con CSS («INGRESAR» es «Ingresar» en el DOM).
  */
 export const sel = {
   login: {
-    username: (p: Page) => p.getByLabel('Usuario'),
-    password: (p: Page) => p.getByLabel('Contraseña'),
-    otp: (p: Page) => p.getByLabel('Código de verificación'),
-    submit: (p: Page) => p.getByRole('button', { name: 'Ingresar' }),
-    error: (p: Page) => p.getByRole('alert'),
+    /** Login del asesor (el de `/Login.aspx` es el de supervisores). */
+    path: '/agent/#/login',
+    username: (p: Page) => p.locator('input[name="username"]'),
+    password: (p: Page) => p.locator('input[name="password"]'),
+    /** ❓ No se vio el doble factor activo (existe en el menú de perfil). */
+    otp: (p: Page) => p.locator('[ng-if*="showTwoFactor"] input:visible'),
+    submit: (p: Page) => p.getByRole('button', { name: /^ingresar$/i }),
+    /** ❓ No se vio un error de login: ySocial avisa con toasts. */
+    error: (p: Page) => p.locator('.toast-error, .alert-danger').first(),
+  },
+
+  /** Estado del asesor (arriba a la derecha): «Login» al entrar, «Disponible», pausas… */
+  state: {
+    current: (p: Page) => p.locator('nav span.title').first(),
+    option: (p: Page, name: string) =>
+      p.locator('a[ng-click="navigation.switchStates(state)"]').filter({
+        has: p.getByText(name, { exact: true }),
+      }),
+    available: 'Disponible',
+    /** Estado con casos asignados (se pone solo). */
+    working: /^Trabajando/,
   },
 
   chatList: {
-    root: (p: Page) => p.getByRole('navigation', { name: 'Chats asignados' }),
-    items: (p: Page) => sel.chatList.root(p).locator('[data-chat-id]'),
-    item: (p: Page, chatId: string) =>
-      sel.chatList.root(p).locator(`[data-chat-id="${cssEscape(chatId)}"]`),
-    openButton: (item: Locator) => item.getByRole('button'),
-    unreadBadge: (item: Locator) => item.locator('[data-unread]'),
-    chatIdAttr: 'data-chat-id',
-    unreadAttr: 'data-unread',
+    /** Un botón por caso asignado en la barra superior. No trae el número del caso en el DOM. */
+    items: (p: Page) => p.locator('button.navigation-whatsapp.navigation-bar-button'),
+    buttonCss: 'button.navigation-whatsapp.navigation-bar-button',
+    unreadClass: 'unread',
+    selectedClass: 'selected-message',
+    noMessages: (p: Page) => p.locator('div.no-messages'),
+    /**
+     * Aviso de caso nuevo («SMCC Web Agent») con ACEPTAR y cuenta regresiva: «ACEPTAR (7)».
+     * El paréntesis lo distingue del «Aceptar» del cuadro de etiquetas.
+     */
+    newCaseAccept: (p: Page) => p.getByRole('button', { name: /^aceptar\s*\(\d+\)$/i }),
   },
 
   chat: {
-    panel: (p: Page) => p.getByRole('region', { name: 'Conversación' }),
-    panelChatIdAttr: 'data-chat-id',
-    heading: (p: Page) => sel.chat.panel(p).getByRole('heading', { level: 2 }),
-    messageList: (p: Page) => p.getByRole('list', { name: 'Mensajes' }),
-    messages: (p: Page) => sel.chat.messageList(p).locator('[data-message-id]'),
-    messageIdAttr: 'data-message-id',
-    senderAttr: 'data-sender',
-    timestampAttr: 'data-timestamp',
+    header: (p: Page) => p.locator('.social-case-conversation-header'),
+    /** El encabezado dice «Caso #NNNNNNNNNN»: es el abayaChatId. */
+    headerCaseId: /Caso #(\d+)/,
+    messages: (p: Page) => p.locator('[id^="divCaseConversationItem"]'),
+    messageIdPrefix: 'divCaseConversationItem',
+    /** Clase de la fila → remitente. */
+    senderClasses: { client: 'CUSTOMER', agent: 'AGENT', system: 'SYSTEM' },
+    bodyCss: 'span.body-text',
+    input: (p: Page) => p.locator('#textareaActAsChat'),
+    send: (p: Page) => p.locator('a.social-case-reply-as-chat-send'),
+    /** Spinner mientras se envía. */
+    sending: (p: Page) => p.locator('.social-case-reply-as-chat-send-loading:visible'),
     /**
-     * Mensaje pintado por la interfaz antes de que el servidor lo confirme (envío optimista).
-     * No cuenta como verificado. PROVISIONAL: en Abaya real puede ser un ícono de estado.
+     * D-014 fase 2: contador «(N)» de adjuntos en cola junto al clip. ySocial lo pinta con
+     * `ng-if="caseCtrl.actAsChatInfo.attachmentsQueue.length > 0"` (grabación del 09/10/2026).
      */
-    unconfirmedMessageId: /^local-/,
-    input: (p: Page) => p.getByRole('textbox', { name: 'Escribe un mensaje' }),
-    send: (p: Page) => p.getByRole('button', { name: 'Enviar' }),
-    closeChat: (p: Page) => p.getByRole('button', { name: 'Cerrar chat' }),
-  },
-
-  note: {
-    open: (p: Page) => p.getByRole('button', { name: 'Nota interna' }),
-    dialog: (p: Page) => p.getByRole('dialog', { name: 'Nota interna' }),
-    input: (p: Page) => sel.note.dialog(p).getByRole('textbox', { name: 'Nota' }),
-    save: (p: Page) => sel.note.dialog(p).getByRole('button', { name: 'Guardar nota' }),
-  },
-
-  transfer: {
-    open: (p: Page) => p.getByRole('button', { name: 'Transferir', exact: true }),
-    dialog: (p: Page) => p.getByRole('dialog', { name: 'Transferir chat' }),
-    queue: (p: Page) => sel.transfer.dialog(p).getByLabel('Cola'),
-    confirm: (p: Page) =>
-      sel.transfer.dialog(p).getByRole('button', { name: 'Confirmar transferencia' }),
-    /** Etiqueta visible de la cola de backoffice (confirmar con Claro, pregunta 13). */
-    backofficeQueueLabel: 'Backoffice ventas',
-    /** Cola humana para casos que la IA no puede manejar (pregunta 12). */
-    humanQueueLabel: 'Asesores humanos',
-  },
-
-  session: {
-    /**
-     * Señal de sesión viva: un elemento SIEMPRE visible con la sesión abierta (el enlace de
-     * salir). La lista de chats no sirve: vacía mide 0 px y Playwright la considera oculta,
-     * así que un robot sin chats asignados parecería deslogueado.
-     */
-    inboxMarker: (p: Page) => sel.session.logout(p),
-    logout: (p: Page) => p.getByRole('link', { name: 'Salir' }),
+    attachmentsQueued: (p: Page) =>
+      p.locator('span[ng-if*="actAsChatInfo.attachmentsQueue.length"]'),
+    /** Fila de un mensaje con adjunto (`has-attach`); la imagen va en `.attachments-preview`. */
+    attachRowClass: 'has-attach',
   },
 
   /**
-   * Selectores CSS por atributo para el MutationObserver de respaldo (corre dentro de la
-   * página, donde no existen los locators de Playwright). Solo atributos semánticos.
+   * FINALIZAR ▾ (abajo a la derecha):
+   * - «Finalizar» (sin cerrar el caso): el caso pasa a la cola siguiente. Es como termina una
+   *   VENTA: la entrega al backoffice (confirmado por el responsable, 09/10/2026).
+   * - «Finalizar y cerrar el caso»: pide etiqueta. Es como termina una NO venta.
+   */
+  finish: {
+    open: (p: Page) => p.getByRole('button', { name: /^finalizar$/i }),
+    keepCase: (p: Page) => p.locator('a[ng-click="caseCtrl.actAsChatInfo.finishMessage(false)"]'),
+    closeCase: (p: Page) => p.locator('a[ng-click="caseCtrl.actAsChatInfo.finishMessage(true)"]'),
+    /** «¿Está seguro que desea finalizar la atención del mensaje?» → SI. */
+    confirm: (p: Page) => p.locator('button[ng-click="confirm()"]'),
+    caseDialog: (p: Page) =>
+      p.locator('.modal-dialog').filter({ has: p.getByText(/Detalles del caso #/) }),
+    observations: (d: Locator) => d.getByPlaceholder('Observaciones'),
+    tagSearch: (d: Locator) => d.getByPlaceholder('Buscar etiqueta...'),
+    tag: (d: Locator, label: string) => d.getByRole('checkbox', { name: label, exact: true }),
+    accept: (d: Locator) => d.locator('button[ng-click="updateCase()"]'),
+    /**
+     * Etiqueta con que el robot cierra cada caso que no es venta (cola 147). PROVISIONAL: la
+     * elección por motivo falta confirmarla con Claro (mapa de pantallas, pregunta 2).
+     */
+    tags: {
+      SUPPORT: 'SAC - Ecommerce Movil - Detalle plan movil',
+      NO_SALE: 'No venta -Ecommerce Movil Reglas de Negocio - Politicas',
+      INACTIVE: 'No venta - Ecommerce Movil -Cliente abandona conversación',
+    },
+  },
+
+  session: {
+    /** Señal de sesión viva: el avatar del asesor en la barra superior. */
+    inboxMarker: (p: Page) => p.locator('img.user-image'),
+    logout: (p: Page) => p.locator('a[ng-click="navigation.signOut()"]'),
+  },
+
+  /**
+   * Selectores CSS para el MutationObserver de respaldo (corre dentro de la página, donde no
+   * existen los locators de Playwright).
    */
   dom: {
-    messageItem: '[data-message-id]',
-    chatContainer: '[data-chat-id]',
-    chatListItem: 'nav[aria-label="Chats asignados"] [data-chat-id]',
-    attrs: {
-      messageId: 'data-message-id',
-      chatId: 'data-chat-id',
-      sender: 'data-sender',
-      timestamp: 'data-timestamp',
-    },
-    /** Valores de `data-sender` → remitente del dominio. */
-    senders: { customer: 'CUSTOMER', agent: 'AGENT', system: 'SYSTEM' },
+    messageItem: '[id^="divCaseConversationItem"]',
+    messageIdPrefix: 'divCaseConversationItem',
+    body: 'span.body-text',
+    caseHeader: '.social-case-conversation-header',
+    headerCaseId: 'Caso #(\\d+)',
+    /** Clase de la fila → remitente. */
+    senders: { client: 'CUSTOMER', agent: 'AGENT', system: 'SYSTEM' },
   },
 } as const;
 

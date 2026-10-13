@@ -2,13 +2,26 @@ import { sha256 } from '@abaya/crypto';
 import { Prisma, type PrismaClient } from '@abaya/db';
 import type { EvalJob } from '@abaya/domain';
 import {
+  checkPlanImages,
   checkPlanQuery,
   checkWebUrl,
+  contentFromSources,
+  detectImage,
+  BRAIN_EXPORT_FORMAT,
+  BRAIN_EXPORT_VERSION,
+  IMAGE_DISCOUNT_MAX,
+  IMAGE_LIMITS,
+  readBrainExport,
+  imageDiscountKey,
+  parseImageDiscounts,
+  parseImageProcesses,
+  parseVideoAppsFlag,
   DEFAULT_AGENT_KEY,
   detectFile,
   diffAgainstPublished,
   diffContent,
   FileRejected,
+  imageProblems,
   isCatalogBrain,
   isEmptyBrainDiff,
   KNOWLEDGE_LIMITS,
@@ -21,16 +34,21 @@ import {
   SALE_PROCESSES,
   versionChunks,
   versionContent,
+  versionImages,
   versionRecords,
   versionRecordsFor,
   WebFetchError,
   workingVersion,
   type BlobStore,
   type BrainDiff,
+  type BrainExport,
+  type BrainExportSource,
+  type ImageDiscounts,
   type FileKind,
   type KnowledgeIngestJob,
   type KnowledgeRetriever,
   type KnowledgeUse,
+  type PlanImageSourceData,
   type SaleProcess,
 } from '@abaya/knowledge';
 import { ServiceError } from './errors.js';
@@ -70,7 +88,36 @@ export const PUBLISH_REASON =
 
 const MAX_TEXT_CHARS = 200_000;
 const DOC_KINDS: FileKind[] = ['pdf', 'docx', 'txt', 'md'];
-const USES: KnowledgeUse[] = ['CATALOG', 'FULL_CONTEXT', 'SEARCH'];
+const USES: KnowledgeUse[] = ['CATALOG', 'FULL_CONTEXT', 'SEARCH', 'IMAGE'];
+
+/**
+ * D-016: descuentos por proceso de una imagen de planes, del formulario (`descuento_PORTABILIDAD`
+ * en multipart) o del JSON (`descuentos: { PORTABILIDAD: '…' }`). Solo de los procesos de la
+ * imagen; texto corto, sin enlaces ni marcadores (lo lee el modelo como dato del plan).
+ */
+function discountsFromBody(body: Record<string, unknown>, processes: readonly SaleProcess[]) {
+  const nested =
+    body.descuentos && typeof body.descuentos === 'object'
+      ? Object.fromEntries(
+          Object.entries(body.descuentos as Record<string, unknown>).map(([k, v]) => [
+            imageDiscountKey(k as SaleProcess),
+            v,
+          ]),
+        )
+      : {};
+  const discounts = parseImageDiscounts({ ...body, ...nested }, processes);
+  for (const [p, text] of Object.entries(discounts)) {
+    if (text.length > IMAGE_DISCOUNT_MAX)
+      throw new ServiceError(400, `descuento ${p}: máximo ${IMAGE_DISCOUNT_MAX} caracteres`);
+    if (/https?:\/\/|www\.|\{\{|<\/?[a-z]/i.test(text))
+      throw new ServiceError(400, `descuento ${p}: sin enlaces, marcadores ni etiquetas`);
+  }
+  return discounts;
+}
+
+/** Metadato de la fuente con los descuentos (una clave por proceso). */
+const discountMetadata = (d: ImageDiscounts) =>
+  Object.fromEntries(Object.entries(d).map(([p, t]) => [imageDiscountKey(p as SaleProcess), t]));
 
 const SOURCE_SELECT = {
   id: true,
@@ -104,7 +151,7 @@ const VERSION_SELECT = {
   updatedAt: true,
   publishedBy: true,
   publishedAt: true,
-  _count: { select: { records: true, chunks: true } },
+  _count: { select: { records: true, chunks: true, images: true } },
 } as const;
 
 const AGENT_KEYS = new Set([DEFAULT_AGENT_KEY]);
@@ -188,10 +235,15 @@ export class KnowledgeService {
       createdBy: b.createdBy,
       createdAt: b.createdAt,
       agents: b.agents,
-      sources: b.sources.map(({ _count, ...s }) => ({ ...s, chunks: _count.chunks })),
+      sources: await this.withImageChecks(
+        id,
+        b.sources.map(({ _count, ...s }) => ({ ...s, chunks: _count.chunks })),
+      ),
       versions: b.versions.map(summary),
       limits: {
         catalogMaxBytes: KNOWLEDGE_LIMITS.catalogMaxBytes,
+        imageMaxBytes: IMAGE_LIMITS.maxBytes,
+        imagesPerProcess: IMAGE_LIMITS.perProcess,
         documentMaxBytes: this.maxFileBytes(),
         textMaxChars: MAX_TEXT_CHARS,
       },
@@ -221,17 +273,29 @@ export class KnowledgeService {
     if (b.agents.length) {
       throw new ServiceError(409, 'Desconecta el Brain de los agentes antes de eliminarlo.');
     }
+    const imageBlobs = await this.prisma.versionImage.findMany({
+      where: { version: { brainId: id } },
+      select: { blobRef: true },
+      distinct: ['blobRef'],
+    });
     await this.prisma.brain.delete({ where: { id } });
-    for (const s of b.sources) if (s.blobRef) await this.blobs.delete(s.blobRef);
+    const refs = new Set([
+      ...b.sources.flatMap((s) => (s.blobRef ? [s.blobRef] : [])),
+      ...imageBlobs.map((i) => i.blobRef),
+    ]);
+    for (const ref of refs) await this.blobs.delete(ref);
     await this.audit(actor, 'BRAIN_DELETED', b.name, { brainId: id });
     return { ok: true as const };
   }
 
   // ---------- fuentes ----------
 
-  /** Archivos: catálogo (Excel/CSV) o documento (PDF, DOCX, TXT, MD). */
+  /** Archivos: catálogo (Excel/CSV), documento (PDF, DOCX, TXT, MD) o imagen de planes. */
   async addFile(actor: string, id: string, file: UploadedFileInput | undefined, body: unknown) {
     const b = await this.brain(id);
+    if ((body as { use?: unknown } | null)?.use === 'IMAGE') {
+      return this.addImage(actor, b, file, body);
+    }
     const { use, metadata } = this.sourceOptions(body);
     if (!file?.buffer?.length)
       throw new ServiceError(400, 'Adjunta un archivo en el campo "file".');
@@ -279,6 +343,150 @@ export class KnowledgeService {
     });
     await this.enqueueIngest(source.id, actor);
     return withChunks(source);
+  }
+
+  /**
+   * D-011: imagen de planes (JPG, PNG, WEBP) para uno o varios procesos (`procesos`, separados
+   * por coma). El worker lee sus planes; se valida contra el catálogo en cada versión.
+   */
+  private async addImage(
+    actor: string,
+    b: { id: string; name: string },
+    file: UploadedFileInput | undefined,
+    body: unknown,
+  ) {
+    const fields = (body ?? {}) as Record<string, unknown>;
+    // D-014: la circular de apps de video aplica a todos los procesos.
+    const videoApps = parseVideoAppsFlag(fields.appsVideo);
+    const processes = videoApps ? [...SALE_PROCESSES] : parseImageProcesses(fields.procesos);
+    if (!processes.length) {
+      throw new ServiceError(400, `procesos: elige al menos uno (${SALE_PROCESSES.join(', ')})`);
+    }
+    // D-016: descuento de los planes de la imagen en cada proceso (opcional).
+    const discounts = discountsFromBody(fields, processes);
+    if (!file?.buffer?.length)
+      throw new ServiceError(400, 'Adjunta un archivo en el campo "file".');
+    if (file.size > IMAGE_LIMITS.maxBytes) {
+      throw new ServiceError(
+        400,
+        `La imagen supera ${Math.round(IMAGE_LIMITS.maxBytes / 1024 / 1024)} MB.`,
+      );
+    }
+    const name = sanitizeFilename(file.originalname);
+    const bytes = new Uint8Array(file.buffer);
+    let detected;
+    try {
+      detected = await detectImage(bytes, name);
+    } catch (err) {
+      if (err instanceof FileRejected)
+        throw new ServiceError(400, `Archivo rechazado: ${err.message}.`);
+      throw err;
+    }
+    await this.assertNotEvaluating(b.id);
+    const contentHash = sha256(Buffer.from(bytes));
+    await this.assertNotDuplicate(b.id, contentHash, 'Esa imagen ya está cargada en este Brain.');
+    const blobRef = await this.blobs.put(bytes);
+    const source = await this.prisma.knowledgeSource.create({
+      data: {
+        brainId: b.id,
+        kind: 'FILE',
+        use: 'IMAGE',
+        name,
+        mime: detected.mime,
+        sizeBytes: bytes.length,
+        contentHash,
+        blobRef,
+        createdBy: actor,
+        metadata: {
+          procesos: processes.join(','),
+          ...(videoApps ? { appsVideo: 'true' } : {}),
+          ...discountMetadata(discounts),
+        },
+      },
+      select: SOURCE_SELECT,
+    });
+    await this.audit(actor, 'BRAIN_SOURCE_ADDED', `${b.name} · ${name}`, {
+      brainId: b.id,
+      sourceId: source.id,
+      kind: 'FILE',
+      use: 'IMAGE',
+      processes,
+      videoApps,
+      discounts: Object.keys(discounts),
+      sizeBytes: bytes.length,
+      contentHash,
+    });
+    await this.enqueueIngest(source.id, actor);
+    return withChunks(source);
+  }
+
+  /**
+   * D-016: cambiar los procesos y el descuento de una imagen ya cargada sin volver a leerla (lo
+   * leído no cambia). Rearma el borrador; sale al publicar, como todo cambio del Brain.
+   */
+  async updateImage(actor: string, id: string, sourceId: string, body: unknown) {
+    const b = await this.brain(id);
+    await this.assertNotEvaluating(id);
+    const s = await this.prisma.knowledgeSource.findFirst({
+      where: { id: sourceId, brainId: id, use: 'IMAGE' },
+    });
+    if (!s) throw new ServiceError(404, 'Imagen no encontrada');
+    if (s.status === 'PROCESSING')
+      throw new ServiceError(409, 'La imagen se está leyendo: espera a que termine.');
+    const fields = (body ?? {}) as Record<string, unknown>;
+    const meta = (s.metadata ?? {}) as Record<string, unknown>;
+    const videoApps = parseVideoAppsFlag(meta.appsVideo);
+    // La circular de apps de video aplica siempre a todos los procesos.
+    const processes = videoApps
+      ? [...SALE_PROCESSES]
+      : parseImageProcesses(fields.procesos ?? meta.procesos);
+    if (!processes.length) {
+      throw new ServiceError(400, `procesos: elige al menos uno (${SALE_PROCESSES.join(', ')})`);
+    }
+    const discounts = discountsFromBody(fields, processes);
+    const parsed = s.parsed as unknown as PlanImageSourceData | null;
+    await this.prisma.knowledgeSource.update({
+      where: { id: s.id },
+      data: {
+        metadata: {
+          procesos: processes.join(','),
+          ...(videoApps ? { appsVideo: 'true' } : {}),
+          ...discountMetadata(discounts),
+        },
+        ...(parsed ? { parsed: { ...parsed, processes } as unknown as Prisma.InputJsonValue } : {}),
+      },
+    });
+    await this.prisma.brain.update({ where: { id }, data: { sourcesChangedAt: new Date() } });
+    const draft = await this.knowledge(rebuildDraftFromSources(this.prisma, id, actor));
+    await this.audit(actor, 'BRAIN_IMAGE_UPDATED', `${b.name} · ${s.name}`, {
+      brainId: id,
+      sourceId: s.id,
+      processes,
+      discounts: Object.keys(discounts),
+      draftVersion: draft.version,
+    });
+    return { draftVersion: draft.version, diff: draft.diff };
+  }
+
+  /** Bytes de la imagen de una fuente (vista previa del panel). */
+  async sourceImage(id: string, sourceId: string) {
+    const s = await this.prisma.knowledgeSource.findFirst({
+      where: { id: sourceId, brainId: id, use: 'IMAGE' },
+      select: { blobRef: true, mime: true },
+    });
+    if (!s?.blobRef || !s.mime) throw new ServiceError(404, 'Imagen no encontrada');
+    return { mime: s.mime, bytes: Buffer.from(await this.blobs.get(s.blobRef)) };
+  }
+
+  /** Bytes de una imagen congelada en una versión (lo que vería el cliente). */
+  async versionImage(id: string, version: number, imageId: string) {
+    const v = await this.versionRow(id, version);
+    const img = await this.prisma.versionImage.findFirst({
+      where: { id: imageId, brainVersionId: v.id },
+      select: { blobRef: true, mime: true },
+    });
+    if (!img) throw new ServiceError(404, 'Imagen no encontrada');
+    return { mime: img.mime, bytes: Buffer.from(await this.blobs.get(img.blobRef)) };
   }
 
   /** Texto escrito en el editor del panel (K3). */
@@ -391,7 +599,12 @@ export class KnowledgeService {
     const s = await this.prisma.knowledgeSource.findFirst({ where: { id: sourceId, brainId: id } });
     if (!s) throw new ServiceError(404, 'Fuente no encontrada');
     await this.prisma.knowledgeSource.delete({ where: { id: s.id } });
-    if (s.blobRef) await this.blobs.delete(s.blobRef);
+    // D-011: una imagen que usa una versión (publicada o anterior) se conserva para poder
+    // enviarla y restaurarla; se borra con el Brain.
+    const inUse = s.blobRef
+      ? await this.prisma.versionImage.count({ where: { blobRef: s.blobRef } })
+      : 0;
+    if (s.blobRef && !inUse) await this.blobs.delete(s.blobRef);
     await this.prisma.brain.update({ where: { id }, data: { sourcesChangedAt: new Date() } });
     const draft = await this.knowledge(rebuildDraftFromSources(this.prisma, id, actor));
     await this.audit(actor, 'BRAIN_SOURCE_REMOVED', `${b.name} · ${s.name}`, {
@@ -416,6 +629,169 @@ export class KnowledgeService {
     return { ok: true as const };
   }
 
+  // ---------- D-019: llevar un Brain a otro ambiente ----------
+
+  /** El Brain con sus fuentes (y su contenido) como archivo JSON («abaya-brain»). */
+  async exportBrain(actor: string, id: string): Promise<BrainExport> {
+    const b = await this.brain(id);
+    const sources = await this.prisma.knowledgeSource.findMany({
+      where: { brainId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    const fuentes: BrainExportSource[] = [];
+    for (const s of sources) {
+      const base = {
+        kind: s.kind,
+        use: s.use,
+        name: s.name,
+        mime: s.mime,
+        metadata: (s.metadata ?? null) as Record<string, string> | null,
+      };
+      if (s.kind === 'WEB') {
+        fuentes.push({ ...base, url: s.url ?? '', refreshHours: s.refreshHours });
+        continue;
+      }
+      if (!s.blobRef) continue; // sin contenido (no debería pasar)
+      const bytes = Buffer.from(await this.blobs.get(s.blobRef));
+      if (s.kind === 'TEXT') {
+        fuentes.push({ ...base, text: bytes.toString('utf8') });
+        continue;
+      }
+      if (s.use === 'IMAGE') {
+        const parsed = s.parsed as unknown as PlanImageSourceData | null;
+        // Una imagen sin leer (o con error) no se lleva: en el otro ambiente no se podría usar.
+        if (!parsed?.cards) continue;
+        fuentes.push({ ...base, data: bytes.toString('base64'), cards: parsed.cards });
+        continue;
+      }
+      fuentes.push({ ...base, data: bytes.toString('base64') });
+    }
+    await this.audit(actor, 'BRAIN_EXPORTED', b.name, { brainId: id, sources: fuentes.length });
+    return {
+      formato: BRAIN_EXPORT_FORMAT,
+      version: BRAIN_EXPORT_VERSION,
+      exportadoEn: new Date().toISOString(),
+      nombre: b.name,
+      fuentes,
+    };
+  }
+
+  /**
+   * Importa un Brain exportado como un Brain NUEVO (borrador). Imágenes: llegan ya leídas (no se
+   * vuelven a leer con Gemini); catálogo y documentos se procesan otra vez; páginas web se
+   * vuelven a descargar. Cada fuente pasa por las mismas revisiones que al cargarla a mano.
+   */
+  async importBrain(actor: string, file: UploadedFileInput | undefined, body: unknown) {
+    if (!file?.buffer?.length)
+      throw new ServiceError(400, 'Adjunta el archivo en el campo "file".');
+    let raw: unknown;
+    try {
+      raw = JSON.parse(file.buffer.toString('utf8'));
+    } catch {
+      throw new ServiceError(400, 'El archivo no es un JSON válido.');
+    }
+    const r = readBrainExport(raw);
+    if (!r.ok) throw new ServiceError(400, `Archivo rechazado: ${r.error}.`);
+    const wanted = (body as { nombre?: unknown } | null)?.nombre;
+    const name = typeof wanted === 'string' && wanted.trim() ? wanted.trim() : r.value.nombre;
+    const created = await this.create(actor, { name });
+    try {
+      for (const f of r.value.fuentes) {
+        const opts = {
+          use: f.use,
+          ...(f.metadata?.proceso ? { proceso: f.metadata.proceso } : {}),
+        };
+        if (f.kind === 'WEB') {
+          await this.addWeb(actor, created.id, {
+            ...opts,
+            url: f.url,
+            refreshHours: f.refreshHours ?? null,
+          });
+        } else if (f.kind === 'TEXT') {
+          await this.addText(actor, created.id, { ...opts, name: f.name, text: f.text });
+        } else if (f.use === 'IMAGE') {
+          await this.importImage(actor, created, f);
+        } else {
+          const buffer = Buffer.from(f.data ?? '', 'base64');
+          await this.addFile(
+            actor,
+            created.id,
+            { buffer, originalname: f.name, size: buffer.length },
+            opts,
+          );
+        }
+      }
+    } catch (err) {
+      // Mitad de un Brain no sirve: se borra lo creado y se informa qué fuente falló.
+      await this.remove(actor, created.id).catch(() => undefined);
+      if (err instanceof ServiceError)
+        throw new ServiceError(err.status, `No se importó el Brain: ${err.message}`);
+      throw err;
+    }
+    const draft = await this.knowledge(rebuildDraftFromSources(this.prisma, created.id, actor));
+    await this.audit(actor, 'BRAIN_IMPORTED', name, {
+      brainId: created.id,
+      sources: r.value.fuentes.length,
+      draftVersion: draft.version,
+    });
+    return {
+      id: created.id,
+      name,
+      sources: r.value.fuentes.length,
+      draftVersion: draft.version,
+    };
+  }
+
+  /** Imagen importada: mismas revisiones que al subirla, pero con lo leído (no se relee). */
+  private async importImage(actor: string, b: { id: string; name: string }, f: BrainExportSource) {
+    const bytes = new Uint8Array(Buffer.from(f.data ?? '', 'base64'));
+    if (!bytes.length || bytes.length > IMAGE_LIMITS.maxBytes)
+      throw new ServiceError(400, `«${f.name}»: imagen vacía o de más de 3 MB.`);
+    const name = sanitizeFilename(f.name);
+    let detected;
+    try {
+      detected = await detectImage(bytes, name);
+    } catch (err) {
+      if (err instanceof FileRejected) throw new ServiceError(400, `«${f.name}»: ${err.message}.`);
+      throw err;
+    }
+    const meta = f.metadata ?? {};
+    const videoApps = parseVideoAppsFlag(meta.appsVideo);
+    const processes = videoApps ? [...SALE_PROCESSES] : parseImageProcesses(meta.procesos);
+    if (!processes.length) throw new ServiceError(400, `«${f.name}»: la imagen no trae procesos.`);
+    const discounts = discountsFromBody(meta, processes);
+    const contentHash = sha256(Buffer.from(bytes));
+    await this.assertNotDuplicate(b.id, contentHash, `«${f.name}» está repetida en el archivo.`);
+    const parsed: PlanImageSourceData = {
+      processes,
+      cards: f.cards ?? [],
+      model: 'importado',
+      ...(videoApps ? { videoApps: true } : {}),
+    };
+    await this.prisma.knowledgeSource.create({
+      data: {
+        brainId: b.id,
+        kind: 'FILE',
+        use: 'IMAGE',
+        name,
+        mime: detected.mime,
+        sizeBytes: bytes.length,
+        contentHash,
+        lastContentHash: contentHash,
+        blobRef: await this.blobs.put(bytes),
+        createdBy: actor,
+        status: 'READY',
+        lastIngestedAt: new Date(),
+        parsed: parsed as unknown as Prisma.InputJsonValue,
+        metadata: {
+          procesos: processes.join(','),
+          ...(videoApps ? { appsVideo: 'true' } : {}),
+          ...discountMetadata(discounts),
+        },
+      },
+    });
+  }
+
   // ---------- versiones ----------
 
   async versions(id: string) {
@@ -436,10 +812,29 @@ export class KnowledgeService {
       ? await versionRecordsFor(this.prisma, v.id, process)
       : await versionRecords(this.prisma, v.id);
     const chunks = await versionChunks(this.prisma, v.id);
+    const images = await versionImages(this.prisma, v.id);
+    const check = checkPlanImages(images, await versionRecords(this.prisma, v.id));
     return {
       ...summary(v),
       records: records.map((r) => ({ ...r, title: planTitle(r) })),
       documents: groupChunks(chunks),
+      images: images
+        .filter((i) => !process || i.videoApps || i.processes.includes(process))
+        .map((i) => {
+          const c = check.images.find((x) => x.sourceName === i.sourceName);
+          return {
+            id: i.id,
+            sourceName: i.sourceName,
+            mime: i.mime,
+            sizeBytes: i.sizeBytes,
+            processes: i.processes,
+            videoApps: i.videoApps === true,
+            cards: i.cards,
+            codes: c?.codes ?? {},
+            problems: c?.problems ?? [],
+          };
+        }),
+      imageProblems: check.problems,
     };
   }
 
@@ -479,6 +874,16 @@ export class KnowledgeService {
     );
     if (isEmptyBrainDiff(diff))
       throw new ServiceError(409, 'El borrador es igual a la versión publicada.');
+    // D-011 (como D-007 con las cifras): una imagen que muestra un plan o un precio que no está
+    // en el catálogo de esta misma versión no se publica.
+    const problems = await imageProblems(this.prisma, working.id);
+    if (problems.length) {
+      const more = problems.length > 3 ? ` (y ${problems.length - 3} más)` : '';
+      throw new ServiceError(
+        409,
+        `Las imágenes no coinciden con el catálogo: ${problems.slice(0, 3).join('; ')}${more}.`,
+      );
+    }
     const r = await this.prisma.brainVersion.updateMany({
       where: { id: working.id, status: 'DRAFT' },
       data: {
@@ -667,6 +1072,44 @@ export class KnowledgeService {
 
   // ---------- internos ----------
 
+  /**
+   * D-011: a cada fuente de imagen le agrega lo leído (procesos, planes) y su validación contra
+   * el catálogo de las fuentes listas (lo que tendrá el próximo borrador).
+   */
+  private async withImageChecks<T extends { id: string; use: string; name: string }>(
+    brainId: string,
+    sources: T[],
+  ) {
+    if (!sources.some((s) => s.use === 'IMAGE')) return sources;
+    const rows = await this.prisma.knowledgeSource.findMany({
+      where: { brainId, use: 'IMAGE' },
+      select: { id: true, parsed: true, metadata: true },
+    });
+    const content = await contentFromSources(this.prisma, brainId);
+    const check = checkPlanImages(content.images ?? [], content.records);
+    return sources.map((s) => {
+      if (s.use !== 'IMAGE') return s;
+      const row = rows.find((r) => r.id === s.id);
+      const parsed = (row?.parsed ?? null) as PlanImageSourceData | null;
+      const c = check.images.find((x) => x.sourceName === s.name);
+      return {
+        ...s,
+        image: {
+          processes: parseImageProcesses(
+            parsed?.processes ?? (row?.metadata as Record<string, unknown> | null)?.procesos,
+          ),
+          videoApps:
+            parsed?.videoApps === true ||
+            parseVideoAppsFlag((row?.metadata as Record<string, unknown> | null)?.appsVideo),
+          cards: parsed?.cards ?? null,
+          model: parsed?.model ?? null,
+          codes: c?.codes ?? {},
+          problems: c?.problems ?? [],
+        },
+      };
+    });
+  }
+
   private assertPublisher(me: KnowledgeActor) {
     if (me.role !== 'ADMIN' || !me.knowledgePublisher) throw new ServiceError(403, PUBLISH_REASON);
   }
@@ -819,14 +1262,21 @@ type VersionRow = {
   updatedAt: Date;
   publishedBy: string | null;
   publishedAt: Date | null;
-  _count: { records: number; chunks: number };
+  _count: { records: number; chunks: number; images: number };
 };
 
 type VersionSummary = Omit<VersionRow, '_count' | 'diff'> & {
   records: number;
   chunks: number;
+  images: number;
   diff: BrainDiff | null;
-  changes: { added: number; removed: number; changed: number; documents: number } | null;
+  changes: {
+    added: number;
+    removed: number;
+    changed: number;
+    documents: number;
+    images: number;
+  } | null;
 };
 
 function summary(v: VersionRow): VersionSummary;
@@ -840,6 +1290,7 @@ function summary(v: VersionRow | undefined): VersionSummary | null {
     ...rest,
     records: _count.records,
     chunks: _count.chunks,
+    images: _count.images,
     diff: d,
     changes: d
       ? {
@@ -847,6 +1298,9 @@ function summary(v: VersionRow | undefined): VersionSummary | null {
           removed: d.removed.length,
           changed: d.changed.length,
           documents: docs ? docs.added.length + docs.removed.length + docs.changed.length : 0,
+          images: d.images
+            ? d.images.added.length + d.images.removed.length + d.images.changed.length
+            : 0,
         }
       : null,
   };

@@ -1,22 +1,22 @@
 import type { TransferJob } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
-import type { HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
+import type { CloseRequest, HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
 import { MemoryAlertAdapter } from '@abaya/alerts';
 import { HandoffProcessor } from './handoff-processor.js';
 import { MemoryHandoffRepository } from './handoff.repository.js';
 
 class FakeActor {
   transfers: TransferRequest[] = [];
-  closes: string[] = [];
+  closes: CloseRequest[] = [];
   outcomes: HandoffOutcome[] = [];
   async transfer(req: TransferRequest) {
     this.transfers.push(req);
-    return this.outcomes.shift() ?? { result: 'OK' as const, noteWritten: !!req.note };
+    return this.outcomes.shift() ?? { result: 'OK' as const };
   }
-  async closeConversation(id: string) {
-    this.closes.push(id);
-    return this.outcomes.shift() ?? { result: 'OK' as const, noteWritten: false };
+  async closeConversation(req: CloseRequest) {
+    this.closes.push(req);
+    return this.outcomes.shift() ?? { result: 'OK' as const };
   }
 }
 
@@ -43,16 +43,11 @@ const job: TransferJob = {
 };
 
 describe('HandoffProcessor.transfer', () => {
-  it('escribe la nota con el resumen y transfiere a la cola de backoffice', async () => {
+  it('entrega la venta al backoffice (en ySocial: «Finalizar» sin cerrar el caso)', async () => {
     const t = setup();
     expect(await t.p.transfer(job, 0)).toBe('DONE');
-    expect(t.actor.transfers[0]).toEqual({
-      abayaChatId: 'CH-1',
-      note: '*VENTA AGENTE RPA*\nPlan: P1',
-      queueLabel: 'Backoffice ventas',
-    });
+    expect(t.actor.transfers[0]).toEqual({ abayaChatId: 'CH-1', target: 'BACKOFFICE' });
     expect(t.repo.transferred).toEqual([{ conversationId: 'c1', target: 'BACKOFFICE' }]);
-    expect((await t.repo.sale('c1'))?.noteOk).toBe(true);
   });
 
   it('espera a que la despedida se envíe antes de transferir', async () => {
@@ -73,7 +68,6 @@ describe('HandoffProcessor.transfer', () => {
     const fail: HandoffOutcome = {
       result: 'FAILED',
       reason: 'no se pudo abrir el chat',
-      noteWritten: false,
     };
     t.actor.outcomes = [fail, fail, fail];
     expect(await t.p.transfer(job, 0)).toBe('RETRY');
@@ -87,20 +81,9 @@ describe('HandoffProcessor.transfer', () => {
 
   it('resultado incierto: NEEDS_REVIEW inmediato, sin reintentar a ciegas', async () => {
     const t = setup();
-    t.actor.outcomes = [
-      { result: 'UNCERTAIN', reason: 'el chat sigue en la bandeja', noteWritten: true },
-    ];
+    t.actor.outcomes = [{ result: 'UNCERTAIN', reason: 'el chat sigue en la bandeja' }];
     expect(await t.p.transfer(job, 0)).toBe('NEEDS_REVIEW');
     expect(t.alerts.raised[0]).toMatchObject({ code: 'SALE_NOT_TRANSFERRED', severity: 'CRITICA' });
-  });
-
-  it('si la nota ya se escribió en un intento previo no se repite', async () => {
-    const t = setup();
-    t.actor.outcomes = [{ result: 'FAILED', reason: 'x', noteWritten: true }];
-    expect(await t.p.transfer(job, 0)).toBe('RETRY');
-    expect(await t.p.transfer(job, 1)).toBe('DONE');
-    expect(t.actor.transfers[0]!.note).toBeDefined();
-    expect(t.actor.transfers[1]!.note).toBeUndefined();
   });
 
   it('KillSwitch: bloqueado, sin marcar nada', async () => {
@@ -117,10 +100,20 @@ describe('HandoffProcessor.transfer', () => {
     expect(t.actor.transfers).toHaveLength(0);
   });
 
-  it('escalamiento humano va a la cola de asesores con nota de contexto', async () => {
+  it('escalamiento humano: el actor recibe el destino HUMAN', async () => {
     const t = setup();
     expect(await t.p.transfer({ ...job, target: 'HUMAN' }, 0)).toBe('DONE');
-    expect(t.actor.transfers[0]).toMatchObject({ queueLabel: 'Asesores humanos' });
+    expect(t.actor.transfers[0]).toEqual({ abayaChatId: 'CH-1', target: 'HUMAN' });
+  });
+
+  it('escalamiento humano sin definir en ySocial: revisión con alerta alta', async () => {
+    const t = setup();
+    t.actor.outcomes = [{ result: 'UNCERTAIN', reason: 'no definido en ySocial' }];
+    expect(await t.p.transfer({ ...job, target: 'HUMAN' }, 0)).toBe('NEEDS_REVIEW');
+    expect(t.alerts.raised[0]).toMatchObject({
+      code: 'ESCALATION_NOT_TRANSFERRED',
+      severity: 'ALTA',
+    });
   });
 });
 
@@ -135,12 +128,14 @@ describe('HandoffProcessor.close', () => {
         afterMessageIds: ['bye'],
       }),
     ).toBe('DONE');
-    expect(t.actor.closes).toEqual(['CH-1']);
+    expect(t.actor.closes).toEqual([
+      { abayaChatId: 'CH-1', tag: 'SAC - Ecommerce Movil - Detalle plan movil' },
+    ]);
   });
 
   it('cierre incierto: revisión y alerta alta', async () => {
     const t = setup();
-    t.actor.outcomes = [{ result: 'UNCERTAIN', reason: 'x', noteWritten: false }];
+    t.actor.outcomes = [{ result: 'UNCERTAIN', reason: 'x' }];
     expect(
       await t.p.close({
         conversationId: 'c1',

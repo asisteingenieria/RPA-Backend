@@ -104,5 +104,27 @@ export const WS_CLOSE_REVOKED = 4401;
 /** El servidor no reconoce esta instancia como la dueña del robot (duplicado). */
 export const WS_CLOSE_NOT_OWNER = 4409;
 
+/**
+ * D-010: nota de voz del cliente. Va aparte del RPC (el JSON tiene tope de 100 KB): el audio en
+ * el cuerpo (`POST inbound/audio`, `application/octet-stream`) y estos datos en la query. Cuerpo
+ * vacío = el robot no pudo descargar el audio (el servidor guarda el mensaje igual, sin audio).
+ */
+export const INBOUND_AUDIO_PATH = 'inbound/audio';
+
+/**
+ * D-014 fase 2: bytes de la imagen de planes de un mensaje saliente del robot
+ * (`GET outbound/image?messageId=…`). Va aparte del RPC por el tamaño (hasta 3 MB).
+ */
+export const OUTBOUND_IMAGE_PATH = 'outbound/image';
+export const inboundAudioParams = z.object({
+  abayaChatId: id,
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  via: z.enum(['network', 'dom']),
+  occurredAt: isoDate,
+  mimeType: z.string().max(100).optional(),
+  durationSec: z.coerce.number().min(0).max(86_400).optional(),
+});
+export type InboundAudioParams = z.infer<typeof inboundAudioParams>;
+
 export const traceAad = (ref: string) => `trace:${ref}`;
 export const TRACE_REF_RE = /^[\w-]{10,160}$/;

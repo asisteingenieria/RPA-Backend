@@ -5,6 +5,8 @@ export interface NewInboundMessage {
   bodyEncrypted: Buffer;
   detectedVia: 'network' | 'dom';
   occurredAt: Date;
+  /** D-010: nota de voz; sin audio (descarga fallida) queda FAILED y el motor lo sabe. */
+  media?: { mimeType: string | null; durationSec: number | null; audioEncrypted: Buffer | null };
 }
 
 export interface InboundRepository {
@@ -50,6 +52,20 @@ export class PrismaInboundRepository implements InboundRepository {
             bodyEncrypted: new Uint8Array(msg.bodyEncrypted),
             detectedVia: msg.detectedVia,
             occurredAt: msg.occurredAt,
+            ...(msg.media
+              ? {
+                  mediaKind: 'AUDIO' as const,
+                  mediaMimeType: msg.media.mimeType,
+                  mediaDurationSec:
+                    msg.media.durationSec === null ? null : Math.round(msg.media.durationSec),
+                  mediaEncrypted: msg.media.audioEncrypted
+                    ? new Uint8Array(msg.media.audioEncrypted)
+                    : null,
+                  transcriptStatus: msg.media.audioEncrypted
+                    ? ('PENDING' as const)
+                    : ('FAILED' as const),
+                }
+              : {}),
           },
         }),
         this.prisma.conversation.update({

@@ -11,8 +11,8 @@ import { INTENTS } from './types.js';
 export const turnOutputSchema = z
   .object({
     intent: z.enum(INTENTS),
-    reply: z.string().min(1).max(700),
-    option: z.enum(['A', 'B', 'C', 'D']).nullable(),
+    reply: z.string().min(1).max(1_500),
+    option: z.enum(['A', 'B', 'C', 'D', 'E']).nullable(),
     planCode: z.string().nullable(),
     extracted: z
       .object({

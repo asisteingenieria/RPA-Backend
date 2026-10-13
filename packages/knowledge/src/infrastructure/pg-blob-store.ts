@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { FieldCipher } from '@abaya/crypto';
 import type { PrismaClient } from '@abaya/db';
+import { knowledgeBlobAad as aad } from '@abaya/domain';
 import type { BlobStore } from '../domain/ports.js';
-
-const aad = (id: string) => `knowledge-blob:${id}`;
 
 /**
  * Archivos de las fuentes cifrados en PostgreSQL (D-001 D10). No hay S3 en el proyecto: cuando

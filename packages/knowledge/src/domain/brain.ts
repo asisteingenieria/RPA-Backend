@@ -9,7 +9,8 @@ export const BRAIN_VERSION_STATUSES = [
 ] as const;
 export type BrainVersionStatus = (typeof BRAIN_VERSION_STATUSES)[number];
 
-export const KNOWLEDGE_USES = ['CATALOG', 'FULL_CONTEXT', 'SEARCH'] as const;
+/** IMAGE (D-011): imagen de planes para el cliente, validada contra el catálogo. */
+export const KNOWLEDGE_USES = ['CATALOG', 'FULL_CONTEXT', 'SEARCH', 'IMAGE'] as const;
 export type KnowledgeUse = (typeof KNOWLEDGE_USES)[number];
 
 export const SOURCE_STATUSES = ['PROCESSING', 'READY', 'ERROR'] as const;

@@ -1,5 +1,6 @@
 import type { AgentConfig } from './agent-config.js';
 import type { Stage } from './index.js';
+import type { TranscriptStatus } from './speech.js';
 
 /** Nombres de colas BullMQ (sección 2.2). */
 export const QUEUES = {
@@ -34,7 +35,12 @@ export interface AgentTestJob {
     profile: Record<string, string | boolean>;
     history: { role: 'customer' | 'bot'; text: string }[];
   };
+  /** Texto del cliente; vacío si el turno es una nota de voz. */
   message: string;
+  /** D-010: nota de voz de prueba (base64). Se transcribe con el mismo proveedor que en producción. */
+  audio?: { data: string; mimeType: string; durationSec: number | null };
+  /** D-017: abrir la conversación (el robot saluda primero, sin mensaje del cliente). */
+  opening?: true;
 }
 
 export interface AgentTestResult {
@@ -46,12 +52,38 @@ export interface AgentTestResult {
   events: string[];
   validation: string;
   llm: { provider: string; model: string; latencyMs: number; validationResult: string }[];
+  /** D-010: lo que se entendió de la nota de voz de prueba. */
+  heard?: {
+    status: Exclude<TranscriptStatus, 'PENDING'>;
+    transcript: string;
+    model: string | null;
+    latencyMs: number | null;
+  };
+  /** Texto del cliente tal como queda en el historial (con la marca de nota de voz). */
+  customerText?: string;
+  /**
+   * D-011: imágenes de planes que se enviarían, cada una después de `afterReply` mensajes de
+   * texto del turno. Se ven con GET /admin/knowledge/brains/:brainId/versions/:version/images/:imageId.
+   */
+  images?: {
+    afterReply: number;
+    brainId: string;
+    version: number;
+    imageId: string;
+    sourceName: string;
+    caption: string | null;
+    /** Planes del catálogo que muestra. */
+    codes: string[];
+  }[];
 }
 
 export interface InboundJob {
   conversationId: string;
   abayaChatId: string;
-  messageId: string;
+  /** Mensaje que llegó (sin él, `opening`). */
+  messageId?: string;
+  /** D-017: caso recién asignado: el robot abre con el saludo y el menú sin esperar mensaje. */
+  opening?: true;
 }
 
 export interface OutboundJob {
@@ -88,6 +120,12 @@ export function robotQueue(
 
 /** Bandera del apagado de emergencia en Redis (la activa el panel, la lee el rpa). */
 export const KILL_SWITCH_KEY = 'abaya:killswitch';
+
+/**
+ * D-009: motivo de un apagado automático (JSON `{ cause, detail, at }`), p. ej. el proveedor de
+ * LLM no responde. Lo escribe el worker, lo muestra el panel y se borra al reanudar.
+ */
+export const KILL_SWITCH_REASON_KEY = 'abaya:killswitch:reason';
 
 /** Pausa de un solo robot (panel → ese rpa); se revisa junto con el kill switch global. */
 export function robotPauseKey(robotUser: string): string {

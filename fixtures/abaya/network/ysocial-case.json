@@ -1,0 +1,150 @@
+{
+  "Success": true,
+  "Result": {
+    "Case": {
+      "ID": 9000000001,
+      "IDStr": "9000000001",
+      "StartedOn": "2026-10-09T13:50:00.000Z",
+      "TotalMessages": 6,
+      "Status": 1,
+      "Queue": { "ID": 147, "Name": "Servicios Moviles Organica" },
+      "Tags": [],
+      "Messages": [
+        {
+          "ID": 7000000001,
+          "IDStr": "7000000001",
+          "PostedBy": { "ID": 570000000001, "IDStr": "570000000001", "SocialServiceType": 16 },
+          "RepliesToSocialUser": null,
+          "Incoming": true,
+          "Body": "Hablar con un asesor",
+          "Date": "2026-10-09T13:50:05Z",
+          "Status": 15,
+          "IsReply": false,
+          "ReplySource": null,
+          "RepliedBy": null,
+          "HasAttach": false,
+          "Attachments": null,
+          "IsEvent": false,
+          "Parameters": { "MessageType": "10", "Payload": "menu.asesor" }
+        },
+        {
+          "ID": 7000000002,
+          "IDStr": "7000000002",
+          "PostedBy": null,
+          "RepliesToSocialUser": {
+            "ID": 570000000001,
+            "IDStr": "570000000001",
+            "SocialServiceType": 16
+          },
+          "Incoming": true,
+          "Body": "Voy a comunicarte con uno de nuestros asesores",
+          "Date": "2026-10-09T13:50:06Z",
+          "Status": 999,
+          "IsReply": true,
+          "ReplySource": 10,
+          "RepliedBy": null,
+          "HasAttach": false,
+          "Attachments": null,
+          "IsEvent": false,
+          "Parameters": { "MessageType": "1", "YFlowInvoked": "True" }
+        },
+        {
+          "ID": 7000000003,
+          "IDStr": "7000000003",
+          "PostedBy": null,
+          "RepliesToSocialUser": {
+            "ID": 570000000001,
+            "IDStr": "570000000001",
+            "SocialServiceType": 16
+          },
+          "Incoming": true,
+          "Body": "¡Hola! Con Claro lo puedes todo.\n¿Con qué operador estás?",
+          "Date": "2026-10-09T13:51:48Z",
+          "Status": 999,
+          "IsReply": true,
+          "ReplySource": 3,
+          "RepliedBy": { "ID": 100, "Type": 2 },
+          "HasAttach": false,
+          "Attachments": null,
+          "IsEvent": false,
+          "Parameters": { "MessageType": "1", "Sent": "True", "Delivered": "True", "Read": "True" }
+        },
+        {
+          "ID": 7000000004,
+          "IDStr": "7000000004",
+          "PostedBy": { "ID": 570000000001, "IDStr": "570000000001", "SocialServiceType": 16 },
+          "Incoming": true,
+          "Body": "Tigo",
+          "Date": "2026-10-09T13:54:15Z",
+          "Status": 15,
+          "IsReply": false,
+          "ReplySource": null,
+          "HasAttach": false,
+          "Attachments": null,
+          "IsEvent": false,
+          "Parameters": { "MessageType": "1" }
+        },
+        {
+          "ID": 7000000005,
+          "IDStr": "7000000005",
+          "PostedBy": null,
+          "Incoming": true,
+          "Body": "Estos son los planes",
+          "Date": "2026-10-09T14:03:49Z",
+          "Status": 999,
+          "IsReply": true,
+          "ReplySource": 3,
+          "RepliedBy": { "ID": 100, "Type": 2 },
+          "HasAttach": true,
+          "Attachments": [
+            {
+              "MessageID": 7000000005,
+              "Index": 0,
+              "SocialID": null,
+              "MimeType": "image/png",
+              "FileName": "image.png",
+              "OriginalFileName": "image.png",
+              "FileSize": 1000,
+              "Dangerous": false,
+              "Parameters": {
+                "AzureStorage": "True",
+                "AzureStorageUrl": "https://abaya.test/blob/7000000005/0/image.png?sig=x&rscd=inline",
+                "AzureStorageUrlAttachment": "https://abaya.test/blob/7000000005/0/image.png?sig=x&rscd=attachment"
+              },
+              "Url": "https://abaya.test/blob/7000000005/0/image.png?sig=x"
+            }
+          ],
+          "IsEvent": false,
+          "Parameters": { "MessageType": "1" }
+        },
+        {
+          "ID": 7000000006,
+          "IDStr": "7000000006",
+          "PostedBy": { "ID": 570000000001, "IDStr": "570000000001", "SocialServiceType": 16 },
+          "Incoming": true,
+          "Body": "",
+          "Date": "2026-10-09T14:05:33Z",
+          "Status": 15,
+          "IsReply": false,
+          "ReplySource": null,
+          "HasAttach": true,
+          "Attachments": [
+            {
+              "MessageID": 7000000006,
+              "Index": 0,
+              "MimeType": "audio/ogg",
+              "FileName": "audio.ogg",
+              "FileSize": 9000,
+              "Parameters": {
+                "AzureStorageUrlAttachment": "https://abaya.test/blob/7000000006/0/audio.ogg?sig=y&rscd=attachment"
+              },
+              "Url": "https://abaya.test/blob/7000000006/0/audio.ogg?sig=y"
+            }
+          ],
+          "IsEvent": false,
+          "Parameters": { "MessageType": "1" }
+        }
+      ]
+    }
+  }
+}

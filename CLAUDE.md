@@ -103,7 +103,7 @@ abaya-rpa/
 8. **Fixtures siempre sanitizados.**
 9. **Toda acción queda en `RpaActionLog`** con cadena de hashes.
 10. **Toda salida del LLM se valida** (sección 6.3.5) antes de enviar o actuar.
-11. **El LLM nunca escribe precios, planes, descuentos ni textos legales**: los pone el código desde el catálogo y las plantillas.
+11. **El LLM nunca inventa precios, planes ni descuentos, ni escribe textos legales**: puede copiar cifras y beneficios del catálogo del proceso del cliente y el validador verifica cada una (D-007); los textos legales y las plantillas los pone el código.
 12. **El flujo lo decide la máquina de estados**, no el modelo.
 13. **Ningún cambio de prompt o de modelo sale sin pasar la suite de evaluación.**
 
@@ -126,12 +126,13 @@ abaya-rpa/
 - [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
 - [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; falta despliegue y piloto con Claro
 - [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
+- [x] v1.10 Abaya = ySocial (D-012), plantillas (D-013) y oferta con imágenes (D-014): Brain «Planes Agosto» v8 publicado y conectado (79/79, 0 inventados; descuentos por imagen, D-016), agente v21 publicado (D-015: conversación configurable en el panel; D-018: insultos y amenazas; imágenes por proceso); el robot pega la imagen en Abaya (probado en el simulador). Falta la prueba en vivo y activar `SEND_PLAN_IMAGES`
 
 ## Abaya simulado
 
 Mientras no haya acceso al ambiente de pruebas, `apps/rpa/test/mock-abaya/` simula Abaya
-(markup semántico + servidor HTTP con login, sesión, mensajes, notas y transferencias). Las pruebas
-`*.pw.ts` lo usan. Cuando existan fixtures reales, el simulador se ajusta para imitarlos.
+(markup y rutas de ySocial: login, sesión, mensajes, «pegar» imágenes con subida al blob,
+finalizar con etiquetas). Las pruebas `*.pw.ts` lo usan. Cuando existan fixtures reales, el simulador se ajusta para imitarlos.
 Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
 
 ## Motor de conversación (F5)
@@ -148,6 +149,14 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   Documentos: contexto completo y búsqueda híbrida (`PgHybridSearch`, embeddings por
   `EMBEDDINGS_PROVIDER`), páginas web con `SafeWebFetcher` (SSRF). Publicar exige ADMIN con
   `knowledgePublisher`.
+- **D-015: la conversación se configura en el panel, no en el código.** Lo que el agente dice, ofrece y
+  cómo responde va en el guion, las plantillas y los Brains. El camino lo define el **flujo** de la versión
+  (`AgentConfigVersion.flow`, `packages/domain/src/agent-flow.ts`): letras del menú y a qué llevan, datos
+  por proceso y su primera plantilla, fuera de alcance por etapa (soporte o asesor) y orden de imágenes.
+  Los textos que el código envía son **plantillas del sistema** (`SYSTEM_TEMPLATE_ROLES`: SOPORTE,
+  ESCALAR, TRANSFERENCIA, RESPUESTA_SEGURA, ESPERA…; sin cifras; si faltan, las de la campaña). No poner
+  instrucciones de negocio en `buildRequest`: solo datos del turno y mecánica de marcadores. El código
+  se toca solo para la seguridad (sección 7) o una acción nueva en Abaya.
 - Configuración del agente en el panel (v1.8, sección 6.3.8): guion en Markdown + ajustes en
   `AgentConfigVersion`; reglas del sistema, revisión y armado del prompt en
   `packages/domain/src/agent-config.ts`. Publicar corre la suite en el worker (cola
@@ -155,6 +164,34 @@ Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
   `abaya.agent-test`. Núcleo de la suite: `apps/worker/src/evals/suite.ts`.
 - Suite de evaluación: `pnpm evals` (línea base sin red) o
   `pnpm evals -- --provider anthropic,openai,gemini` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
+- Oferta con imágenes (D-014, plan 6.3.10): un Brain sin Excel toma los planes de las imágenes
+  (`recordsFromImages`, códigos con la inicial del proceso: `P38327`). El modelo ofrece con
+  `{{IMAGENES}}` (primero la imagen del plan más caro del proceso del cliente; las compartidas
+  después), la circular de video con `{{IMAGENES_VIDEO}}` (nunca en la primera oferta; solo la de la
+  plataforma nombrada, una vez cada una) y explica un plan con `{{DETALLE:CODIGO}}`
+  (`planDescription`, formato de la campaña). El pie de foto va en singular o plural según los
+  planes de la imagen. Sin envío de imágenes (suite, o `SEND_PLAN_IMAGES=false`) se ofrece con
+  `{{OFERTA:CODIGO}}`. El robot pega la imagen en ySocial (`Message.imageId`,
+  `BrowserActor.sendImage`, pasarela `GET /robot-api/v1/outbound/image`).
+- Entre ambientes (D-019): exportar/importar la versión del agente (`abaya-agente`) y los Brains
+  (`abaya-brain`, imágenes sin releer); el guion no se guarda si nombra una plantilla inexistente.
+  Pasos en `docs/runbook.md` 8.c.
+- Datos tras el «SÍ» (13/10/2026): la venta pasa al backoffice cuando están los datos del flujo
+  (`saleData`: documento, nombre completo y correo); se reconocen en código (`sale-data.ts`) y lo que
+  falta se pide con la plantilla `DATOS_FALTANTES` solo cuando el cliente deja de escribir
+  (`saleDataWaitSeconds`, 45 s; mientras manda datos el robot calla); 3 mensajes sin datos nuevos →
+  transfiere igual.
+- Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso
+  (regla 9 del sistema). Amenazas de violencia: alerta `CUSTOMER_THREAT` a supervisores (determinista).
+- Apertura (D-017): al asignarse un caso nuevo el robot envía el saludo con el menú sin esperar
+  mensaje (turno `opening`); su primer mensaje es siempre ese saludo, como la asesora.
+- Menú (D-014): A → Portabilidad (operador → uso → red), B → Migración (uso → red), línea nueva solo
+  si el cliente la pide (opción interna `E`); C/D → «¿en qué te puedo ayudar?» (`needAsked`) y, si
+  no es compra, plantilla de chat exclusivo de ventas.
+- Reactivación (D-013): cada 2 min, 3 intentos con plantillas distintas (no se repiten en la
+  conversación); agotados → cierre «Cliente abandona conversación» (`AgentConfigVersion.reactivation`).
+- «Probar agente»: la prueba guardada queda en la versión con la que se conversó; el historial
+  lista todas en «Pruebas guardadas» (`GET /admin/agent/tests/recent`).
 - Gemini (D-006): `LLM_PROVIDER=gemini` y `EMBEDDINGS_PROVIDER=gemini` con `GEMINI_API_KEY`;
   adaptador por API REST (sin SDK) en `apps/worker/src/llm/adapters/gemini.adapter.ts`.
 

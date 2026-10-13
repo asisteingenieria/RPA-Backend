@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Plan } from '../../catalog/catalog.js';
 import type { TurnOutput } from '../output-schema.js';
 import { validateTurnOutput, type ValidationContext } from './validators.js';
+import { discountedPriceCop, unverifiedFigures } from './figures.js';
+import * as T from '../templates/templates.js';
 
 const plan = (code: string, process: Plan['process'] = 'PORTABILIDAD'): Plan => ({
   code,
@@ -58,10 +60,45 @@ describe('validador 2: cifras prohibidas', () => {
     'Incluye 100 GB',
     'Tienes un 20% menos',
     'Son cincuenta megas',
-    'Vale 39900',
+    'Te lo dejo en treinta mil pesos',
+    'Vale 49900',
+    'Incluye 10 GB por $49.900',
     'Hasta el 15/11',
   ])('rechaza: %s', (reply) => {
     expect(errorsOf(base({ reply })).some((e) => e.startsWith('cifras'))).toBe(true);
+  });
+
+  // D-007: las cifras copiadas del catálogo del proceso (o del guion publicado) sí pasan.
+  it.each(['Incluye *10 GB* por *$39.900* al mes', 'Vale 39900', 'Son 10GB y cuesta $ 39.900'])(
+    'acepta cifras del catálogo: %s',
+    (reply) => {
+      expect(errorsOf(base({ reply }))).toEqual([]);
+    },
+  );
+
+  it('acepta números del guion publicado (líneas de atención, leyes, 5G)', () => {
+    const reply = 'Llama al *611 o al 018003200200. Tenemos 5G.';
+    expect(errorsOf(base({ reply }))).not.toEqual([]);
+    const guion = 'Canales: *611 y 018003200200. Cobertura 5G.';
+    expect(errorsOf(base({ reply }), { ...ctx, approvedTexts: [guion] })).toEqual([]);
+  });
+
+  it('un precio de otro proceso no pasa aunque exista en el catálogo', () => {
+    const otro = { ...plan('M1', 'MIGRACION'), priceCop: 29900 };
+    expect(errorsOf(base({ reply: 'Cuesta $29.900' }))).not.toEqual([]);
+    expect(errorsOf(base({ reply: 'Cuesta $29.900' }), { ...ctx, availablePlans: [otro] })).toEqual(
+      [],
+    );
+  });
+
+  it('acepta el descuento redactado con naturalidad si las cifras coinciden', () => {
+    const p = { ...plan('P1'), discountText: '20% CFM en mes 1, 2, 3, 4 y 5' };
+    const c = { ...ctx, availablePlans: [p] };
+    const reply = 'Tienes *20% de descuento* en tu cargo fijo los primeros 5 meses 🎉';
+    expect(errorsOf(base({ reply }), c)).toEqual([]);
+    expect(
+      errorsOf(base({ reply: 'Tienes 25% de descuento los primeros 5 meses' }), c),
+    ).not.toEqual([]);
   });
 
   it('permite cifras dentro de marcadores (las pone el código)', () => {
@@ -89,6 +126,39 @@ describe('validador 3: catálogo', () => {
     ).toBeGreaterThan(0);
     expect(errorsOf(base({ reply: 'Ok {{AUTORIZACION}}' }))).toContainEqual(
       expect.stringMatching(/marcadores no permitidos/),
+    );
+  });
+});
+
+describe('validador 3a: ofrecer con imágenes (D-014)', () => {
+  const images: ValidationContext = { ...ctx, imagesMode: true, videoImages: true };
+  it('en modo imágenes acepta {{IMAGENES}} y rechaza las fichas de texto', () => {
+    expect(errorsOf(base({ reply: '¡Mira esta opción! {{IMAGENES}}' }), images)).toEqual([]);
+    expect(errorsOf(base({ reply: '{{IMAGENES}}' }), images)).toEqual([]);
+    expect(errorsOf(base({ reply: 'Mira: {{OFERTA:P1}}' }), images)[0]).toMatch(
+      /se ofrecen con \{\{IMAGENES\}\}/,
+    );
+  });
+  it('no envía imágenes fuera de las etapas de oferta ni una circular de video que no existe', () => {
+    expect(errorsOf(base({ reply: '{{IMAGENES}}' }), { ...images, stage: 'MENU' })[0]).toMatch(
+      /imágenes de planes en este estado/,
+    );
+    expect(
+      errorsOf(base({ reply: 'Mira {{IMAGENES_VIDEO}}' }), { ...images, videoImages: false })[0],
+    ).toMatch(/no hay imagen de apps de video/);
+  });
+  it('fuera del modo imágenes, {{IMAGENES}} no existe', () => {
+    expect(errorsOf(base({ reply: 'Mira {{IMAGENES}}' }))[0]).toMatch(/marcadores no permitidos/);
+  });
+});
+
+describe('validador 3b: {{DETALLE}} de un plan', () => {
+  it('acepta el detalle de un plan del proceso, uno por mensaje, después de la oferta', () => {
+    expect(errorsOf(base({ reply: 'Te cuento: {{DETALLE:P1}}' }))).toEqual([]);
+    expect(errorsOf(base({ reply: '{{DETALLE:P9}}' }))[0]).toMatch(/P9 no existe/);
+    expect(errorsOf(base({ reply: '{{DETALLE:P1}} {{DETALLE:P2}}' }))[0]).toMatch(/un solo/);
+    expect(errorsOf(base({ reply: '{{DETALLE:P1}}' }), { ...ctx, stage: 'PERFIL' })[0]).toMatch(
+      /ya vio la oferta/,
     );
   });
 });
@@ -121,8 +191,10 @@ describe('validador 5: transición', () => {
 
 describe('validador 6: longitud y formato', () => {
   it('rechaza textos largos, Markdown y enlaces', () => {
-    expect(errorsOf(base({ reply: 'a'.repeat(650) }))).not.toEqual([]);
-    expect(errorsOf(base({ reply: 'Esto es **importante**' }))).toContainEqual(
+    expect(errorsOf(base({ reply: 'a'.repeat(1_250) }))).not.toEqual([]);
+    // D-007: las **negritas** se convierten a WhatsApp al enviar; los títulos no.
+    expect(errorsOf(base({ reply: 'Esto es **importante**' }))).toEqual([]);
+    expect(errorsOf(base({ reply: '## Planes\nEste' }))).toContainEqual(
       expect.stringMatching(/formato/),
     );
     expect(errorsOf(base({ reply: 'Mira en https://ejemplo.test' }))).toContainEqual(
@@ -131,5 +203,34 @@ describe('validador 6: longitud y formato', () => {
   });
   it('acepta *negrita* de WhatsApp y saltos de línea', () => {
     expect(errorsOf(base({ reply: '*Perfecto*, Ana.\n¿Qué usas más?' }))).toEqual([]);
+  });
+});
+
+describe('precio con descuento calculado por el código', () => {
+  const conDescuento = {
+    ...plan('P9'),
+    priceCop: 99900,
+    discountText: '20% CFM en mes 1, 2, 3, 4 y 5',
+  };
+  const src = { plans: [conDescuento], approvedTexts: [] };
+
+  it('calcula el precio con un único porcentaje sobre el plan', () => {
+    expect(discountedPriceCop(conDescuento)).toBe(79920);
+    expect(discountedPriceCop({ ...conDescuento, discountText: null })).toBeNull();
+    // Dos porcentajes o un descuento que no es del plan: no se adivina.
+    expect(
+      discountedPriceCop({ ...conDescuento, discountText: '20% mes 1 y 10% mes 2' }),
+    ).toBeNull();
+    expect(discountedPriceCop({ ...conDescuento, discountText: '30% en el equipo' })).toBeNull();
+  });
+
+  it('el validador acepta el precio con descuento y sigue rechazando otros', () => {
+    expect(unverifiedFigures('Con el descuento pagas $79.920 al mes', src)).toEqual([]);
+    expect(unverifiedFigures('Te queda en $79.000 al mes', src)).toHaveLength(1);
+  });
+
+  it('la ficha oficial muestra el precio con descuento', () => {
+    expect(T.offer(conDescuento)).toContain('Con el descuento pagas *$79.920* al mes');
+    expect(T.offer({ ...conDescuento, discountText: null })).not.toContain('Con el descuento');
   });
 });

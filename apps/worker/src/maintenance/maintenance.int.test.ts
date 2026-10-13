@@ -27,7 +27,7 @@ const HOUR = 3_600_000;
 async function conv(
   abayaChatId: string,
   lastInboundAt: Date | null,
-  status: 'ACTIVE' | 'TRANSFERRING' = 'ACTIVE',
+  status: 'ACTIVE' | 'WAITING_CONSENT' | 'TRANSFERRING' = 'ACTIVE',
 ) {
   return db.prisma.conversation.create({
     data: { abayaChatId, robotUser: 'robot', status, lastInboundAt },
@@ -83,6 +83,36 @@ describe('cierre por inactividad', () => {
     });
     // Idempotente.
     expect(await closeInactive(db.prisma, now, 120)).toBe(0);
+  });
+
+  it('D-013: una venta ya autorizada que se queda callada NO se cierra: pasa al backoffice', async () => {
+    const now = new Date();
+    const sold = await conv('CH-9', new Date(now.getTime() - 3 * HOUR), 'WAITING_CONSENT');
+    await db.prisma.sale.create({
+      data: {
+        conversationId: sold.id,
+        process: 'PORTABILIDAD',
+        planCode: 'P1',
+        summaryEncrypted: new Uint8Array([1]),
+      },
+    });
+    const other = await conv('CH-10', new Date(now.getTime() - 3 * HOUR));
+    // Con `ids` (reactivación agotada) no importa el tiempo.
+    expect(await closeInactive(db.prisma, now, 0, [sold.id, other.id])).toBe(2);
+    const rows = await db.prisma.conversation.findMany({
+      where: { id: { in: [sold.id, other.id] } },
+      select: { id: true, status: true },
+    });
+    const s = new Map(rows.map((x) => [x.id, x.status]));
+    expect(s.get(sold.id)).toBe('TRANSFERRING');
+    expect(s.get(other.id)).toBe('CLOSED_INACTIVE');
+    const events = await db.prisma.outboxEvent.findMany();
+    expect(
+      events.find((e) => (e.payload as { abayaChatId: string }).abayaChatId === 'CH-9'),
+    ).toMatchObject({ type: 'TransferRequested', payload: { target: 'BACKOFFICE' } });
+    expect(
+      events.find((e) => (e.payload as { abayaChatId: string }).abayaChatId === 'CH-10'),
+    ).toMatchObject({ type: 'ConversationClosed', payload: { reason: 'INACTIVE' } });
   });
 });
 

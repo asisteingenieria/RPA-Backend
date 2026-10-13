@@ -1,12 +1,35 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma, withSerializableRetry, type PrismaClient } from '@abaya/db';
 import {
   AGENT_LIMITS,
   AGENT_PROMPT_STAGES,
   DEFAULT_AGENT_CONFIG,
+  agentExport,
+  readAgentExport,
+  DEFAULT_FLOW,
+  FLOW_LIMITS,
+  FLOW_PROCESSES,
+  IMAGE_ORDERS,
+  MENU_ACTIONS,
+  MENU_LETTERS,
   MENU_OPTIONS,
+  OUT_OF_SCOPE_ACTIONS,
+  OUT_OF_SCOPE_STAGES,
+  PROFILE_FIELDS,
+  SALE_DATA_FIELDS,
+  SHARED_IMAGE_MODES,
+  SYSTEM_TEMPLATE_ROLES,
   STAGES,
   SYSTEM_RULES,
+  TEMPLATE_LIMITS,
+  TEMPLATE_ROLES,
+  TEMPLATE_VARIABLES,
+  normalizeAudioMime,
+  parseTemplates,
   reviewAgentConfig,
+  storedFlow,
+  storedReactivation,
+  storedTemplates,
   type AgentConfig,
   type AgentConfigInput,
   type AgentReviewIssue,
@@ -37,10 +60,41 @@ const PROFILE_KEYS = new Set([
   'authorizationShownAt',
   'authorizationTemplateVersion',
   'authorizationTextHash',
+  // Imágenes de la circular de video ya enviadas (ids separados por coma).
+  'videoImagesSentIds',
+  // 13/10/2026: datos del cliente tras el «SÍ» (la venta pasa cuando están los que pide el flujo).
+  'saleDocument',
+  'saleFullName',
+  'saleEmail',
+  'salePhone',
+  'dataReminders',
 ]);
 /** Marcas del flujo que la simulación conserva entre turnos (D-003). */
-const PROFILE_FLAGS = new Set(['authorizationDeclined', 'supportRedirected']);
+const PROFILE_FLAGS = new Set([
+  'authorizationDeclined',
+  'supportRedirected',
+  'dataRequested',
+  // Eligió C/D y se le preguntó qué necesita.
+  'needAsked',
+  // D-011/D-014: imágenes ya enviadas (para no repetirlas en el turno siguiente).
+  'planImagesSent',
+  'planImagesRestSent',
+  'videoImagesSent',
+]);
 const MAX_TEST_TEXT = 2_000;
+/** D-010: nota de voz de prueba (2 min de WAV a 16 kHz mono ≈ 3,8 MB). */
+export const MAX_TEST_AUDIO_BYTES = 4 * 1024 * 1024;
+/** Una nota subida y no usada se descarta a los 5 min; tope de notas en espera. */
+const TEST_AUDIO_TTL_MS = 5 * 60_000;
+const TEST_AUDIO_MAX_PENDING = 30;
+
+interface PendingTestAudio {
+  actor: string;
+  data: Buffer;
+  mimeType: string;
+  durationSec: number | null;
+  at: number;
+}
 
 /** Resultado de la evaluación de una versión (D-004). */
 /** D-005: RUNNING = la suite está corriendo (la evaluación ya no es un estado de la versión). */
@@ -102,7 +156,44 @@ const CONTENT_SELECT = {
   welcome: true,
   prompt: true,
   temperature: true,
+  templates: true,
+  reactivationMinutes: true,
+  reactivationMax: true,
+  flow: true,
 } as const;
+
+interface StoredTemplateColumns {
+  templates: unknown;
+  reactivationMinutes: number | null;
+  reactivationMax: number | null;
+  flow: unknown;
+}
+
+/**
+ * D-013: fila con las plantillas y la reactivación resueltas (las versiones anteriores a las
+ * plantillas usan las de la campaña). D-015: también el flujo (sin flujo, el de la campaña).
+ */
+function present<T extends StoredTemplateColumns>(row: T) {
+  const { templates, reactivationMinutes, reactivationMax, flow, ...rest } = row;
+  return {
+    ...rest,
+    templates: storedTemplates(templates),
+    reactivation: storedReactivation(reactivationMinutes, reactivationMax),
+    flow: storedFlow(flow),
+  };
+}
+
+/** Contenido revisado → columnas de AgentConfigVersion. */
+function toData(input: AgentConfigInput) {
+  const { templates, reactivation, flow, ...rest } = input;
+  return {
+    ...rest,
+    templates: templates as unknown as Prisma.InputJsonValue,
+    reactivationMinutes: reactivation.minutes,
+    reactivationMax: reactivation.max,
+    flow: flow as unknown as Prisma.InputJsonValue,
+  };
+}
 
 /**
  * Configuración del agente en el panel (v1.8, sección 6.3.8; D-004 y D-005): guardar, publicar al
@@ -115,6 +206,8 @@ const CONTENT_SELECT = {
  */
 export class AgentConfigService {
   private readonly staleMs: number;
+  /** D-010: notas de voz de prueba subidas y aún no usadas (en memoria; nunca se guardan). */
+  private readonly testAudio = new Map<string, PendingTestAudio>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -149,12 +242,32 @@ export class AgentConfigService {
       this.catalog ? this.catalog() : Promise.resolve([]),
     ]);
     return {
-      published: published ?? { ...DEFAULT_AGENT_CONFIG, status: 'PUBLISHED', builtIn: true },
+      published: published
+        ? present(published)
+        : { ...DEFAULT_AGENT_CONFIG, status: 'PUBLISHED', builtIn: true },
       working,
       systemRules: SYSTEM_RULES,
       menuOptions: MENU_OPTIONS,
       stages: AGENT_PROMPT_STAGES,
       limits: AGENT_LIMITS,
+      templateLimits: TEMPLATE_LIMITS,
+      templateRoles: TEMPLATE_ROLES,
+      templateVariables: TEMPLATE_VARIABLES,
+      // D-015: plantillas del sistema y opciones del flujo (listas cerradas).
+      systemTemplateRoles: SYSTEM_TEMPLATE_ROLES,
+      flowOptions: {
+        menuLetters: MENU_LETTERS,
+        menuActions: MENU_ACTIONS,
+        processes: FLOW_PROCESSES,
+        profileFields: PROFILE_FIELDS,
+        outOfScopeStages: OUT_OF_SCOPE_STAGES,
+        outOfScopeActions: OUT_OF_SCOPE_ACTIONS,
+        imageOrders: IMAGE_ORDERS,
+        sharedImageModes: SHARED_IMAGE_MODES,
+        saleDataFields: SALE_DATA_FIELDS,
+        limits: FLOW_LIMITS,
+        defaultFlow: DEFAULT_FLOW,
+      },
       provider: this.opts.provider,
       // D-005: publicar siempre se puede (el rol lo controla el guard); evaluar puede no estar disponible.
       canPublish: true,
@@ -196,7 +309,7 @@ export class AgentConfigService {
       saved = await this.prisma.agentConfigVersion.update({
         where: { id: working.id },
         data: {
-          ...input,
+          ...toData(input),
           createdBy: actor,
           evalSummary: Prisma.DbNull,
           ...(changeNote !== undefined ? { changeNote } : {}),
@@ -208,7 +321,7 @@ export class AgentConfigService {
     }
     await this.audit(actor, 'AGENT_DRAFT_SAVED', `v${saved.version}`);
     if (evaluate) return this.startEvaluation(actor, saved.id);
-    return saved;
+    return present(saved);
   }
 
   /**
@@ -245,8 +358,9 @@ export class AgentConfigService {
 
   /**
    * D-005: publica al instante la versión indicada (o la de trabajo), pase o no la evaluación.
-   * Después lanza la suite en segundo plano como evidencia (`evaluate`, por defecto sí) si la versión
-   * no tiene resultado y el servidor puede evaluar. `reason` es una nota opcional. `applyToOpen`
+   * Con `evaluate: true` lanza además la suite en segundo plano como evidencia, si la versión no
+   * tiene resultado y el servidor puede evaluar. Por defecto no evalúa (D-008: cada evaluación gasta
+   * tokens; se lanza a pedido desde el panel). `reason` es una nota opcional. `applyToOpen`
    * (urgencia) pasa a la versión nueva también las conversaciones en curso; si no, terminan con la
    * versión con la que empezaron.
    */
@@ -254,7 +368,7 @@ export class AgentConfigService {
     const b = (body ?? {}) as Record<string, unknown>;
     const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 500) : '';
     const applyToOpen = b.applyToOpen === true;
-    const evaluate = b.evaluate !== false;
+    const evaluate = b.evaluate === true;
     await this.expireStale();
     const working = await this.working();
     const id = typeof b.versionId === 'string' ? b.versionId : working?.id;
@@ -270,7 +384,7 @@ export class AgentConfigService {
         'La versión está archivada: restáurala como borrador para volver a publicarla.',
       );
     }
-    const issues = this.issues(row);
+    const issues = this.issues(present(row));
     if (issues.length) throw new AgentReviewError(issues);
     const verdict = (row.evalVerdict as EvalVerdict | null) ?? null;
 
@@ -385,7 +499,7 @@ export class AgentConfigService {
       select: CONTENT_SELECT,
     });
     if (!v) throw new ServiceError(404, 'Versión no encontrada');
-    return v;
+    return present(v);
   }
 
   /** Copia el contenido de una versión anterior como borrador (no publica nada). */
@@ -401,9 +515,72 @@ export class AgentConfigService {
       prompt: src.prompt,
       model: src.model && this.models().includes(src.model) ? src.model : null,
       temperature: src.temperature,
+      templates: storedTemplates(src.templates),
+      reactivation: storedReactivation(src.reactivationMinutes, src.reactivationMax),
+      flow: storedFlow(src.flow),
     });
     await this.audit(actor, 'AGENT_RESTORED', `v${src.version}→v${draft.version}`);
     return draft;
+  }
+
+  /** D-019: una versión como archivo para llevarla a otro ambiente (local → producción). */
+  async exportVersion(actor: string, id: string) {
+    const src = await this.prisma.agentConfigVersion.findUnique({ where: { id } });
+    if (!src) throw new ServiceError(404, 'Versión no encontrada');
+    await this.audit(actor, 'AGENT_EXPORTED', `v${src.version}`);
+    return agentExport(
+      {
+        agentName: src.agentName,
+        companyName: src.companyName,
+        companyInfo: src.companyInfo,
+        welcome: src.welcome,
+        prompt: src.prompt,
+        model: src.model,
+        temperature: src.temperature,
+        templates: storedTemplates(src.templates),
+        reactivation: storedReactivation(src.reactivationMinutes, src.reactivationMax),
+        flow: storedFlow(src.flow),
+      },
+      { version: src.version, estado: src.status },
+    );
+  }
+
+  /**
+   * D-019: importa un archivo exportado como BORRADOR (misma revisión que guardar). No pisa un
+   * borrador existente. Si el modelo no está permitido aquí, queda el modelo por defecto.
+   */
+  async importVersion(actor: string, file: { buffer?: Buffer } | undefined) {
+    if (!file?.buffer?.length)
+      throw new ServiceError(400, 'Adjunta el archivo en el campo "file".');
+    let raw: unknown;
+    try {
+      raw = JSON.parse(file.buffer.toString('utf8'));
+    } catch {
+      throw new ServiceError(400, 'El archivo no es un JSON válido.');
+    }
+    const r = readAgentExport(raw);
+    if (!r.ok) throw new ServiceError(400, `Archivo rechazado: ${r.error}.`);
+    await this.expireStale();
+    const working = await this.working();
+    if (working?.status === 'DRAFT') {
+      throw new ServiceError(
+        409,
+        `Hay un borrador (v${working.version}): publícalo o descártalo antes de importar, para no perderlo.`,
+      );
+    }
+    const model = typeof r.agente.model === 'string' ? r.agente.model : null;
+    const modelReset = !!model && !this.models().includes(model);
+    const draft = await this.saveDraft(actor, {
+      ...r.agente,
+      model: modelReset ? null : model,
+      changeNote: `Importada${r.origen ? ` (v${r.origen.version} de otro ambiente)` : ''}`,
+    });
+    await this.audit(
+      actor,
+      'AGENT_IMPORTED',
+      `v${draft.version}${r.origen ? ` ← v${r.origen.version}` : ''}`,
+    );
+    return { ...draft, modelReset };
   }
 
   /**
@@ -411,11 +588,53 @@ export class AgentConfigService {
    * que tiene en el editor (aunque no esté guardado, pero revisado); un OPERADOR, la versión
    * publicada. Nada se guarda ni toca Abaya.
    */
-  async test(role: 'ADMIN' | 'OPERADOR', body: unknown): Promise<AgentTestResult> {
+  /**
+   * D-010: guarda en memoria la nota de voz de prueba y devuelve su id de un solo uso. Solo
+   * formatos que entiende el proveedor; la duración la manda el panel (la grabó o la leyó).
+   */
+  uploadTestAudio(actor: string, contentType: string | undefined, query: unknown, data: Buffer) {
+    const mimeType = normalizeAudioMime(contentType);
+    if (!mimeType)
+      throw new ServiceError(400, 'Formato de audio no aceptado (usa OGG, MP3, M4A o WAV)');
+    if (!data.length) throw new ServiceError(400, 'La nota de voz está vacía');
+    const raw = (query ?? {}) as Record<string, unknown>;
+    const seconds = Number(raw.durationSec);
+    const durationSec =
+      raw.durationSec !== undefined && Number.isFinite(seconds) && seconds >= 0
+        ? Math.round(seconds)
+        : null;
+    const now = Date.now();
+    for (const [id, a] of this.testAudio) {
+      if (now - a.at > TEST_AUDIO_TTL_MS) this.testAudio.delete(id);
+    }
+    if (this.testAudio.size >= TEST_AUDIO_MAX_PENDING) {
+      throw new ServiceError(
+        503,
+        'Hay demasiadas notas de voz de prueba en espera; intenta en un momento',
+      );
+    }
+    const audioId = randomUUID();
+    this.testAudio.set(audioId, { actor, data, mimeType, durationSec, at: now });
+    return { audioId, durationSec };
+  }
+
+  async test(role: 'ADMIN' | 'OPERADOR', body: unknown, actor = ''): Promise<AgentTestResult> {
     if (!this.tester) throw new ServiceError(503, 'La prueba del agente no está disponible.');
     const b = (body ?? {}) as Record<string, unknown>;
+    let audio: AgentTestJob['audio'];
+    if (typeof b.audioId === 'string') {
+      const a = this.testAudio.get(b.audioId);
+      // De un solo uso y solo de quien la subió.
+      if (!a || a.actor !== actor || Date.now() - a.at > TEST_AUDIO_TTL_MS) {
+        throw new ServiceError(400, 'La nota de voz ya no está disponible: grábala de nuevo');
+      }
+      this.testAudio.delete(b.audioId);
+      audio = { data: a.data.toString('base64'), mimeType: a.mimeType, durationSec: a.durationSec };
+    }
     const message = typeof b.message === 'string' ? b.message.trim() : '';
-    if (!message || message.length > MAX_TEST_TEXT) {
+    // D-017: abrir la conversación (el robot saluda primero): sin mensaje del cliente.
+    const opening = b.opening === true;
+    if ((!opening && !message && !audio) || message.length > MAX_TEST_TEXT) {
       throw new ServiceError(400, `message: entre 1 y ${MAX_TEST_TEXT} caracteres`);
     }
     const state = this.parseTestState(b.state);
@@ -442,11 +661,23 @@ export class AgentConfigService {
             prompt: published.prompt,
             model: published.model,
             temperature: published.temperature,
+            templates: storedTemplates(published.templates),
+            reactivation: storedReactivation(
+              published.reactivationMinutes,
+              published.reactivationMax,
+            ),
+            flow: storedFlow(published.flow),
           }
         : DEFAULT_AGENT_CONFIG;
     }
     try {
-      return await this.tester.run({ agent, state, message });
+      return await this.tester.run({
+        agent,
+        state,
+        message,
+        ...(audio ? { audio } : {}),
+        ...(opening ? { opening: true as const } : {}),
+      });
     } catch {
       throw new ServiceError(
         503,
@@ -507,6 +738,23 @@ export class AgentConfigService {
     });
   }
 
+  /** Pruebas guardadas sin versión (el editor tenía cambios sin guardar al probar). */
+  /** Las últimas pruebas guardadas de todas las versiones (para encontrarlas siempre). */
+  recentTests() {
+    return this.prisma.agentTestRecord.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  unversionedTests() {
+    return this.prisma.agentTestRecord.findMany({
+      where: { versionId: null },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
   // ---------- internos ----------
 
   private requireEvaluator() {
@@ -547,7 +795,7 @@ export class AgentConfigService {
       select: CONTENT_SELECT,
     });
     await this.audit(actor, 'AGENT_EVALUATION_REQUESTED', `v${v.version}`);
-    return v;
+    return present(v);
   }
 
   /** Cancela una evaluación en curso (el worker la ve y se detiene). */
@@ -607,7 +855,7 @@ export class AgentConfigService {
       select: CONTENT_SELECT,
     });
     if (!latest || latest.status === 'PUBLISHED' || latest.status === 'ARCHIVED') return null;
-    return latest;
+    return present(latest);
   }
 
   private async createVersion(
@@ -622,7 +870,7 @@ export class AgentConfigService {
       const next = Math.max(max._max.version ?? 0, DEFAULT_AGENT_CONFIG.version) + 1;
       try {
         return await this.prisma.agentConfigVersion.create({
-          data: { ...input, version: next, status: 'DRAFT', createdBy: actor, changeNote },
+          data: { ...toData(input), version: next, status: 'DRAFT', createdBy: actor, changeNote },
           select: CONTENT_SELECT,
         });
       } catch (err) {
@@ -674,6 +922,24 @@ export class AgentConfigService {
     if (model !== null && model !== undefined && typeof model !== 'string') {
       throw new ServiceError(400, 'model debe ser texto o null');
     }
+    // D-013: sin plantillas (panel anterior) → las de la campaña; con forma inválida → 400.
+    let templates = storedTemplates(null);
+    if (b.templates !== undefined) {
+      const parsed = parseTemplates(b.templates);
+      if (!parsed)
+        throw new ServiceError(
+          400,
+          'templates: lista de { id, group, title, role, when, text } con un rol válido',
+        );
+      templates = parsed;
+    }
+    const r = (b.reactivation ?? {}) as Record<string, unknown>;
+    const num = (v: unknown) => (typeof v === 'number' ? v : null);
+    const reactivation = storedReactivation(num(r.minutes), num(r.max));
+    // D-015: sin flujo (panel anterior) → el de la campaña; lo que no se entienda, también.
+    if (b.flow !== undefined && (b.flow === null || typeof b.flow !== 'object'))
+      throw new ServiceError(400, 'flow: objeto con menu, processes y outOfScope');
+    const flow = b.flow === undefined ? DEFAULT_FLOW : storedFlow(b.flow);
     return {
       agentName: str('agentName').trim(),
       companyName: str('companyName').trim(),
@@ -682,6 +948,9 @@ export class AgentConfigService {
       prompt: str('prompt'),
       model: model ? model : null,
       temperature,
+      templates,
+      reactivation,
+      flow,
     };
   }
 

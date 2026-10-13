@@ -103,6 +103,12 @@ const fields = (over: Partial<typeof defaults> = {}) => ({
   ...over,
 });
 
+/** Columnas de AgentConfigVersion (D-013: plantillas y reactivación por defecto = null). */
+const row = (over: Partial<typeof defaults> = {}) => {
+  const { templates: _t, reactivation: _r, flow: _f, ...rest } = fields(over);
+  return rest;
+};
+
 describe('configuración del agente (v1.8)', () => {
   it('sin versiones muestra la v1 del código, las reglas del sistema y el catálogo', async () => {
     const ops = await ready('ana.ops', 'OPERADOR');
@@ -161,7 +167,7 @@ describe('configuración del agente (v1.8)', () => {
     expect(fieldsWithIssues).toEqual(expect.arrayContaining(['model', 'temperature']));
   });
 
-  it('guardar sin evaluar reescribe el borrador; D-005: publicar sin evaluar es inmediato y evalúa después', async () => {
+  it('guardar sin evaluar reescribe el borrador; D-005: publicar es inmediato y, si se pide, evalúa después', async () => {
     const admin = await ready('jefe', 'ADMIN');
     let r = await put('/admin/agent/draft', fields(), admin);
     expect(r.status).toBe(200);
@@ -182,7 +188,7 @@ describe('configuración del agente (v1.8)', () => {
     expect(await db.prisma.agentConfigVersion.count()).toBe(1);
     expect(jobs).toHaveLength(0);
 
-    r = await post('/admin/agent/draft/publish', {}, admin);
+    r = await post('/admin/agent/draft/publish', { evaluate: true }, admin);
     expect(r.status).toBe(201);
     expect(await json(r)).toMatchObject({
       version: 2,
@@ -196,14 +202,10 @@ describe('configuración del agente (v1.8)', () => {
     expect(pub).toMatchObject({ status: 'PUBLISHED', evalVerdict: 'RUNNING', publishReason: null });
   });
 
-  it('D-005: publicar sin evaluar como evidencia (evaluate: false) no encola la suite', async () => {
+  it('D-008: publicar no evalúa por defecto (cada evaluación gasta tokens)', async () => {
     const admin = await ready('jefe', 'ADMIN');
     await put('/admin/agent/draft', fields(), admin);
-    const r = await post(
-      '/admin/agent/draft/publish',
-      { evaluate: false, reason: 'ajuste' },
-      admin,
-    );
+    const r = await post('/admin/agent/draft/publish', { reason: 'ajuste' }, admin);
     expect(await json(r)).toMatchObject({ status: 'PUBLISHED', evaluation: 'SKIPPED' });
     expect(jobs).toHaveLength(0);
     const audit = await db.prisma.adminAuditLog.findFirstOrThrow({
@@ -380,6 +382,24 @@ describe('configuración del agente (v1.8)', () => {
     expect(list[0]).toMatchObject({ version: 2, note: 'saludo', transcript });
     const versions = (await json(await get('/admin/agent/versions', admin))) as { tests: number }[];
     expect(versions[0]!.tests).toBe(1);
+
+    // Sin versión (el editor tenía cambios sin guardar): se listan aparte.
+    r = await post(
+      '/admin/agent/tests',
+      { source: 'editor', transcript, finalStage: 'MENU' },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    const loose = (await json(await get('/admin/agent/tests/unversioned', admin))) as unknown[];
+    expect(loose).toHaveLength(1);
+    expect(loose[0]).toMatchObject({ versionId: null, transcript });
+    // Todas juntas (con y sin versión), las más recientes primero: siempre se encuentran.
+    const recent = (await json(await get('/admin/agent/tests/recent', admin))) as {
+      versionId: string | null;
+    }[];
+    expect(recent.length).toBeGreaterThanOrEqual(2);
+    expect(recent[0]!.versionId).toBeNull();
+    expect(recent.some((t) => t.versionId)).toBe(true);
   });
 
   it('tras un rechazo, guardar crea una versión nueva (el rechazo queda en el historial)', async () => {
@@ -394,13 +414,152 @@ describe('configuración del agente (v1.8)', () => {
     expect(statuses).toEqual(['REJECTED', 'DRAFT']);
   });
 
+  it('D-013: las plantillas y la reactivación se guardan con la versión y se revisan', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    // Sin versión guardada se ven las plantillas de la campaña.
+    const overview = await json(await call('/admin/agent', {}, admin));
+    expect(overview.published.templates.some((t: { id: string }) => t.id === 'autorizacion')).toBe(
+      true,
+    );
+    expect(overview.templateRoles).toContain('REACTIVACION');
+
+    const templates = [
+      ...defaults.templates.filter((t) => t.id !== 'perfil-redes'),
+      {
+        id: 'perfil-redes',
+        group: 'Perfilamiento',
+        title: 'Red social',
+        role: 'RESPUESTA',
+        when: 'Para saber qué red usa más.',
+        text: '¿Qué red social usas más, {nombre_cliente}?',
+      },
+    ];
+    const r = await put(
+      '/admin/agent/draft',
+      { ...fields(), templates, reactivation: { minutes: 7, max: 2 } },
+      admin,
+    );
+    expect(r.status).toBe(200);
+    const saved = await json(r);
+    expect(saved.reactivation).toEqual({ minutes: 7, max: 2 });
+    expect(saved.templates.find((t: { id: string }) => t.id === 'perfil-redes').text).toBe(
+      '¿Qué red social usas más, {nombre_cliente}?',
+    );
+    const row = await db.prisma.agentConfigVersion.findFirstOrThrow({ where: { id: saved.id } });
+    expect(row.reactivationMinutes).toBe(7);
+
+    // Dos autorizaciones, variable desconocida e id inválido: no se guarda.
+    const bad = await put(
+      '/admin/agent/draft',
+      {
+        ...fields(),
+        templates: [
+          ...defaults.templates,
+          {
+            ...defaults.templates.find((t) => t.role === 'AUTORIZACION')!,
+            id: 'otra-autorizacion',
+          },
+          {
+            id: 'Mal Id',
+            group: 'x',
+            title: 'x',
+            role: 'RESPUESTA',
+            when: 'x',
+            text: 'Hola {cliente}',
+          },
+        ],
+      },
+      admin,
+    );
+    expect(bad.status).toBe(400);
+    const issues = (await json(bad)).issues as { field: string; message: string }[];
+    const messages = issues.filter((i) => i.field === 'templates').map((i) => i.message);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        'debe haber exactamente una plantilla de AUTORIZACIÓN',
+        expect.stringContaining('variable desconocida {cliente}'),
+        expect.stringContaining('id: solo minúsculas'),
+      ]),
+    );
+    // Forma inválida: 400 sin llegar a la revisión.
+    expect((await put('/admin/agent/draft', { ...fields(), templates: 'x' }, admin)).status).toBe(
+      400,
+    );
+  });
+
+  it('D-015: el flujo y las plantillas del sistema se guardan con la versión y se revisan', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const overview = await json(await call('/admin/agent', {}, admin));
+    // Sin versión guardada: el flujo de la campaña y sus listas cerradas.
+    expect(overview.published.flow.outOfScope.MENU).toBe('SOPORTE');
+    expect(overview.flowOptions.menuActions).toContain('PREGUNTAR_NECESIDAD');
+    expect(overview.systemTemplateRoles).toContain('SOPORTE');
+    expect(overview.published.templates.some((t: { role: string }) => t.role === 'ESCALAR')).toBe(
+      true,
+    );
+
+    const flow = {
+      ...defaults.flow,
+      outOfScope: { ...defaults.flow.outOfScope, OFERTA: 'SOPORTE' },
+      processes: {
+        ...defaults.flow.processes,
+        LINEA_NUEVA: { ...defaults.flow.processes.LINEA_NUEVA, imageOrder: 'CARGA' },
+      },
+    };
+    const templates = defaults.templates.map((t) =>
+      t.role === 'SOPORTE' ? { ...t, text: 'Solo vendemos planes. Llama al *611.' } : t,
+    );
+    const r = await put('/admin/agent/draft', { ...fields(), flow, templates }, admin);
+    expect(r.status).toBe(200);
+    const saved = await json(r);
+    expect(saved.flow.outOfScope.OFERTA).toBe('SOPORTE');
+    expect(saved.flow.processes.LINEA_NUEVA.imageOrder).toBe('CARGA');
+    expect(saved.flow.processes.PORTABILIDAD.imageOrder).toBe('PROPIAS_PRIMERO');
+    expect(saved.templates.find((t: { role: string }) => t.role === 'SOPORTE').text).toBe(
+      'Solo vendemos planes. Llama al *611.',
+    );
+    const stored = await db.prisma.agentConfigVersion.findFirstOrThrow({ where: { id: saved.id } });
+    expect(
+      (stored.flow as { processes: { LINEA_NUEVA: { imageOrder: string } } }).processes.LINEA_NUEVA
+        .imageOrder,
+    ).toBe('CARGA');
+
+    // Menú sin venta y plantilla del sistema con precio: no se guarda.
+    const bad = await put(
+      '/admin/agent/draft',
+      {
+        ...fields(),
+        flow: {
+          ...defaults.flow,
+          menu: defaults.flow.menu.map((o) => ({ ...o, action: 'PREGUNTAR_NECESIDAD' })),
+        },
+        templates: defaults.templates.map((t) =>
+          t.role === 'ESCALAR' ? { ...t, text: 'Te paso con un asesor, planes desde $45.900' } : t,
+        ),
+      },
+      admin,
+    );
+    expect(bad.status).toBe(400);
+    const issues = (await json(bad)).issues as { field: string; message: string }[];
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        { field: 'flow', message: 'menú: al menos una opción debe llevar a un proceso de venta' },
+        expect.objectContaining({
+          field: 'templates',
+          message: 'plantilla del sistema: sin precios, gigas ni porcentajes (salen del catálogo)',
+        }),
+      ]),
+    );
+    expect((await put('/admin/agent/draft', { ...fields(), flow: 'x' }, admin)).status).toBe(400);
+  });
+
   it('restaurar copia una versión anterior como borrador', async () => {
     const admin = await ready('jefe', 'ADMIN');
     const old = await db.prisma.agentConfigVersion.create({
-      data: { ...fields({ agentName: 'Antigua' }), version: 2, status: 'ARCHIVED', createdBy: 'x' },
+      data: { ...row({ agentName: 'Antigua' }), version: 2, status: 'ARCHIVED', createdBy: 'x' },
     });
     await db.prisma.agentConfigVersion.create({
-      data: { ...fields(), version: 3, status: 'PUBLISHED', createdBy: 'x' },
+      data: { ...row(), version: 3, status: 'PUBLISHED', createdBy: 'x' },
     });
     const r = await post(`/admin/agent/versions/${old.id}/restore`, {}, admin);
     expect(r.status).toBe(201);
@@ -408,6 +567,85 @@ describe('configuración del agente (v1.8)', () => {
     const overview = await json(await call('/admin/agent', {}, admin));
     expect(overview.published.version).toBe(3);
     expect(overview.working.version).toBe(4);
+  });
+
+  it('D-019: exportar una versión e importarla queda como borrador idéntico (otro ambiente)', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const ops = await ready('ana.ops', 'OPERADOR');
+    const templates = defaults.templates.map((t) =>
+      t.role === 'SOPORTE' ? { ...t, text: 'Solo vendemos planes. Llama al *611.' } : t,
+    );
+    const flow = {
+      ...defaults.flow,
+      processes: {
+        ...defaults.flow.processes,
+        MIGRACION: { ...defaults.flow.processes.MIGRACION, imageOrder: 'CARGA' as const },
+      },
+    };
+    const src = await db.prisma.agentConfigVersion.create({
+      data: {
+        ...row({ prompt: '# Rol\n- Eres Sofía.\n\n## PERFIL\n- {{PLANTILLA:perfil-uso}}' }),
+        templates: JSON.parse(JSON.stringify(templates)),
+        flow: JSON.parse(JSON.stringify(flow)),
+        model: 'modelo-de-otro-ambiente',
+        version: 5,
+        status: 'PUBLISHED',
+        createdBy: 'x',
+      },
+    });
+    expect((await call(`/admin/agent/versions/${src.id}/export`, {}, ops)).status).toBe(403);
+    const exported = await json(await call(`/admin/agent/versions/${src.id}/export`, {}, admin));
+    expect(exported).toMatchObject({ formato: 'abaya-agente', version: 1, origen: { version: 5 } });
+
+    const upload = (body: unknown, cookie = admin) => {
+      const form = new FormData();
+      form.append('file', new Blob([JSON.stringify(body)]), 'agente.json');
+      // Multipart: sin content-type propio (lo pone fetch con el límite del formulario).
+      return fetch(`${base}/admin/agent/import`, {
+        method: 'POST',
+        body: form,
+        headers: { 'x-requested-with': 'abaya-panel', cookie },
+      });
+    };
+    // «Otro ambiente»: se archiva la v5 para simular una base sin esa versión publicada.
+    await db.prisma.agentConfigVersion.update({
+      where: { id: src.id },
+      data: { status: 'ARCHIVED' },
+    });
+    const r = await upload(exported);
+    expect(r.status).toBe(201);
+    const imported = await json(r);
+    expect(imported).toMatchObject({ status: 'DRAFT', modelReset: true, model: null });
+    expect(imported.prompt).toBe(exported.agente.prompt);
+    expect(imported.flow.processes.MIGRACION.imageOrder).toBe('CARGA');
+    expect(imported.templates.find((t: { role: string }) => t.role === 'SOPORTE').text).toBe(
+      'Solo vendemos planes. Llama al *611.',
+    );
+    expect(imported.changeNote).toBe('Importada (v5 de otro ambiente)');
+    // Ya hay un borrador: no se pisa.
+    expect((await upload(exported)).status).toBe(409);
+    // Archivos que no son una exportación del agente.
+    await db.prisma.agentConfigVersion.delete({ where: { id: imported.id } });
+    expect((await upload({ formato: 'otro' })).status).toBe(400);
+    expect((await upload(exported, ops)).status).toBe(403);
+  });
+
+  it('D-019: el guion no se guarda si nombra una plantilla que no existe', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const r = await put(
+      '/admin/agent/draft',
+      fields({ prompt: '# Rol\n- Eres Sofía.\n\n## PERFIL\n- {{PLANTILLA:perfil-usos}}' }),
+      admin,
+    );
+    expect(r.status).toBe(400);
+    expect((await json(r)).issues).toEqual([
+      {
+        field: 'prompt',
+        line: 5,
+        message:
+          'la plantilla «perfil-usos» no existe entre las plantillas de respuesta del agente',
+      },
+    ]);
   });
 
   it('D-005: sin LLM real o sin API key se publica igual, pero no se puede evaluar', async () => {
@@ -418,7 +656,7 @@ describe('configuración del agente (v1.8)', () => {
     );
     const v2 = await svc.saveDraft('jefe', fields());
     await expect(svc.evaluate('jefe', v2.id)).rejects.toMatchObject({ status: 409 });
-    expect(await svc.publish('jefe')).toMatchObject({
+    expect(await svc.publish('jefe', { evaluate: true })).toMatchObject({
       status: 'PUBLISHED',
       evaluation: 'UNAVAILABLE',
     });
@@ -508,7 +746,7 @@ describe('probar agente (chat de simulación)', () => {
     const ops = await ready('ana.ops', 'OPERADOR');
     await db.prisma.agentConfigVersion.create({
       data: {
-        ...fields({ agentName: 'Publicada' }),
+        ...row({ agentName: 'Publicada' }),
         version: 2,
         status: 'PUBLISHED',
         createdBy: 'x',
@@ -521,6 +759,42 @@ describe('probar agente (chat de simulación)', () => {
     );
     expect(r.status).toBe(201);
     expect(tests[0]!.agent.agentName).toBe('Publicada');
+  });
+
+  it('D-010: nota de voz de prueba: se sube aparte, es de un solo uso y llega al worker', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const upload = (body: Buffer, type: string, cookie = admin) =>
+      fetch(`${base}/admin/agent/test/audio?durationSec=4.6`, {
+        method: 'POST',
+        headers: { 'content-type': type, 'x-requested-with': 'abaya-panel', cookie },
+        body,
+      });
+    const audio = Buffer.from('RIFF-nota-sintetica');
+    const up = await upload(audio, 'audio/x-wav');
+    expect(up.status).toBe(200);
+    const { audioId, durationSec } = await json(up);
+    expect(durationSec).toBe(5);
+
+    const r = await post('/admin/agent/test', { source: 'published', state, audioId }, admin);
+    expect(r.status).toBe(201);
+    expect(tests[0]).toMatchObject({
+      message: '',
+      audio: { data: audio.toString('base64'), mimeType: 'audio/wav', durationSec: 5 },
+    });
+    // De un solo uso.
+    expect(
+      (await post('/admin/agent/test', { source: 'published', state, audioId }, admin)).status,
+    ).toBe(400);
+    // Solo de quien la subió.
+    const other = await json(await upload(audio, 'audio/ogg'));
+    const ops = await ready('ana.ops', 'OPERADOR');
+    expect(
+      (await post('/admin/agent/test', { source: 'published', state, audioId: other.audioId }, ops))
+        .status,
+    ).toBe(400);
+    // Formato no aceptado y vacío.
+    expect((await upload(audio, 'video/mp4')).status).toBe(400);
+    expect((await upload(Buffer.alloc(0), 'audio/ogg')).status).toBe(400);
   });
 
   it('valida el mensaje y el estado', async () => {
@@ -537,5 +811,12 @@ describe('probar agente (chat de simulación)', () => {
         )
       ).status,
     ).toBe(400);
+  });
+
+  it('D-017: abrir la conversación de prueba no necesita mensaje del cliente', async () => {
+    const ops = await ready('ana.ops', 'OPERADOR');
+    const r = await post('/admin/agent/test', { source: 'published', state, opening: true }, ops);
+    expect(r.status).toBe(201);
+    expect(tests.at(-1)).toMatchObject({ opening: true, message: '' });
   });
 });

@@ -62,26 +62,50 @@ enum OutboundStatus {
 }
 
 model Message {
-  id             String          @id @default(cuid())
-  conversationId String
-  direction      Direction
-  fingerprint    String?         @unique // entrantes: deduplicación
-  idempotencyKey String?         @unique // salientes
-  bodyEncrypted  Bytes
-  status         OutboundStatus?
-  detectedVia    String? // "network" | "dom"
-  attempts       Int             @default(0)
-  processedAt    DateTime? // entrantes: turno del motor que ya los atendió
+  id               String            @id @default(cuid())
+  conversationId   String
+  direction        Direction
+  fingerprint      String?           @unique // entrantes: deduplicación
+  idempotencyKey   String?           @unique // salientes
+  bodyEncrypted    Bytes
+  status           OutboundStatus?
+  detectedVia      String? // "network" | "dom"
+  attempts         Int               @default(0)
+  processedAt      DateTime? // entrantes: turno del motor que ya los atendió
   /// salientes (v1.5): primera respuesta de un turno → cuándo el robot detectó el primer
   /// mensaje de la ráfaga; y cuándo Abaya confirmó el envío. Ambas con el reloj del robot.
-  respondsToAt   DateTime?
-  sentAt         DateTime?
-  occurredAt     DateTime
-  createdAt      DateTime        @default(now())
-  conversation   Conversation    @relation(fields: [conversationId], references: [id])
+  respondsToAt     DateTime?
+  sentAt           DateTime?
+  occurredAt       DateTime
+  createdAt        DateTime          @default(now())
+  /// D-010: nota de voz del cliente. `bodyEncrypted` guarda la transcripción (vacía hasta
+  /// transcribir). El audio cifrado vive aquí solo hasta transcribirlo y luego se borra.
+  mediaKind        MediaKind?
+  mediaMimeType    String?
+  mediaDurationSec Int?
+  mediaEncrypted   Bytes?
+  transcriptStatus TranscriptStatus?
+  transcriptModel  String?
+  transcriptMs     Int?
+  /// D-014 fase 2: imagen de planes que acompaña al saliente (VersionImage.id); el cuerpo es el
+  /// pie de foto. Sin llave foránea: la versión del Brain puede purgarse después del envío.
+  imageId          String?
+  conversation     Conversation      @relation(fields: [conversationId], references: [id])
 
   @@index([conversationId, occurredAt])
   @@index([sentAt])
+}
+
+enum MediaKind {
+  AUDIO
+}
+
+enum TranscriptStatus {
+  PENDING
+  OK
+  UNINTELLIGIBLE
+  TOO_LONG
+  FAILED
 }
 
 model Sale {
@@ -183,33 +207,64 @@ enum AgentConfigStatus {
 model AgentConfigVersion {
   // configuración y guion del agente editados en el panel (v1.8, sección 6.3.8).
   // Una sola PUBLISHED a la vez (transacción Serializable al publicar).
-  id            String            @id @default(cuid())
-  version       Int               @unique
-  status        AgentConfigStatus @default(DRAFT)
-  agentName     String
-  companyName   String
-  companyInfo   String
-  welcome       String // saludo antes del menú A–D (fijo en código)
-  prompt        String // bloque grande en Markdown
-  model         String? // null = el de la configuración del worker
-  temperature   Float // 0–0.3
-  evalSummary   Json? // resultado de la suite (avance mientras evalúa)
+  id                  String            @id @default(cuid())
+  version             Int               @unique
+  status              AgentConfigStatus @default(DRAFT)
+  agentName           String
+  companyName         String
+  companyInfo         String
+  welcome             String // saludo antes del menú A–D (fijo en código)
+  prompt              String // bloque grande en Markdown
+  model               String? // null = el de la configuración del worker
+  temperature         Float // 0–0.3
+  /// D-013: plantillas de respuesta [{ id, group, title, role, when, text }]. null = las de la campaña por defecto.
+  templates           Json?
+  /// D-013: reactivación (minutos de silencio antes de cada mensaje y máximo). null = por defecto.
+  reactivationMinutes Int?
+  reactivationMax     Int?
+  /// D-015: flujo (menú, datos por proceso, fuera de alcance, orden de imágenes). null = el de la campaña.
+  flow                Json?
+  evalSummary         Json? // resultado de la suite (avance mientras evalúa)
   /// D-004/D-005: OK | WARN | BLOCKED | ERROR | CANCELLED | RUNNING (null = sin evaluar). Evidencia: no frena la publicación.
-  evalVerdict   String?
-  evaluatedAt   DateTime?
+  evalVerdict         String?
+  evaluatedAt         DateTime?
   /// D-004: nota del cambio que escribe quien guarda.
-  changeNote    String?
+  changeNote          String?
   /// D-005: nota opcional de quien publica.
-  publishReason String?
+  publishReason       String?
   /// D-004: al publicar se aplicó también a las conversaciones en curso (urgencia).
-  appliedToOpen Boolean           @default(false)
-  createdBy     String
-  publishedBy   String?
-  publishedAt   DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  appliedToOpen       Boolean           @default(false)
+  createdBy           String
+  publishedBy         String?
+  publishedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   @@index([status])
+}
+
+enum UsageKind {
+  VOICE // notas de voz (D-010)
+  IMAGE_READ // lectura de imágenes de planes (D-011)
+  EMBEDDING // embeddings de los Brains
+  EVAL // suite de evaluación
+  TEST // «Probar agente»
+}
+
+model ModelUsage {
+  // Consumo de tokens fuera de las conversaciones (esas quedan en LlmCall). Sin contenido.
+  id           String    @id @default(cuid())
+  kind         UsageKind
+  provider     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  latencyMs    Int?
+  /// Tokens aproximados (el proveedor no los informa).
+  estimated    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  @@index([createdAt])
 }
 
 model LlmCall {
@@ -227,6 +282,7 @@ model LlmCall {
   createdAt        DateTime @default(now())
 
   @@index([conversationId])
+  @@index([createdAt])
 }
 
 model OutboxEvent {
@@ -340,6 +396,7 @@ enum KnowledgeUse {
   CATALOG // registros estructurados (catálogo de planes)
   FULL_CONTEXT // contenido pequeño inyectado completo (K3)
   SEARCH // búsqueda híbrida (K4)
+  IMAGE // imagen de planes para enviar al cliente (D-011), validada contra el catálogo
 }
 
 enum KnowledgeSourceKind {
@@ -386,6 +443,7 @@ model BrainVersion {
   brain       Brain              @relation(fields: [brainId], references: [id], onDelete: Cascade)
   records     CatalogRecord[]
   chunks      VersionChunk[]
+  images      VersionImage[]
 
   @@unique([brainId, version])
   @@index([brainId, status])
@@ -455,6 +513,31 @@ model CatalogRecord {
 
   @@unique([brainVersionId, code])
   @@index([brainVersionId, process])
+}
+
+model VersionImage {
+  // D-011: imagen de planes congelada en una versión del Brain. Se envía al cliente al elegir el
+  // proceso; solo se publica si cada plan que muestra coincide con el catálogo de la versión.
+  id             String       @id @default(cuid())
+  brainVersionId String
+  sourceName     String
+  /// sha256 del archivo (diff entre versiones).
+  sourceHash     String
+  /// Archivo cifrado (KnowledgeBlob). Se conserva mientras una versión lo use.
+  blobRef        String
+  mime           String
+  sizeBytes      Int
+  /// PORTABILIDAD | MIGRACION | LINEA_NUEVA
+  processes      String[]
+  ord            Int
+  /// Planes leídos de la imagen: [{ code, dataText, priceCop }].
+  cards          Json
+  /// D-014: circular de apps de video: aplica a todos los procesos y se envía solo si el cliente habla de video.
+  videoApps      Boolean      @default(false)
+  version        BrainVersion @relation(fields: [brainVersionId], references: [id], onDelete: Cascade)
+
+  @@index([brainVersionId])
+  @@index([blobRef])
 }
 
 model AgentBrain {

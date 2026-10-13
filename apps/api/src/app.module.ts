@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { Module, type OnApplicationShutdown } from '@nestjs/common';
 import { loadConfig } from '@abaya/config';
 import { cipherFromConfig } from '@abaya/crypto';
-import { createPrismaClient } from '@abaya/db';
+import { createPrismaClient, PrismaUsageRecorder } from '@abaya/db';
 import { AdminAuthGuard } from './admin/admin-auth.guard.js';
 import { AdminController } from './admin/admin.controller.js';
 import { AdminService } from './admin/admin.service.js';
@@ -14,6 +14,7 @@ import { KnowledgeController } from './admin/knowledge.controller.js';
 import { KnowledgeService } from './admin/knowledge.service.js';
 import {
   embeddingsFromConfig,
+  withEmbeddingUsage,
   KnowledgeRetriever,
   PgBlobStore,
   PgHybridSearch,
@@ -23,6 +24,8 @@ import { QUEUES, type AgentTestJob, type AgentTestResult, type EvalJob } from '@
 import { Queue, QueueEvents } from 'bullmq';
 import { AuthController, COOKIE_SECURE } from './admin/auth.controller.js';
 import { RedisFlagStore } from './admin/flags.js';
+import { UsageController } from './admin/usage.controller.js';
+import { UsageService } from './admin/usage.service.js';
 import { UsersController } from './admin/users.controller.js';
 import { UsersService } from './admin/users.service.js';
 import { HealthController } from './health/health.controller.js';
@@ -38,6 +41,9 @@ import { RobotsService } from './robots/robots.service.js';
 
 const cfg = loadConfig();
 const prisma = createPrismaClient(cfg.DATABASE_URL);
+// Vista «Consumo»: embeddings de la prueba de búsqueda de los Brains.
+const usageRecorder = new PrismaUsageRecorder(prisma);
+const apiEmbeddings = embeddingsFromConfig(cfg);
 const flags = new RedisFlagStore(cfg.REDIS_URL);
 
 // Servidor padre (v1.4) y pasarela de robots hijos (v1.6, sección 2.8).
@@ -121,7 +127,7 @@ const knowledge: KnowledgeService = new KnowledgeService(
     retriever: new KnowledgeRetriever(
       prisma,
       new PgHybridSearch(prisma),
-      embeddingsFromConfig(cfg),
+      apiEmbeddings ? withEmbeddingUsage(apiEmbeddings, usageRecorder) : null,
       {
         topK: cfg.KNOWLEDGE_SEARCH_TOP_K,
         fullContextBudget: cfg.KNOWLEDGE_FULL_CONTEXT_MAX_TOKENS * 2,
@@ -179,12 +185,14 @@ traceCleanup.unref();
     AgentConfigController,
     KnowledgeController,
     ConversationsController,
+    UsageController,
     RobotsController,
     RobotGatewayController,
   ],
   providers: [
     { provide: AdminService, useValue: new AdminService(prisma, flags) },
     { provide: UsersService, useValue: new UsersService(prisma) },
+    { provide: UsageService, useValue: new UsageService(prisma, cfg.MODEL_PRICES_USD) },
     { provide: AgentConfigService, useValue: agentConfig },
     { provide: KnowledgeService, useValue: knowledge },
     // Trazabilidad (D-002): conversaciones completas para todo ADMIN.

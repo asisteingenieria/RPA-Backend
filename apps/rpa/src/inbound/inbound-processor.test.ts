@@ -80,6 +80,14 @@ describe('InboundProcessor', () => {
     expect(p.stats.newConversations).toBe(2);
   });
 
+  it('D-017: un caso recién asignado programa la apertura (una sola vez)', async () => {
+    const { p, queue } = setup();
+    await p.chatAssigned('CH-11');
+    await p.chatAssigned('CH-11');
+    expect(queue.jobs).toEqual([expect.objectContaining({ abayaChatId: 'CH-11', opening: true })]);
+    expect(queue.jobs[0]!.messageId).toBeUndefined();
+  });
+
   it('guarda el texto cifrado, nunca en claro', async () => {
     const { p, repo } = setup();
     await p.handle(msg(), 'network');

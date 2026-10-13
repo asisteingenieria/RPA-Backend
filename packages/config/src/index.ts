@@ -5,6 +5,9 @@ const optionalString = z
   .optional()
   .transform((v) => (v === '' ? undefined : v));
 
+const modelPrice = z.object({ input: z.number().min(0), output: z.number().min(0) });
+export type ModelPrices = Record<string, z.infer<typeof modelPrice>>;
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -75,6 +78,39 @@ export const envSchema = z.object({
   RESPONSE_P95_ALERT_MS: z.coerce.number().int().positive().default(20_000),
   /** Timeout por llamada al modelo (1 reintento). */
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  /**
+   * D-010: voz a texto de las notas de voz del cliente. Vacío = `gemini` si hay GEMINI_API_KEY,
+   * `simulado` con LLM_PROVIDER=simulado y si no `ninguno` (la nota se responde con plantilla).
+   */
+  STT_PROVIDER: z
+    .enum(['gemini', 'simulado', 'ninguno'])
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  /** Modelo de la transcripción (vacío = LLM_MODEL si el proveedor es Gemini, o su defecto). */
+  STT_MODEL: optionalString,
+  STT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  /** Notas de voz más largas no se transcriben: se le pide al cliente que escriba. */
+  STT_MAX_SECONDS: z.coerce.number().int().positive().default(120),
+  /** D-011: modelo que lee los planes de las imágenes (vacío = LLM_MODEL si es Gemini, o su defecto). */
+  IMAGE_READER_MODEL: optionalString,
+  /**
+   * Vista «Consumo»: tarifa en USD por millón de tokens de cada modelo, en JSON. Ej.:
+   * {"<modelo>":{"input":<USD>,"output":<USD>}}. Vacío = solo tokens, sin costo estimado.
+   * La cifra oficial es la factura del proveedor.
+   */
+  MODEL_PRICES_USD: optionalString.transform((v, ctx): ModelPrices => {
+    if (!v) return {};
+    try {
+      return z.record(z.string(), modelPrice).parse(JSON.parse(v));
+    } catch {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'MODEL_PRICES_USD: JSON {"modelo":{"input":n,"output":n}} en USD por millón de tokens',
+      });
+      return {};
+    }
+  }),
   /** Solo con LLM_PROVIDER=simulado: latencia media simulada del modelo (pruebas de carga). */
   LLM_SIMULATED_DELAY_MS: z.coerce.number().int().min(0).default(0),
   /** Proveedor de respaldo si el principal falla (vacío = sin respaldo). */
@@ -87,6 +123,21 @@ export const envSchema = z.object({
   BROWSER_RECYCLE_HOURS: z.coerce.number().min(0).default(6),
   /** Cierre por inactividad del cliente (sección 6.6). */
   INACTIVITY_MINUTES: z.coerce.number().int().positive().default(120),
+  /**
+   * D-009: si el cliente lleva este tiempo sin respuesta, se le envía «dame un momento» y se
+   * vuelve a programar el turno; luego uno cada HOLD_EVERY_SECONDS, hasta HOLD_MAX por ráfaga.
+   */
+  HOLD_AFTER_SECONDS: z.coerce.number().int().positive().default(120),
+  HOLD_EVERY_SECONDS: z.coerce.number().int().positive().default(180),
+  HOLD_MAX: z.coerce.number().int().min(0).default(5),
+  /**
+   * D-014 fase 2: las conversaciones reales ofrecen con las imágenes del catálogo (el robot las
+   * pega en Abaya como la asesora). `false` hasta probarlo en vivo: se ofrece en texto.
+   */
+  SEND_PLAN_IMAGES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   /**
    * Trazabilidad (D-002): días que se conserva el contenido de las conversaciones cerradas
    * (mensajes, perfil, resumen de la venta y respuesta del consentimiento). Vacío = no se borra.
@@ -143,6 +194,12 @@ function crossChecks(cfg: AppConfig): string[] {
   }
   if (cfg.NODE_ENV === 'production' && cfg.LLM_PROVIDER === 'simulado') {
     issues.push('LLM_PROVIDER: "simulado" no está permitido en producción');
+  }
+  if (cfg.STT_PROVIDER === 'gemini' && !cfg.GEMINI_API_KEY) {
+    issues.push('STT_PROVIDER=gemini requiere GEMINI_API_KEY');
+  }
+  if (cfg.NODE_ENV === 'production' && cfg.STT_PROVIDER === 'simulado') {
+    issues.push('STT_PROVIDER: "simulado" no está permitido en producción');
   }
   if (cfg.NODE_ENV === 'production' && !cfg.ADMIN_COOKIE_SECURE) {
     issues.push('ADMIN_COOKIE_SECURE: debe ser "true" en producción (panel solo por HTTPS)');

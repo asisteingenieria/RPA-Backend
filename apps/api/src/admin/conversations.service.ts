@@ -498,6 +498,8 @@ export class ConversationsService {
       this.prisma.message.findMany({
         where: { conversationId: id },
         orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+        // D-010: el audio pendiente de transcribir no se lee ni sale del servidor.
+        omit: { mediaEncrypted: true },
       }),
       this.prisma.consentEvidence.findMany({
         where: { conversationId: id },
@@ -525,6 +527,29 @@ export class ConversationsService {
 
     const profile = this.profile(c.id, c.profileEncrypted);
     const closed = !OPEN_STATUSES.includes(c.status);
+    // D-014 fase 2: imágenes de planes enviadas (para verlas en el panel con su versión).
+    const imageIds = [...new Set(messages.flatMap((m) => (m.imageId ? [m.imageId] : [])))];
+    const images = new Map(
+      (imageIds.length
+        ? await this.prisma.versionImage.findMany({
+            where: { id: { in: imageIds } },
+            select: {
+              id: true,
+              sourceName: true,
+              version: { select: { brainId: true, version: true } },
+            },
+          })
+        : []
+      ).map((i) => [
+        i.id,
+        {
+          id: i.id,
+          sourceName: i.sourceName,
+          brainId: i.version.brainId,
+          version: i.version.version,
+        },
+      ]),
+    );
 
     const traceMessages = messages.map((m) => {
       const bot = m.direction === 'OUTBOUND';
@@ -551,6 +576,19 @@ export class ConversationsService {
                 m.respondsToAt && m.sentAt
                   ? Math.max(0, m.sentAt.getTime() - m.respondsToAt.getTime())
                   : null,
+            }
+          : {}),
+        // D-014 fase 2: imagen de planes; `text` es su pie de foto. null si la versión se purgó.
+        ...(m.imageId ? { image: images.get(m.imageId) ?? null } : {}),
+        // D-010: nota de voz del cliente; `text` es su transcripción. El audio nunca sale.
+        ...(m.mediaKind === 'AUDIO'
+          ? {
+              media: {
+                kind: 'AUDIO' as const,
+                durationSec: m.mediaDurationSec,
+                transcriptStatus: m.transcriptStatus ?? 'FAILED',
+                transcriptMs: m.transcriptMs,
+              },
             }
           : {}),
       };

@@ -7,10 +7,10 @@ cases:
     turns: ['Hola', 'A', 'Pedro', 'Movistar', 'uso redes y videos']
     expect: { process: PORTABILIDAD, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
   - id: cat-precio-migra-01
-    turns: ['Hola', 'B', 'Lina', 'videos y música']
+    turns: ['Hola', 'B', 'Lina', 'videos y música', 'YouTube y Spotify']
     expect: { process: MIGRACION, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
   - id: cat-precio-migra-02
-    turns: ['Hola', 'B', 'Jorge', 'juegos en línea']
+    turns: ['Hola', 'B', 'Jorge', 'juegos en línea', 'Free Fire y WhatsApp']
     expect: { process: MIGRACION, finalStageIn: [OFERTA, OBJECIONES], pricesShown: true }
   - id: cat-otro-proceso-01
     turns: ['Hola', 'B', 'Lina', 'videos', '¿y cuánto vale el P2 de portabilidad?']

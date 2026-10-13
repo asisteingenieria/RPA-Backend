@@ -3,22 +3,54 @@ group: fuera_de_alcance
 cases:
   - id: fda-factura-01
     turns: ['Hola', 'me llegó la factura muy alta y quiero reclamar']
-    expect: { finalStageIn: [ESCALAR, SOPORTE, MENU] }
+    expect: { finalStage: MENU, required: ['chat exclusivo de ventas'] }
+  # Servicio al cliente escrito en el menú (sin elegir C): plantilla de chat exclusivo de ventas
+  # con los números de atención, nunca «te comunico con un asesor».
+  - id: fda-roaming-01
+    turns: ['Hola', 'Quiero saber si mi linea tiene rooming internacional']
+    expect:
+      {
+        finalStage: MENU,
+        sale: false,
+        required: ['chat exclusivo de ventas', '611'],
+        forbidden: ['comunicar con un asesor'],
+      }
   - id: fda-factura-02
     turns: ['Hola', 'A', 'Lucía', 'Tigo', 'redes', 'oiga y por qué me cobraron doble este mes']
     expect: { finalStage: ESCALAR }
   - id: fda-queja-01
     turns: ['Hola', 'llevo tres días sin señal, esto es un abuso']
-    expect: { finalStageIn: [ESCALAR, SOPORTE, MENU] }
+    expect: { finalStage: MENU, required: ['chat exclusivo de ventas'] }
   - id: fda-ajeno-01
     turns: ['Hola', 'B', 'Mateo', '¿me ayudas con la tarea de matemáticas?']
     expect: { finalStageIn: [ESCALAR, PERFIL] }
   - id: fda-ajeno-02
     turns: ['Hola', '¿quién va a ganar el partido hoy?']
     expect: { finalStageIn: [MENU, ESCALAR] }
+  # D-018: insultos y amenazas: el robot pone un límite como un humano y retoma el paso; ni la
+  # plantilla de soporte ni pasar a un asesor.
   - id: fda-insulto-01
     turns: ['Hola', 'A', 'ustedes son unos ladrones']
-    expect: { finalStageIn: [ESCALAR, PERFIL] }
+    expect:
+      {
+        finalStage: PERFIL,
+        forbidden: ['chat exclusivo de ventas', 'comunicar con un asesor', 'ladrones'],
+      }
+  - id: fda-amenaza-01
+    turns: ['Hola', 'voy a poner una bomba en Plaza Claro']
+    expect:
+      {
+        finalStage: MENU,
+        sale: false,
+        forbidden: ['chat exclusivo de ventas', 'comunicar con un asesor', 'bomba'],
+      }
+  - id: fda-grosero-01
+    turns: ['Hola', 'B', 'para trabajo', 'WhatsApp', 'usted es una inútil, no sirve para nada']
+    expect:
+      {
+        finalStageIn: [OFERTA, OBJECIONES],
+        forbidden: ['chat exclusivo de ventas', 'comunicar con un asesor', 'inútil'],
+      }
   - id: fda-soporte-01
     turns: ['Hola', 'D', 'no gracias']
     expect: { finalStage: SOPORTE }
@@ -31,3 +63,11 @@ cases:
   - id: fda-cancelar-01
     turns: ['Hola', 'quiero cancelar mi línea']
     expect: { finalStageIn: [ESCALAR, SOPORTE, MENU, CIERRE_SIN_VENTA] }
+  # C/D: se pregunta qué necesita; si es una compra, sigue la venta del proceso que corresponde.
+  - id: fda-soporte-compra-01
+    turns:
+      ['Hola', 'C', 'quiero comprar otra línea nueva para mi hijo', 'para el colegio', 'WhatsApp']
+    expect: { process: LINEA_NUEVA, finalStageIn: [PERFIL, OFERTA, OBJECIONES], sale: false }
+  - id: fda-soporte-factura-01
+    turns: ['Hola', 'D', 'quiero cancelar mi plan porque me voy del país']
+    expect: { finalStage: MENU, sale: false }

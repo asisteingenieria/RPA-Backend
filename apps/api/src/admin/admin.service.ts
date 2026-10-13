@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@abaya/db';
-import { KILL_SWITCH_KEY } from '@abaya/domain';
+import { KILL_SWITCH_KEY, KILL_SWITCH_REASON_KEY } from '@abaya/domain';
 import type { FlagStore } from './flags.js';
 
 /** Inicio del día en Bogotá (UTC-5, sin horario de verano). */
@@ -46,6 +46,8 @@ export class AdminService {
     return {
       generatedAt: now.toISOString(),
       killSwitch,
+      // D-009: motivo si el apagado lo activó el sistema (p. ej. el LLM no responde).
+      killSwitchReason: killSwitch ? await this.killSwitchReason() : null,
       sessions: sessions.map((s) => ({
         robotUser: s.robotUser,
         status: s.status,
@@ -92,9 +94,27 @@ export class AdminService {
     return (await this.flags.get(KILL_SWITCH_KEY)) === '1';
   }
 
+  /** D-009: `{ cause, detail, at }` del apagado automático; null si fue manual o no hay. */
+  async killSwitchReason(): Promise<{ cause: string; detail: string; at: string } | null> {
+    const raw = await this.flags.get(KILL_SWITCH_REASON_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as { cause: string; detail: string; at: string };
+    } catch {
+      return null;
+    }
+  }
+
   async setKillSwitch(active: boolean, actor: string) {
+    const reason = active ? null : await this.killSwitchReason();
     await this.flags.set(KILL_SWITCH_KEY, active ? '1' : '0');
-    await this.audit(actor, active ? 'KILL_SWITCH_ON' : 'KILL_SWITCH_OFF');
+    // Reanudar o pausar a mano borra el motivo automático (D-009).
+    await this.flags.set(KILL_SWITCH_REASON_KEY, '');
+    await this.audit(
+      actor,
+      active ? 'KILL_SWITCH_ON' : 'KILL_SWITCH_OFF',
+      reason ? `pausa automática ${reason.cause}` : undefined,
+    );
     return { killSwitch: active };
   }
 

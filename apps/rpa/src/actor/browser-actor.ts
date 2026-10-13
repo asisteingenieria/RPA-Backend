@@ -3,11 +3,13 @@ import type { Logger } from '@abaya/logger';
 import type { Page } from 'playwright';
 import { ChatListPage } from '../abaya/pages/chat-list.page.js';
 import { ChatPage } from '../abaya/pages/chat.page.js';
-import { NotePage } from '../abaya/pages/note.page.js';
-import { TransferPage } from '../abaya/pages/transfer.page.js';
-import { sel } from '../abaya/selectors.js';
+import { FinishPage } from '../abaya/pages/finish.page.js';
 import type { ActionLog } from '../audit/action-log.js';
-import type { OutboundRepository } from '../outbound/outbound.repository.js';
+import type {
+  OutboundImage,
+  OutboundMessage,
+  OutboundRepository,
+} from '../outbound/outbound.repository.js';
 import type { ChatIdentityGuard } from '../safety/chat-identity-guard.js';
 import type { KillSwitch } from '../safety/kill-switch.js';
 import type { ActorGate } from './actor-gate.js';
@@ -20,20 +22,32 @@ export type SendOutcome =
   | 'UNCERTAIN'
   | 'BLOCKED_KILL_SWITCH'
   | 'SKIPPED_UNCERTAIN'
-  | 'NOT_FOUND';
+  | 'NOT_FOUND'
+  /** D-014 fase 2: la imagen del mensaje ya no existe (nada se envió). */
+  | 'FAILED';
 
 /** Resultado de transferir o cerrar. UNCERTAIN nunca se reintenta a ciegas (regla 2). */
 export type HandoffOutcome =
-  | { result: 'OK'; noteWritten: boolean }
+  | { result: 'OK' }
   | { result: 'BLOCKED_KILL_SWITCH' }
-  | { result: 'FAILED'; reason: string; noteWritten: boolean }
-  | { result: 'UNCERTAIN'; reason: string; noteWritten: boolean };
+  | { result: 'FAILED'; reason: string }
+  | { result: 'UNCERTAIN'; reason: string };
 
 export interface TransferRequest {
   abayaChatId: string;
-  /** Nota interna (resumen para el backoffice). Se omite si ya se escribió en un intento previo. */
-  note?: string;
-  queueLabel: string;
+  /**
+   * BACKOFFICE: venta autorizada → «Finalizar» sin cerrar el caso (ySocial lo pasa a la cola
+   * de backoffice; confirmado por el responsable el 09/10/2026).
+   * HUMAN: escalar a un asesor humano. ❓ No se ha visto cómo se hace en ySocial: no se toca
+   * Abaya y se pide revisión humana con alerta.
+   */
+  target: 'BACKOFFICE' | 'HUMAN';
+}
+
+export interface CloseRequest {
+  abayaChatId: string;
+  /** Etiqueta de cierre («Finalizar y cerrar el caso»). */
+  tag: string;
 }
 
 export class ActionBlockedError extends Error {
@@ -149,8 +163,8 @@ export class BrowserActor {
   }
 
   /**
-   * Sección 6.5: abrir chat → verificar identidad → nota interna → transferir a la cola →
-   * verificar que el chat salió de la bandeja.
+   * Sección 6.5 en ySocial: abrir el caso → verificar identidad → «Finalizar» (sin cerrar el
+   * caso: pasa a la cola de backoffice) → verificar que salió de la bandeja.
    */
   transfer(req: TransferRequest): Promise<HandoffOutcome> {
     return this.traced(PRIORITY.TRANSFER, async () => {
@@ -158,67 +172,53 @@ export class BrowserActor {
       const chatId = req.abayaChatId;
       if (!(await this.preflight('TRANSFER', chatId, start)))
         return { result: 'BLOCKED_KILL_SWITCH' };
+      if (req.target === 'HUMAN') {
+        // ❓ Cómo se escala a un asesor humano en ySocial no se ha visto: no tocar Abaya.
+        await this.log('TRANSFER', chatId, 'SKIPPED', start);
+        return {
+          result: 'UNCERTAIN',
+          reason: 'escalar a un asesor humano no está definido en ySocial: atenderlo a mano',
+        };
+      }
       const page = this.d.page();
       const chat = new ChatPage(page);
 
       if (!(await this.open(chatId))) {
-        // ¿Ya no está en la bandeja? Pudo transferirse en un intento previo que murió.
+        // ¿Ya no está en la bandeja? Pudo finalizarse en un intento previo que murió.
         const stillAssigned = (await new ChatListPage(page).listChats()).some(
           (c) => c.abayaChatId === chatId,
         );
         await this.log('TRANSFER', chatId, stillAssigned ? 'ERROR' : 'UNCERTAIN', start);
         return stillAssigned
-          ? { result: 'FAILED', reason: 'no se pudo abrir el chat', noteWritten: false }
-          : { result: 'UNCERTAIN', reason: 'el chat ya no está en la bandeja', noteWritten: false };
+          ? { result: 'FAILED', reason: 'no se pudo abrir el caso' }
+          : { result: 'UNCERTAIN', reason: 'el caso ya no está en la bandeja' };
       }
       if (!(await this.identityOk(chat, chatId, 'transfer'))) {
         await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
-        return {
-          result: 'UNCERTAIN',
-          reason: 'identidad del chat no verificada',
-          noteWritten: false,
-        };
-      }
-
-      let noteWritten = false;
-      if (req.note) {
-        const noteStart = Date.now();
-        try {
-          noteWritten = await new NotePage(page).writeNote(req.note);
-        } catch {
-          noteWritten = false;
-        }
-        await this.log('NOTE', chatId, noteWritten ? 'OK' : 'ERROR', noteStart);
-        if (!noteWritten)
-          return { result: 'FAILED', reason: 'no se pudo guardar la nota', noteWritten };
-        // Revalidar identidad antes de transferir.
-        if (!(await this.identityOk(chat, chatId, 'transfer'))) {
-          await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
-          return { result: 'UNCERTAIN', reason: 'el chat cambió tras la nota', noteWritten };
-        }
+        return { result: 'UNCERTAIN', reason: 'identidad del caso no verificada' };
       }
 
       try {
-        await new TransferPage(page).transferTo(req.queueLabel);
+        await new FinishPage(page).finishKeepCase();
       } catch {
-        // El diálogo pudo quedar a medias: no sabemos si se transfirió.
+        // El menú o la confirmación pudo quedar a medias: no sabemos si se finalizó.
         await this.log('TRANSFER', chatId, 'UNCERTAIN', start);
-        return { result: 'UNCERTAIN', reason: 'error durante la transferencia', noteWritten };
+        return { result: 'UNCERTAIN', reason: 'error al finalizar el caso' };
       }
       const gone = await this.waitChatGone(chatId);
       await this.log('TRANSFER', chatId, gone ? 'OK' : 'UNCERTAIN', start);
       return gone
-        ? { result: 'OK', noteWritten }
-        : {
-            result: 'UNCERTAIN',
-            reason: 'el chat sigue en la bandeja tras transferir',
-            noteWritten,
-          };
+        ? { result: 'OK' }
+        : { result: 'UNCERTAIN', reason: 'el caso sigue en la bandeja tras finalizar' };
     });
   }
 
-  /** Cierra un chat que no es venta (sección 6.6) y verifica que salió de la bandeja. */
-  closeConversation(abayaChatId: string): Promise<HandoffOutcome> {
+  /**
+   * Sección 6.6 en ySocial: «Finalizar y cerrar el caso» con su etiqueta y verificar que salió
+   * de la bandeja.
+   */
+  closeConversation(req: CloseRequest): Promise<HandoffOutcome> {
+    const { abayaChatId } = req;
     return this.traced(PRIORITY.CLOSE, async () => {
       const start = Date.now();
       if (!(await this.preflight('CLOSE', abayaChatId, start)))
@@ -226,19 +226,19 @@ export class BrowserActor {
       const chat = new ChatPage(this.d.page());
       if (!(await this.open(abayaChatId)) || !(await this.identityOk(chat, abayaChatId, 'close'))) {
         await this.log('CLOSE', abayaChatId, 'UNCERTAIN', start);
-        return { result: 'UNCERTAIN', reason: 'chat no verificado', noteWritten: false };
+        return { result: 'UNCERTAIN', reason: 'caso no verificado' };
       }
       try {
-        await chat.closeChat();
+        await new FinishPage(this.d.page()).finishCloseCase(req.tag);
       } catch {
         await this.log('CLOSE', abayaChatId, 'UNCERTAIN', start);
-        return { result: 'UNCERTAIN', reason: 'error al cerrar', noteWritten: false };
+        return { result: 'UNCERTAIN', reason: 'error al cerrar el caso' };
       }
       const gone = await this.waitChatGone(abayaChatId);
       await this.log('CLOSE', abayaChatId, gone ? 'OK' : 'UNCERTAIN', start);
       return gone
-        ? { result: 'OK', noteWritten: false }
-        : { result: 'UNCERTAIN', reason: 'el chat sigue en la bandeja', noteWritten: false };
+        ? { result: 'OK' }
+        : { result: 'UNCERTAIN', reason: 'el caso sigue en la bandeja' };
     });
   }
 
@@ -275,6 +275,7 @@ export class BrowserActor {
     if (!opened || !(await this.identityOk(chat, chatId, messageId))) {
       return this.uncertain(messageId, chatId, start, 'identidad del chat no verificada');
     }
+    if (msg.image) return this.sendImage(msg, msg.image, chat, start);
 
     // 4. Idempotencia SOLO si un intento anterior pudo haber enviado ESTE mensaje (el proceso
     // murió en SENDING). Un mensaje PENDING nunca se intentó: aunque el robot haya dicho el
@@ -326,6 +327,73 @@ export class BrowserActor {
     return 'SENT_VERIFIED';
   }
 
+  /**
+   * D-014 fase 2: imagen de planes con su pie de foto, como la asesora: escribir el texto, pegar
+   * la imagen en la caja (ySocial la pone en la cola de adjuntos), enviar y verificar que el
+   * caso muestra el mensaje con adjunto confirmado por el servidor.
+   */
+  private async sendImage(
+    msg: OutboundMessage,
+    image: OutboundImage,
+    chat: ChatPage,
+    start: number,
+  ): Promise<SendOutcome> {
+    const { id: messageId, abayaChatId: chatId, text } = msg;
+    // Regla 2: un intento anterior murió a mitad: no se sabe si la imagen salió. Revisión humana.
+    if (msg.status === 'SENDING') {
+      return this.uncertain(messageId, chatId, start, 'envío de imagen interrumpido');
+    }
+    const bytes = await this.d.outbound.imageBytes(messageId);
+    if (!bytes) {
+      // La versión del Brain ya no tiene la imagen: nada se envió y no tiene sentido reintentar.
+      await this.d.outbound.setStatus(messageId, 'FAILED');
+      await this.log('SEND', chatId, 'ERROR', start);
+      await this.d.alerts.raise('SEND_IMAGE_MISSING', 'ALTA', {
+        messageId,
+        abayaChatId: chatId,
+        imageId: image.id,
+      });
+      return 'FAILED';
+    }
+    // Algo ya en la cola de adjuntos (de otra acción o a mano) se enviaría junto: no tocar.
+    if ((await chat.queuedAttachments()) > 0) {
+      return this.uncertain(messageId, chatId, start, 'la caja ya tenía adjuntos en cola');
+    }
+
+    await this.d.outbound.setStatus(messageId, 'SENDING', true);
+    try {
+      await chat.typeMessage(text);
+      await chat.pasteImage(bytes, image.mime, image.fileName);
+    } catch (err) {
+      await this.d.outbound.setStatus(messageId, 'PENDING');
+      await this.log('SEND', chatId, 'ERROR', start);
+      throw err;
+    }
+    if (!(await chat.waitForQueuedAttachments(1))) {
+      // La imagen no entró a la cola (o entró más de una): no enviar nada.
+      return this.uncertain(messageId, chatId, start, 'la imagen no quedó adjunta en la caja');
+    }
+    if (!(await this.identityOk(chat, chatId, messageId))) {
+      return this.uncertain(messageId, chatId, start, 'el chat cambió antes de enviar');
+    }
+    const confirmedBefore = await chat.countConfirmedAgentImages(text);
+    try {
+      await chat.clickSend();
+    } catch {
+      return this.uncertain(messageId, chatId, start, 'error al hacer clic en enviar');
+    }
+    const seen = await chat.waitForAgentImage(
+      text,
+      // Subir la imagen toma más que un texto.
+      (this.d.verifyTimeoutMs ?? 10_000) * 2,
+      confirmedBefore,
+    );
+    if (!seen) return this.uncertain(messageId, chatId, start, 'la imagen no apareció tras enviar');
+    await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
+    await this.log('SEND', chatId, 'OK', start);
+    return 'SENT_VERIFIED';
+  }
+
   /** Revisa compuerta de sesión y KillSwitch (regla 5). */
   private async preflight(action: RpaAction, chatId: string, start: number): Promise<boolean> {
     await this.d.gate.waitUntilOpen();
@@ -340,10 +408,11 @@ export class BrowserActor {
   private async open(chatId: string): Promise<boolean> {
     const page = this.d.page();
     const chat = new ChatPage(page);
-    if ((await chat.currentChatId()) === chatId) return this.interactive();
     const list = new ChatListPage(page);
-    if (!(await sel.chatList.item(page, chatId).count())) return false;
-    await list.open(chatId);
+    // El aviso de caso nuevo («ACEPTAR (N)») tapa la pantalla: cerrarlo antes de actuar.
+    await list.acceptNewCaseIfShown();
+    if ((await chat.currentChatId()) === chatId) return this.interactive();
+    if (!(await list.open(chatId))) return false;
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       if ((await chat.currentChatId().catch(() => null)) === chatId) return this.interactive();

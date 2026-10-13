@@ -1,4 +1,10 @@
-import type { Stage } from '@abaya/domain';
+import {
+  DEFAULT_FLOW,
+  processForOption,
+  type AgentFlow,
+  type OutOfScopeStage,
+  type Stage,
+} from '@abaya/domain';
 import type { Intent, MenuOption, Profile, SaleProcess } from './types.js';
 
 /**
@@ -33,25 +39,33 @@ export const ALLOWED_INTENTS: Record<Stage, readonly Intent[]> = {
   ESCALAR: [],
 };
 
-/** Opciones del menú que llevan a una venta (D-003). C y D son soporte: fuera de alcance. */
-export const OPTION_PROCESS: Partial<Record<MenuOption, SaleProcess>> = {
-  A: 'PORTABILIDAD',
-  B: 'MIGRACION',
-};
+/**
+ * Proceso al que lleva una opción del menú (D-015: lo define el flujo del agente; por defecto
+ * A portabilidad, B migración, C y D «preguntar qué necesita»). E = línea nueva, solo si el
+ * cliente dice explícitamente que quiere una línea o un número nuevo.
+ */
+export function optionProcess(
+  o: MenuOption,
+  flow: AgentFlow = DEFAULT_FLOW,
+): SaleProcess | undefined {
+  return processForOption(flow, o);
+}
 
-/** Opciones del menú que se atienden con el mensaje de soporte y cierran el chat. */
-export const isSupportOption = (o: MenuOption) => !OPTION_PROCESS[o];
+/** Opciones del menú que no llevan a un proceso de venta (se pregunta qué necesita). */
+export const isSupportOption = (o: MenuOption, flow: AgentFlow = DEFAULT_FLOW) =>
+  !optionProcess(o, flow);
 
-/** Datos mínimos del perfil para pasar a OFERTA, por proceso. */
-export const REQUIRED_PROFILE: Record<SaleProcess, readonly (keyof Profile)[]> = {
-  PORTABILIDAD: ['name', 'currentOperator', 'usage'],
-  MIGRACION: ['name', 'usage'],
-  LINEA_NUEVA: ['name', 'usage'],
-};
-
-export function missingProfileFields(p: Profile): (keyof Profile)[] {
+/**
+ * Datos para poder ofrecer. D-013: el nombre ya no es requisito: la asesora no lo pide antes de
+ * ofrecer; el cliente lo da completo con sus datos tras autorizar (si lo dice antes, se guarda).
+ * D-015: los datos de cada proceso los define el flujo del agente.
+ */
+export function missingProfileFields(
+  p: Profile,
+  flow: AgentFlow = DEFAULT_FLOW,
+): (keyof Profile)[] {
   if (!p.process) return ['process'];
-  return REQUIRED_PROFILE[p.process].filter((k) => !p[k]);
+  return flow.processes[p.process].asks.filter((k) => !p[k]);
 }
 
 export interface TransitionInput {
@@ -62,6 +76,8 @@ export interface TransitionInput {
   profile: Profile;
   /** Código de plan aceptado, ya validado contra el catálogo. */
   acceptedPlanCode?: string;
+  /** D-015: flujo del agente (por defecto, el de la campaña). */
+  flow?: AgentFlow;
 }
 
 export type Transition = { ok: true; to: Stage } | { ok: false; reason: string };
@@ -76,13 +92,19 @@ export function transition(i: TransitionInput): Transition {
   if (!isIntentAllowed(stage, intent)) {
     return { ok: false, reason: `intención ${intent} no permitida en ${stage}` };
   }
-  if (intent === 'FUERA_DE_ALCANCE') return { ok: true, to: 'ESCALAR' };
+  const flow = i.flow ?? DEFAULT_FLOW;
+  // D-015: qué hacer con lo que está fuera de alcance lo define el flujo por etapa. SOPORTE =
+  // plantilla de soporte (chat exclusivo de ventas) y la conversación sigue; ESCALAR = asesor.
+  if (intent === 'FUERA_DE_ALCANCE') {
+    const action = flow.outOfScope[stage as OutOfScopeStage] ?? 'ESCALAR';
+    return { ok: true, to: action === 'SOPORTE' ? 'SOPORTE' : 'ESCALAR' };
+  }
 
   switch (stage) {
     case 'MENU':
       if (intent === 'ELIGE_OPCION') {
         if (!i.option) return { ok: false, reason: 'ELIGE_OPCION sin opción' };
-        return { ok: true, to: isSupportOption(i.option) ? 'SOPORTE' : 'PERFIL' };
+        return { ok: true, to: isSupportOption(i.option, flow) ? 'SOPORTE' : 'PERFIL' };
       }
       if (intent === 'NO_INTERESADO') return { ok: true, to: 'CIERRE_SIN_VENTA' };
       return { ok: true, to: 'MENU' };
@@ -90,7 +112,10 @@ export function transition(i: TransitionInput): Transition {
     case 'PERFIL':
       if (intent === 'NO_INTERESADO') return { ok: true, to: 'CIERRE_SIN_VENTA' };
       if (intent === 'OBJECION') return { ok: true, to: 'PERFIL' };
-      return { ok: true, to: missingProfileFields(i.profile).length === 0 ? 'OFERTA' : 'PERFIL' };
+      return {
+        ok: true,
+        to: missingProfileFields(i.profile, flow).length === 0 ? 'OFERTA' : 'PERFIL',
+      };
 
     case 'OFERTA':
       if (intent === 'ACEPTA_PLAN') {

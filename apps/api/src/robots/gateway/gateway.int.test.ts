@@ -9,7 +9,8 @@ import { NestFactory } from '@nestjs/core';
 import { MemoryAlertAdapter } from '@abaya/alerts';
 import { FieldCipher } from '@abaya/crypto';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
-import { KILL_SWITCH_KEY, inboundAad, outboundAad } from '@abaya/domain';
+import { KILL_SWITCH_KEY, audioAad, inboundAad, outboundAad } from '@abaya/domain';
+import { PgBlobStore } from '@abaya/knowledge';
 import { createLogger } from '@abaya/logger';
 import {
   MemoryInboundQueue,
@@ -216,6 +217,63 @@ describe('operaciones: cada robot solo toca lo suyo', () => {
     expect(again.body.result).toEqual({ inserted: false, conversationCreated: false });
   });
 
+  it('D-010: nota de voz: guarda el audio cifrado pendiente de transcribir y la encola', async () => {
+    const { accessToken } = await access(await install('robot-a'));
+    const fingerprint = 'b'.repeat(64);
+    const q = new URLSearchParams({
+      abayaChatId: 'CH-V',
+      fingerprint,
+      via: 'network',
+      occurredAt: new Date().toISOString(),
+      mimeType: 'audio/ogg; codecs=opus',
+      durationSec: '12',
+    });
+    const audio = Buffer.from('OggS-nota-sintetica');
+    const up = (body: Buffer, params = q) =>
+      fetch(`${base}/robot-api/v1/inbound/audio?${params}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/octet-stream',
+        },
+        body,
+      });
+    const r = await up(audio);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { result: unknown }).result).toEqual({
+      inserted: true,
+      conversationCreated: true,
+    });
+    const m = await db.prisma.message.findFirstOrThrow({ where: { fingerprint } });
+    expect(m).toMatchObject({
+      mediaKind: 'AUDIO',
+      mediaMimeType: 'audio/ogg',
+      mediaDurationSec: 12,
+      transcriptStatus: 'PENDING',
+    });
+    expect(Buffer.from(m.mediaEncrypted!).toString('latin1')).not.toContain('OggS-nota');
+    expect(cipher.decrypt(m.mediaEncrypted!, audioAad(fingerprint)).toString()).toBe(
+      'OggS-nota-sintetica',
+    );
+    expect(cipher.decryptString(m.bodyEncrypted, inboundAad(fingerprint))).toBe('');
+    expect(queue.jobs).toHaveLength(1);
+
+    // Sin audio (el robot no lo pudo descargar): se guarda igual, FAILED y sin audio.
+    const f2 = 'c'.repeat(64);
+    const q2 = new URLSearchParams(q);
+    q2.set('fingerprint', f2);
+    expect((await up(Buffer.alloc(0), q2)).status).toBe(200);
+    expect(await db.prisma.message.findFirstOrThrow({ where: { fingerprint: f2 } })).toMatchObject({
+      transcriptStatus: 'FAILED',
+      mediaEncrypted: null,
+    });
+
+    // Parámetros inválidos.
+    const q3 = new URLSearchParams(q);
+    q3.set('fingerprint', 'corta');
+    expect((await up(audio, q3)).status).toBe(400);
+  });
+
   it('un robot no puede leer ni escribir datos de otro robot', async () => {
     const a = (await access(await install('robot-a'))).accessToken;
     const b = (await access(await install('robot-b'))).accessToken;
@@ -269,6 +327,71 @@ describe('operaciones: cada robot solo toca lo suyo', () => {
     expect((await rpc(b, 'recovery.pendingOutbound')).body.result).toEqual([
       { messageId: msgB.id, abayaChatId: 'CH-B' },
     ]);
+  });
+
+  it('D-014 fase 2: la imagen de un saliente solo la descarga su robot', async () => {
+    const a = (await access(await install('robot-a'))).accessToken;
+    const b = (await access(await install('robot-b'))).accessToken;
+    const png = Buffer.from('PNG-sintetico');
+    const blobRef = await new PgBlobStore(db.prisma, cipher).put(new Uint8Array(png));
+    const brain = await db.prisma.brain.create({ data: { name: 'Planes Agosto', createdBy: 't' } });
+    const version = await db.prisma.brainVersion.create({
+      data: { brainId: brain.id, version: 1, createdBy: 't' },
+    });
+    const img = await db.prisma.versionImage.create({
+      data: {
+        brainVersionId: version.id,
+        sourceName: 'portabilidad-1.png',
+        sourceHash: 'h',
+        blobRef,
+        mime: 'image/png',
+        sizeBytes: png.length,
+        processes: ['PORTABILIDAD'],
+        ord: 0,
+        cards: [],
+      },
+    });
+    const conv = await db.prisma.conversation.create({
+      data: { abayaChatId: 'CH-IMG', robotUser: 'robot-b' },
+    });
+    const msg = await db.prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        direction: 'OUTBOUND',
+        idempotencyKey: 'k-img',
+        bodyEncrypted: new Uint8Array(cipher.encrypt('Mira esta opción:', outboundAad('k-img'))),
+        status: 'PENDING',
+        occurredAt: new Date(),
+        imageId: img.id,
+      },
+    });
+    const get = (token: string, messageId: string) =>
+      fetch(`${base}/robot-api/v1/outbound/image?messageId=${encodeURIComponent(messageId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    // El robot dueño ve los datos de la imagen en el mensaje y descarga los bytes.
+    expect((await rpc(b, 'outbound.get', { messageId: msg.id })).body.result).toMatchObject({
+      text: 'Mira esta opción:',
+      image: { id: img.id, mime: 'image/png', fileName: 'portabilidad-1.png' },
+    });
+    const ok = await get(b, msg.id);
+    expect(ok.status).toBe(200);
+    expect(Buffer.from(await ok.arrayBuffer()).toString()).toBe('PNG-sintetico');
+    // Otro robot no; un id inválido tampoco; un mensaje sin imagen da 404.
+    expect((await get(a, msg.id)).status).toBe(403);
+    expect((await get(b, '../x')).status).toBe(400);
+    const plain = await db.prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        direction: 'OUTBOUND',
+        idempotencyKey: 'k-txt',
+        bodyEncrypted: new Uint8Array(cipher.encrypt('Hola', outboundAad('k-txt'))),
+        status: 'PENDING',
+        occurredAt: new Date(),
+      },
+    });
+    expect((await get(b, plain.id)).status).toBe(404);
   });
 
   it('auditoría y alertas: el robot sale del token, no de los parámetros', async () => {

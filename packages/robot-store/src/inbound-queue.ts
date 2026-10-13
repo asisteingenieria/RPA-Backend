@@ -22,8 +22,10 @@ export class BullInboundQueue implements InboundQueue {
   }
 
   async enqueue(job: InboundJob) {
-    // jobId = id del mensaje: segunda barrera contra duplicados en la cola.
-    await this.queue.add('message', job, { jobId: job.messageId });
+    // jobId = id del mensaje (o de la apertura del caso, D-017): segunda barrera contra duplicados.
+    await this.queue.add(job.opening ? 'opening' : 'message', job, {
+      jobId: job.messageId ?? `open-${job.conversationId}`,
+    });
   }
 
   async close() {

@@ -68,10 +68,10 @@ export class AnthropicLlmAdapter implements LlmPort {
     }
 
     if (res.stop_reason === 'refusal') {
-      throw new LlmProviderError('anthropic refusal', this.provider, false);
+      throw new LlmProviderError('anthropic refusal', this.provider, false, false);
     }
     if (res.stop_reason === 'max_tokens') {
-      throw new LlmProviderError('anthropic max_tokens', this.provider, false);
+      throw new LlmProviderError('anthropic max_tokens', this.provider, false, false);
     }
     const text = res.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')

@@ -1,4 +1,10 @@
-import { DEFAULT_AGENT_CONFIG, type AgentConfig } from '@abaya/domain';
+import {
+  DEFAULT_AGENT_CONFIG,
+  storedFlow,
+  storedReactivation,
+  storedTemplates,
+  type AgentConfig,
+} from '@abaya/domain';
 import type { PrismaClient } from '@abaya/db';
 import type { Logger } from '@abaya/logger';
 
@@ -12,6 +18,12 @@ interface AgentConfigRow {
   prompt: string;
   model: string | null;
   temperature: number;
+  /** D-013: null en versiones anteriores a las plantillas (se usan las de la campaña). */
+  templates?: unknown;
+  reactivationMinutes?: number | null;
+  reactivationMax?: number | null;
+  /** D-015: null en versiones anteriores al flujo (se usa el de la campaña). */
+  flow?: unknown;
 }
 
 export function agentConfigFromRow(r: AgentConfigRow): AgentConfig {
@@ -25,6 +37,9 @@ export function agentConfigFromRow(r: AgentConfigRow): AgentConfig {
     prompt: r.prompt,
     model: r.model,
     temperature: r.temperature,
+    templates: storedTemplates(r.templates),
+    reactivation: storedReactivation(r.reactivationMinutes, r.reactivationMax),
+    flow: storedFlow(r.flow),
   };
 }
 

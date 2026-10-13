@@ -1,6 +1,11 @@
 import type { PrismaClient } from '@abaya/db';
 import { DEFAULT_AGENT_KEY } from '../domain/brain.js';
-import { versionRecords, type StoredRecord } from './catalog-versions.js';
+import {
+  versionImages,
+  versionRecords,
+  type StoredImage,
+  type StoredRecord,
+} from './catalog-versions.js';
 
 /** Catálogo PUBLICADO que usa un agente: el Brain conectado con registros de catálogo. */
 export interface PublishedCatalog {
@@ -9,6 +14,8 @@ export interface PublishedCatalog {
   versionId: string;
   version: number;
   records: StoredRecord[];
+  /** D-011: imágenes de planes de la misma versión (validadas al publicar). */
+  images: StoredImage[];
 }
 
 export class CatalogConflictError extends Error {
@@ -43,6 +50,7 @@ export async function loadAgentCatalog(
         versionId: v.id,
         version: v.version,
         records,
+        images: await versionImages(prisma, v.id),
       });
     }
   }

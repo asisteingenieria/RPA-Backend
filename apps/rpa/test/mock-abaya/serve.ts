@@ -1,7 +1,7 @@
 /* eslint-disable no-console -- script de línea de comandos */
 /**
  * Abaya SIMULADO como servidor independiente (desarrollo y demo).
- *   pnpm demo:abaya   →  http://127.0.0.1:4010  (robot)   y   http://127.0.0.1:4010/__cliente (cliente)
+ *   pnpm demo:abaya   →  http://127.0.0.1:4010/agent/  (robot)   y   http://127.0.0.1:4010/__cliente (cliente)
  * Usuario robot: robot-ventas-01 / clave-de-prueba. Todo es sintético.
  */
 import { MockAbayaServer } from './mock-server.js';

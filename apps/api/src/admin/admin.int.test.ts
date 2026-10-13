@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { Module, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
-import { KILL_SWITCH_KEY } from '@abaya/domain';
+import { KILL_SWITCH_KEY, KILL_SWITCH_REASON_KEY } from '@abaya/domain';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AdminAuthGuard } from './admin-auth.guard.js';
 import { AdminController } from './admin.controller.js';
@@ -356,6 +356,32 @@ describe('operación del robot', () => {
         .map((a) => `${a.actor}:${a.action}`)
         .sort(),
     ).toEqual(['admin.uno:KILL_SWITCH_OFF', 'admin.uno:KILL_SWITCH_ON']);
+  });
+
+  it('D-009: pausa automática por el LLM: el panel ve el motivo y reanudar lo borra', async () => {
+    const admin = await ready('admin.uno', 'ADMIN');
+    // Lo que escribe el worker cuando el proveedor no responde.
+    flags.values.set(KILL_SWITCH_KEY, '1');
+    flags.values.set(
+      KILL_SWITCH_REASON_KEY,
+      JSON.stringify({ cause: 'LLM_OUTAGE', detail: 'proveedor LLM: gemini 429', at: 'x' }),
+    );
+    let body = await (await call('/admin/overview', {}, admin)).json();
+    expect(body).toMatchObject({
+      killSwitch: true,
+      killSwitchReason: { cause: 'LLM_OUTAGE', detail: 'proveedor LLM: gemini 429' },
+    });
+    await post('/admin/kill-switch', { active: false }, admin);
+    body = await (await call('/admin/overview', {}, admin)).json();
+    expect(body).toMatchObject({ killSwitch: false, killSwitchReason: null });
+    expect(flags.values.get(KILL_SWITCH_REASON_KEY)).toBe('');
+    const audit = (await (await call('/admin/audit', {}, admin)).json()) as {
+      action: string;
+      target: string | null;
+    }[];
+    expect(audit.find((a) => a.action === 'KILL_SWITCH_OFF')?.target).toBe(
+      'pausa automática LLM_OUTAGE',
+    );
   });
 
   it('valida el cuerpo del kill switch', async () => {

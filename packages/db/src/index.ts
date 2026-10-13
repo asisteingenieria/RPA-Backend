@@ -8,3 +8,4 @@ export function createPrismaClient(databaseUrl: string): PrismaClient {
 }
 export * from './retry.js';
 export * from './metrics.js';
+export * from './usage.js';

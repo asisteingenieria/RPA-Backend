@@ -1,10 +1,15 @@
 // Dominio: sin dependencias externas (sección 2.5). Se completa en F2–F6.
 
 export * from './agent-config.js';
+export * from './agent-export.js';
+export * from './agent-flow.js';
+export * from './agent-templates.js';
 export * from './fingerprint.js';
 export * from './inbound.js';
 export * from './outbound.js';
 export * from './queues.js';
+export * from './speech.js';
+export * from './usage.js';
 
 export const CONVERSATION_STATUSES = [
   'ACTIVE',
@@ -94,13 +99,18 @@ export interface LlmResponse {
   outputTokens: number;
 }
 
-/** Error del proveedor (caído, timeout, rechazo): la conversación pasa a NEEDS_REVIEW. */
+/**
+ * Error del proveedor. `outage` (D-009): el servicio no responde (timeout, cuota, 5xx, clave
+ * inválida) → se pausan todos los robots hasta que un ADMIN reanude. Si es `false`, falló solo
+ * este mensaje (bloqueo de contenido, respuesta truncada) → respuesta segura de plantilla.
+ */
 export class LlmProviderError extends Error {
   override name = 'LlmProviderError';
   constructor(
     message: string,
     readonly provider: string,
     readonly retryable: boolean,
+    readonly outage = true,
   ) {
     super(message);
   }
