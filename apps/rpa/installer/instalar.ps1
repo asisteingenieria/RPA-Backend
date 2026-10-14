@@ -50,7 +50,7 @@ foreach ($carpeta in 'app', 'node') {
   robocopy (Join-Path $origen $carpeta) (Join-Path $dirVersion $carpeta) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "No se pudo copiar $carpeta (robocopy $LASTEXITCODE)" }
 }
-foreach ($archivo in 'iniciar.cmd', 'iniciar.ps1', 'actualizar.cmd', 'desinstalar.ps1', 'desinstalar.cmd', 'LEEME.txt', 'VERSION') {
+foreach ($archivo in 'iniciar.cmd', 'iniciar.ps1', 'probar.cmd', 'probar.ps1', 'actualizar.cmd', 'desinstalar.ps1', 'desinstalar.cmd', 'LEEME.txt', 'VERSION') {
   Copy-Item (Join-Path $origen $archivo) $Destino -Force
 }
 Set-Content -Path (Join-Path $Destino 'current.txt') -Value $carpetaVersion -Encoding ASCII

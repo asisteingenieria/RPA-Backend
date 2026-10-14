@@ -133,7 +133,9 @@ abaya-rpa/
 Mientras no haya acceso al ambiente de pruebas, `apps/rpa/test/mock-abaya/` simula Abaya
 (markup y rutas de ySocial: login, sesión, mensajes, «pegar» imágenes con subida al blob,
 finalizar con etiquetas). Las pruebas `*.pw.ts` lo usan. Cuando existan fixtures reales, el simulador se ajusta para imitarlos.
-Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`.
+Pruebas contra Abaya real: etiqueta `@abaya`, solo con `ABAYA_E2E=1`. Diagnóstico por pasos
+contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [--ver]`
+(`probar.cmd` en el equipo robot; runbook 8.e).
 
 ## Motor de conversación (F5)
 

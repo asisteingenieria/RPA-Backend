@@ -1,5 +1,40 @@
 # Decisiones de diseño
 
+## D-020 · Diagnóstico de Abaya real por pasos · APROBADA — implementada (probada en el simulador)
+
+**Contexto (14/10/2026).** Con el servidor en producción y las credenciales del usuario robot, hay
+que comprobar contra Abaya real, una cosa a la vez, que el robot abre la URL, inicia sesión, se pone
+«Disponible», etc. El robot completo hace todo junto (entra y queda Disponible de una vez), así que
+si falla no se sabe en qué paso ni qué selector.
+
+**Decisión.**
+
+1. Comando `probar-abaya <paso> [--ver]` en el robot (`probar.cmd` en el equipo robot). Pasos, cada
+   uno corre los anteriores y se detiene en el primero que falle: `url` (formulario de login
+   visible), `login` (entra **sin** ponerse Disponible), `estado` (lee el estado y el menú),
+   `disponible` (ida y vuelta), `bandeja` (cuenta los casos asignados). `--ver` muestra el navegador.
+2. **Mismo código que el robot:** selectores de `selectors.ts`, páginas, `PlaywrightSessionDriver`
+   (con `goAvailable: false`) y `BrowserActor` para los cambios de estado (reglas 3 y 4). Kill
+   switch antes de entrar y de cada cambio de estado (regla 5); todo queda en `RpaActionLog` como
+   `LOGIN`, porque el estado es parte de la sesión (el protocolo de la pasarela no cambia).
+3. **«Disponible» es ida y vuelta** (decidido por el usuario): ySocial asigna casos reales en cuanto
+   el asesor está Disponible. El paso lo confirma y vuelve enseguida al estado anterior si está en el
+   menú, o a una pausa («Login», «FinTurno»). Si entra un caso en esos segundos, lo avisa y no lo
+   toca. Si no logra volver, lo dice en mayúsculas para cambiarlo a mano.
+4. **Un robot, un equipo a la vez:** el diagnóstico reclama el robot como lo hace el robot
+   (presencia): si el robot está en línea, no arranca. En el equipo robot las credenciales llegan de
+   la pasarela (nunca se escriben en el equipo); en desarrollo, del `.env`. Las tareas que lleguen por
+   el WebSocket mientras corre se rechazan.
+5. Nunca abre ni escribe en un chat, y no guarda capturas, HTML ni trazas (datos de clientes, reglas
+   6 y 8). Abrir un caso o enviar un mensaje serían pasos nuevos, solo con un chat de prueba acordado
+   con Claro.
+
+**Implementación.** `apps/rpa/src/diagnostics/abaya-diagnostic.ts`, `apps/rpa/src/cli/probar-abaya.ts`,
+`BrowserActor.readAgentState` / `switchAgentState`, `AgentStatePage.options` / `switchTo`,
+`LoginPage.missingFields`; lanzador `apps/rpa/installer/probar.cmd` / `probar.ps1` (van en el
+paquete y el instalador los copia). Pruebas: `apps/rpa/test/diagnostics/diagnostic.pw.ts` contra el
+simulador. Uso: `docs/runbook.md` 8.e.
+
 ## D-019 · Llevar la configuración entre ambientes (exportar e importar) · APROBADA — implementada
 
 **Contexto (13/10/2026).** Lo que se ajusta en local (guion, plantillas, flujo, descuentos, imágenes)

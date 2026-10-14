@@ -172,6 +172,31 @@ agente corre con el catálogo real.
 un límite y siguió la conversación; la alerta solo trae el id. Un supervisor revisa la conversación
 en Trazabilidad y decide si se escala (seguridad de Claro, autoridades).
 
+### 8.e Probar Abaya real por pasos (D-020)
+
+Para ver, una cosa a la vez, que el robot funciona en Abaya real. Con el robot **detenido** (cerrar
+la ventana «Robot Abaya»; si está en línea, el diagnóstico no arranca) y sin kill switch ni pausa
+del robot en el panel:
+
+```
+%LOCALAPPDATA%\AbayaRobot\probar.cmd url          # abre Abaya: ¿se ve el formulario de login?
+%LOCALAPPDATA%\AbayaRobot\probar.cmd login        # + inicia sesión (sin ponerse Disponible)
+%LOCALAPPDATA%\AbayaRobot\probar.cmd estado       # + estado del asesor y opciones del menú
+%LOCALAPPDATA%\AbayaRobot\probar.cmd disponible   # + Disponible y vuelta inmediata a una pausa
+%LOCALAPPDATA%\AbayaRobot\probar.cmd bandeja      # + cuántos casos tiene asignados (no abre ninguno)
+```
+
+Agregar `--ver` para mirar el navegador. Cada paso corre los anteriores y se detiene en el primero
+que falle; la línea `[FALLA]` dice qué no encontró (el selector a ajustar en `selectors.ts`).
+Las credenciales salen del servidor, como para el robot. En desarrollo:
+`pnpm --filter @abaya/rpa build && pnpm --filter @abaya/rpa probar-abaya -- <paso> [--ver]`
+(usa el `.env`).
+
+- **`disponible` asigna casos reales:** el paso vuelve enseguida a la pausa. Si dice «ATENCIÓN:
+  entró un caso», atenderlo en Abaya; si dice «NO volvió», cambiar el estado a mano ya.
+- En equipos instalados antes de esta versión, `probar.cmd` no está: reinstalar con el paquete
+  nuevo (o copiar `probar.cmd` y `probar.ps1` del paquete a `%LOCALAPPDATA%\AbayaRobot`).
+
 ## 9. Lista de verificación de despliegue
 
 - [ ] Autorización escrita de Claro y acuerdo de encargo de tratamiento de datos.

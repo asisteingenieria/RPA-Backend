@@ -4,6 +4,7 @@ import type { Page } from 'playwright';
 import { ChatListPage } from '../abaya/pages/chat-list.page.js';
 import { ChatPage } from '../abaya/pages/chat.page.js';
 import { FinishPage } from '../abaya/pages/finish.page.js';
+import { AgentStatePage } from '../abaya/pages/state.page.js';
 import type { ActionLog } from '../audit/action-log.js';
 import type {
   OutboundImage,
@@ -149,6 +150,32 @@ export class BrowserActor {
         })),
       PRIORITY.READ_INBOX,
     );
+  }
+
+  /** Estado del asesor y opciones del menú de estados (D-020, diagnóstico). Solo lee. */
+  readAgentState(): Promise<{ current: string | null; options: string[] }> {
+    return this.exec.run(async () => {
+      const page = new AgentStatePage(this.d.page());
+      return { current: await page.current(), options: await page.options() };
+    }, PRIORITY.READ_INBOX);
+  }
+
+  /**
+   * Cambia el estado del asesor (D-020, diagnóstico). Queda en RpaActionLog como `LOGIN`: el
+   * estado es parte de la sesión (al entrar, el robot se pone «Disponible» en el mismo paso).
+   */
+  switchAgentState(name: string): Promise<'OK' | 'NOT_CHANGED' | 'BLOCKED_KILL_SWITCH'> {
+    return this.traced(PRIORITY.MAINTENANCE, async () => {
+      const start = Date.now();
+      await this.d.gate.waitUntilOpen();
+      if (await this.d.killSwitch.isActive()) {
+        await this.log('LOGIN', null, 'BLOCKED', start);
+        return 'BLOCKED_KILL_SWITCH' as const;
+      }
+      const ok = await new AgentStatePage(this.d.page()).switchTo(name).catch(() => false);
+      await this.log('LOGIN', null, ok ? 'OK' : 'ERROR', start);
+      return ok ? ('OK' as const) : ('NOT_CHANGED' as const);
+    });
   }
 
   /** Abre un chat (lo usa el worker para leer chats con no leídos, y las demás acciones). */

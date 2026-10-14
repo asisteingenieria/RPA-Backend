@@ -9,6 +9,11 @@ export interface PlaywrightSessionDriverOptions {
   baseUrl: string;
   headless: boolean;
   navigationTimeoutMs?: number;
+  /**
+   * Tras entrar, pasar a «Disponible» (por defecto sí: el robot trabaja). El diagnóstico
+   * (D-020) entra sin cambiar el estado para probar cada paso por separado.
+   */
+  goAvailable?: boolean;
 }
 
 /**
@@ -81,7 +86,7 @@ export class PlaywrightSessionDriver implements SessionDriver {
    */
   async login(creds: LoginCredentials) {
     const r = await new LoginPage(this.page).login(creds);
-    if (r !== 'OK') return r;
+    if (r !== 'OK' || this.opts.goAvailable === false) return r;
     const available = await new AgentStatePage(this.page).ensureAvailable().catch(() => false);
     return available ? r : 'TIMEOUT';
   }

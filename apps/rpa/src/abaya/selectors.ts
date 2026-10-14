@@ -32,9 +32,16 @@ export const sel = {
       p.locator('a[ng-click="navigation.switchStates(state)"]').filter({
         has: p.getByText(name, { exact: true }),
       }),
+    /** Nombre de cada opción del menú de estados (`div.state-name`). */
+    optionNames: (p: Page) => p.locator('a[ng-click="navigation.switchStates(state)"] .state-name'),
     available: 'Disponible',
     /** Estado con casos asignados (se pone solo). */
     working: /^Trabajando/,
+    /**
+     * Pausas a las que vuelve el diagnóstico tras probar «Disponible» si el estado anterior no
+     * está en el menú (al entrar es «Login»). Razones auxiliares 0 y 7 del mapa de pantallas.
+     */
+    pauses: ['Login', 'FinTurno'],
   },
 
   chatList: {

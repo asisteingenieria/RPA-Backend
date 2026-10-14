@@ -30,6 +30,16 @@ USO DIARIO
     Para pedirla desde este equipo: actualizar.cmd
   - Revisión del equipo (suspensión, Windows Update, antivirus): preparacion.txt
 
+PROBAR ABAYA POR PASOS (con el robot DETENIDO)
+  %LOCALAPPDATA%\AbayaRobot\probar.cmd <paso> [--ver]
+    url         abre Abaya y verifica el formulario de login
+    login       + inicia sesión (sin ponerse Disponible)
+    estado      + lee el estado del asesor y el menú de estados
+    disponible  + pasa a Disponible y vuelve enseguida a una pausa
+    bandeja     + cuenta los casos asignados (no abre ninguno)
+  Cada paso corre los anteriores. --ver muestra el navegador.
+  Nunca abre ni escribe en un chat.
+
 REGLAS
   - El robot debe correr con el MISMO usuario de Windows que lo instaló.
   - Un usuario de Abaya = un equipo a la vez. Si se instala el mismo robot en

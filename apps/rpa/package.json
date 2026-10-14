@@ -11,7 +11,8 @@
     "lint": "eslint src test",
     "test": "vitest run --passWithNoTests && playwright test",
     "test:unit": "vitest run --passWithNoTests",
-    "test:pw": "playwright test"
+    "test:pw": "playwright test",
+    "probar-abaya": "node --env-file-if-exists=../../.env dist/cli/probar-abaya.js"
   },
   "dependencies": {
     "@abaya/alerts": "workspace:*",
