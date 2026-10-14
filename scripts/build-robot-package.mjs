@@ -104,11 +104,18 @@ copyFileSync(nodeExe, join(OUT, 'node', 'node.exe'));
 
 console.log('[paquete] copiando el instalador');
 const crlf = (s) => s.replace(/\r?\n/g, '\r\n');
-for (const f of ['instalar.cmd', 'iniciar.cmd', 'desinstalar.cmd', 'actualizar.cmd', 'LEEME.txt']) {
+for (const f of [
+  'instalar.cmd',
+  'iniciar.cmd',
+  'desinstalar.cmd',
+  'actualizar.cmd',
+  'probar.cmd',
+  'LEEME.txt',
+]) {
   writeFileSync(join(OUT, f), crlf(readFileSync(join(INSTALLER, f), 'utf8')));
 }
 // Windows PowerShell 5.1 lee los .ps1 sin BOM como ANSI: con BOM se respetan las tildes.
-for (const f of ['instalar.ps1', 'iniciar.ps1', 'desinstalar.ps1']) {
+for (const f of ['instalar.ps1', 'iniciar.ps1', 'probar.ps1', 'desinstalar.ps1']) {
   writeFileSync(join(OUT, f), '\ufeff' + crlf(readFileSync(join(INSTALLER, f), 'utf8')));
 }
 writeFileSync(

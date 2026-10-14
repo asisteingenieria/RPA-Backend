@@ -17,6 +17,20 @@ export class LoginPage {
     return sel.login.submit(this.page).isVisible();
   }
 
+  /** Campos del formulario de login que NO se ven (diagnóstico, D-020). Vacío = todo bien. */
+  async missingFields(): Promise<string[]> {
+    const fields = {
+      usuario: sel.login.username(this.page),
+      contraseña: sel.login.password(this.page),
+      'botón Ingresar': sel.login.submit(this.page),
+    };
+    const missing: string[] = [];
+    for (const [name, loc] of Object.entries(fields)) {
+      if (!(await loc.isVisible().catch(() => false))) missing.push(name);
+    }
+    return missing;
+  }
+
   async requiresOtp(): Promise<boolean> {
     return sel.login.otp(this.page).isVisible();
   }
