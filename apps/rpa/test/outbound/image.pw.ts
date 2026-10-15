@@ -107,6 +107,22 @@ test('pega la imagen y sale con su pie de foto en un solo mensaje, en el caso co
   }
 });
 
+test('usuario con modo de envío «enter» (la flecha no hace nada): la imagen sale igual', async () => {
+  await mock.stop();
+  mock = new MockAbayaServer({ sendMode: 'enter' });
+  mock.assignChat('3002');
+  await mock.start();
+  const { mgr, actor, queue } = await boot();
+  try {
+    const id = queue('3002', 'Te puedo otorgar esta opción:');
+    expect(await actor.sendMessage(id)).toBe('SENT_VERIFIED');
+    expect(mock.agentPosts).toHaveLength(1);
+    expect(mock.agentPosts[0]!.attachments).toHaveLength(1);
+  } finally {
+    await mgr.stop();
+  }
+});
+
 test('sin bytes de la imagen no toca Abaya: FAILED con alerta', async () => {
   const { mgr, actor, outbound, alerts, queue } = await boot();
   try {

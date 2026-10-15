@@ -84,6 +84,12 @@ export const sel = {
     bodyCss: 'span.body-text',
     input: (p: Page) => p.locator('#textareaActAsChat'),
     send: (p: Page) => p.locator('a.social-case-reply-as-chat-send'),
+    /**
+     * Modo de envío del asesor en ySocial (`settingsService.settings.agent.settings.sendMode`):
+     * «click» (solo la flecha), «enter» (solo Enter: la flecha hace `preventDefault`) o «both».
+     * Es por usuario: el 15/10/2026 un usuario en «enter» dejaba los mensajes escritos en la caja.
+     */
+    sendModeService: 'settingsService',
     /** Spinner mientras se envía. */
     sending: (p: Page) => p.locator('.social-case-reply-as-chat-send-loading:visible'),
     /**

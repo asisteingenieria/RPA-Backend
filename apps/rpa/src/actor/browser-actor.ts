@@ -25,7 +25,16 @@ export type SendOutcome =
   | 'SKIPPED_UNCERTAIN'
   | 'NOT_FOUND'
   /** D-014 fase 2: la imagen del mensaje ya no existe (nada se envió). */
-  | 'FAILED';
+  | 'FAILED'
+  /** Respuesta vieja (se preparó durante una pausa o un apagado): no se envía. */
+  | 'STALE';
+
+/**
+ * Una respuesta que lleva más que esto sin salir ya no corresponde a la conversación (15/10/2026:
+ * tras una pausa con un asesor humano al mando quedaron 8 respuestas en cola). En operación
+ * normal un mensaje sale en segundos.
+ */
+export const STALE_AFTER_MS = 5 * 60_000;
 
 /** Resultado de transferir o cerrar. UNCERTAIN nunca se reintenta a ciegas (regla 2). */
 export type HandoffOutcome =
@@ -66,6 +75,8 @@ export interface BrowserActorDeps {
   alerts: AlertPort;
   logger: Logger;
   verifyTimeoutMs?: number;
+  /** Antigüedad máxima de una respuesta para enviarla (por defecto STALE_AFTER_MS). */
+  staleAfterMs?: number;
   /** Cuántos mensajes recientes del robot revisar para idempotencia (sección 6.4, paso 4). */
   idempotencyWindow?: number;
   now?: () => Date;
@@ -292,7 +303,19 @@ export class BrowserActor {
       await this.log('SEND', chatId, 'SKIPPED', start);
       return 'SKIPPED_UNCERTAIN';
     }
+    if (msg.status === 'FAILED') return 'FAILED';
     if (!(await this.preflight('SEND', chatId, start))) return 'BLOCKED_KILL_SWITCH';
+    if (msg.status === 'PENDING' && (msg.ageMs ?? 0) > (this.d.staleAfterMs ?? STALE_AFTER_MS)) {
+      // Nada se escribió: no es un envío incierto, es una respuesta que ya no corresponde.
+      await this.d.outbound.setStatus(messageId, 'FAILED');
+      await this.log('SEND', chatId, 'SKIPPED', start);
+      await this.d.alerts.raise('SEND_STALE', 'MEDIA', {
+        messageId,
+        abayaChatId: chatId,
+        minutes: Math.round((msg.ageMs ?? 0) / 60_000),
+      });
+      return 'STALE';
+    }
 
     const { text } = msg;
     const chat = new ChatPage(this.d.page());
@@ -335,19 +358,11 @@ export class BrowserActor {
     }
     // Cuántas veces está ya este texto confirmado: la verificación exige una más.
     const confirmedBefore = await chat.countConfirmedAgentMessages(text);
-    try {
-      await chat.clickSend();
-    } catch {
-      return this.uncertain(messageId, chatId, start, 'error al hacer clic en enviar');
-    }
-
-    // 6–7. Verificar que aparece.
-    const seen = await chat.waitForAgentMessage(
-      text,
-      this.d.verifyTimeoutMs ?? 10_000,
-      confirmedBefore,
+    // 6–7. Enviar y verificar que aparece.
+    const sent = await this.submit(chat, text, (ms) =>
+      chat.waitForAgentMessage(text, ms, confirmedBefore),
     );
-    if (!seen) return this.uncertain(messageId, chatId, start, 'mensaje no apareció tras enviar');
+    if (sent) return this.uncertain(messageId, chatId, start, sent);
 
     await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
     await this.log('SEND', chatId, 'OK', start);
@@ -404,21 +419,58 @@ export class BrowserActor {
       return this.uncertain(messageId, chatId, start, 'el chat cambió antes de enviar');
     }
     const confirmedBefore = await chat.countConfirmedAgentImages(text);
-    try {
-      await chat.clickSend();
-    } catch {
-      return this.uncertain(messageId, chatId, start, 'error al hacer clic en enviar');
-    }
-    const seen = await chat.waitForAgentImage(
+    // Subir la imagen toma más que un texto.
+    const sent = await this.submit(
+      chat,
       text,
-      // Subir la imagen toma más que un texto.
-      (this.d.verifyTimeoutMs ?? 10_000) * 2,
-      confirmedBefore,
+      (ms) => chat.waitForAgentImage(text, ms, confirmedBefore),
+      2,
     );
-    if (!seen) return this.uncertain(messageId, chatId, start, 'la imagen no apareció tras enviar');
+    if (sent) {
+      return this.uncertain(
+        messageId,
+        chatId,
+        start,
+        sent === 'mensaje no apareció tras enviar' ? 'la imagen no apareció tras enviar' : sent,
+      );
+    }
     await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
     await this.log('SEND', chatId, 'OK', start);
     return 'SENT_VERIFIED';
+  }
+
+  /**
+   * Envía lo escrito como la asesora, según su modo de envío en ySocial (15/10/2026: un usuario en
+   * «enter» ignoraba el clic en la flecha y los mensajes quedaban escritos en la caja). Si el
+   * modo no se puede leer: Enter y, SOLO si la caja sigue con el mismo texto y sin spinner (prueba
+   * de que no salió nada, regla 2), la flecha. Devuelve null si se vio, o el motivo de la duda.
+   */
+  private async submit(
+    chat: ChatPage,
+    text: string,
+    seen: (timeoutMs: number) => Promise<boolean>,
+    slow = 1,
+  ): Promise<string | null> {
+    const timeout = (this.d.verifyTimeoutMs ?? 10_000) * slow;
+    const mode = await chat.sendMode();
+    try {
+      if (mode === 'click') await chat.clickSend();
+      else await chat.pressEnterToSend();
+    } catch {
+      return 'error al enviar';
+    }
+    const notSeen = 'mensaje no apareció tras enviar';
+    if (mode !== null) return (await seen(timeout)) ? null : notSeen;
+
+    if (await seen(Math.min(3_000, timeout))) return null;
+    if (!(await chat.composerStill(text))) return (await seen(timeout)) ? null : notSeen;
+    this.d.logger.warn('Enter no envió (modo de envío desconocido): se usa la flecha');
+    try {
+      await chat.clickSend();
+    } catch {
+      return 'error al hacer clic en enviar';
+    }
+    return (await seen(timeout)) ? null : notSeen;
   }
 
   /** Revisa compuerta de sesión y KillSwitch (regla 5). */

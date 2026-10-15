@@ -21,6 +21,12 @@ export interface MockMessage {
   attachment?: { mime: string; fileName: string; size: number };
 }
 
+/**
+ * Modo de envío del asesor en ySocial (`settings.agent.settings.sendMode`): «click» ignora Enter,
+ * «enter» ignora la flecha; sin valor (null) ySocial acepta los dos.
+ */
+export type MockSendMode = 'click' | 'enter' | 'both';
+
 export interface MockChat {
   id: string;
   alias: string;
@@ -125,12 +131,15 @@ export function inboxHtml(
   chats: MockChat[],
   activeId?: string,
   mode: 'static' | 'server' = 'static',
-  opts: { state?: string } = {},
+  opts: { state?: string; sendMode?: MockSendMode; hideSendMode?: boolean } = {},
 ): string {
-  const data = JSON.stringify({ chats, activeId: activeId ?? null, tags: MOCK_TAGS }).replace(
-    /</g,
-    '\\u003c',
-  );
+  const data = JSON.stringify({
+    chats,
+    activeId: activeId ?? null,
+    tags: MOCK_TAGS,
+    sendMode: opts.sendMode ?? null,
+    hideSendMode: !!opts.hideSendMode,
+  }).replace(/</g, '\\u003c');
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>SMCC Web Agent</title><style>${STYLE}</style></head>
 <body>
@@ -199,7 +208,13 @@ function consoleScript(data: string): string {
   const hhmm = (iso) => { const d = new Date(iso); return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
   // AngularJS mínimo: lo que el robot lee de la consola real.
-  window.angular = { element: (el) => ({ scope: () => el && el.__scope }) };
+  // Modo de envío: el robot lo lee del injector (\`settingsService\`), como en ySocial real;
+  // hideSendMode simula que no se puede leer (sin injector) aunque el modo siga vigente.
+  const settingsService = { settings: { agent: { settings: DATA.sendMode ? { sendMode: DATA.sendMode } : {} } } };
+  const injector = DATA.hideSendMode ? undefined : { get: (n) => (n === 'settingsService' ? settingsService : undefined) };
+  window.angular = { element: (el) => ({ scope: () => el && el.__scope, injector: () => injector }) };
+  const enterSends = () => DATA.sendMode !== 'click';
+  const clickSends = () => DATA.sendMode !== 'enter';
 
   // ---------- datos: servidor simulado o en memoria (modo estático) ----------
   let cases = DATA.chats.map((c) => ({ id: c.id, unread: c.unread, lastId: c.messages.at(-1)?.id ?? c.id }));
@@ -417,7 +432,7 @@ function consoleScript(data: string): string {
   document.addEventListener('keydown', (e) => {
     if (e.target.id === 'textareaActAsChat' && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      void send();
+      if (enterSends()) void send();
     }
   });
 
@@ -454,7 +469,7 @@ function consoleScript(data: string): string {
       if (SERVER) void api('/services/agents/disconnect?id=1', {}).then(() => location.reload());
       return;
     }
-    if (ng === 'caseCtrl.handleSendClick($event)') return void send();
+    if (ng === 'caseCtrl.handleSendClick($event)') return void (clickSends() && send());
     if (ng.startsWith('caseCtrl.actAsChatInfo.finishMessage(')) {
       finishing = { closeCase: ng.includes('(true)') };
       t.closest('.dropdown-menu').hidden = true;

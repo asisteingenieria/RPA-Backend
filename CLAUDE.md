@@ -253,6 +253,9 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
   que pide escribir; `STT_PROVIDER=ninguno` para no transcribir nunca.
   ySocial no cierra la sesión al cerrar el navegador (`ALREADY_CONNECTED`) y esconde «Salir» con
   casos asignados: el robot hace `logout()` al detenerse y el diagnóstico no cierra la ventana con casos.
+- Envío (D-028): según el modo de envío del usuario en ySocial (`sendMode`: click/enter/both,
+  `ChatPage.sendMode`); respuestas PENDING de más de 5 min (`STALE_AFTER_MS`) no se envían
+  (`FAILED` + `SEND_STALE`), p. ej. las preparadas durante una pausa.
 - Trazas solo en error, cifradas, en `TRACE_DIR` (7 días); `decryptTrace` para verlas.
 - Alertas: logs + `ALERT_WEBHOOK_URL` (Slack/Teams), sin datos personales.
 - Capacidad (v1.5, sección 2.7 del plan): 3 chats por robot (`MAX_CHATS_PER_ROBOT`), fila del

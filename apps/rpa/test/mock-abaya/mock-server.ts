@@ -4,7 +4,14 @@ import type { AddressInfo } from 'node:net';
 import { totp } from '@abaya/crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { customerPageHtml } from './customer-page.js';
-import { inboxHtml, loginHtml, sampleChats, type MockChat, type MockMessage } from './templates.js';
+import {
+  inboxHtml,
+  loginHtml,
+  sampleChats,
+  type MockChat,
+  type MockMessage,
+  type MockSendMode,
+} from './templates.js';
 
 export interface MockAbayaOptions {
   username?: string;
@@ -17,6 +24,10 @@ export interface MockAbayaOptions {
    * encuentra conectado» hasta que esa sesión haga «Salir» (o se expire).
    */
   singleSession?: boolean;
+  /** Modo de envío del usuario en ySocial (por defecto, ambos). */
+  sendMode?: MockSendMode;
+  /** El modo de envío no se puede leer desde la página (el robot debe arreglárselas). */
+  hideSendMode?: boolean;
 }
 
 /** Id del cliente (PostedBy) en los mensajes simulados. */
@@ -190,7 +201,14 @@ export class MockAbayaServer {
     // ---------- consola del asesor ----------
     if (req.method === 'GET' && (path === '/' || path === '/agent/' || path === '/agent')) {
       if (!authed) return html(res, loginHtml({ mfa: !!this.opts.totpSecret, server: true }));
-      return html(res, inboxHtml(this.chats, undefined, 'server', { state: this.agentState }));
+      return html(
+        res,
+        inboxHtml(this.chats, undefined, 'server', {
+          state: this.agentState,
+          ...(this.opts.sendMode ? { sendMode: this.opts.sendMode } : {}),
+          hideSendMode: !!this.opts.hideSendMode,
+        }),
+      );
     }
     if (post && path === '/services/agents/login') {
       this.loginAttempts++;
