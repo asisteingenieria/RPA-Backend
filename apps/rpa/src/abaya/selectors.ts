@@ -19,8 +19,12 @@ export const sel = {
     path: '/agent/#/login',
     username: (p: Page) => p.locator('input[name="username"]'),
     password: (p: Page) => p.locator('input[name="password"]'),
-    /** ❓ No se vio el doble factor activo (existe en el menú de perfil). */
-    otp: (p: Page) => p.locator('[ng-if*="showTwoFactor"] input:visible'),
+    /**
+     * ❓ No se vio el doble factor activo (existe en el menú de perfil). Atributo EXACTO: en
+     * ySocial real usuario y contraseña van dentro de `ng-if="!login.showTwoFactor"` (15/10/2026,
+     * PC del robot: con `*=` el login fallaba por «resolved to 2 elements»).
+     */
+    otp: (p: Page) => p.locator('[ng-if="login.showTwoFactor"] input:visible').first(),
     submit: (p: Page) => p.getByRole('button', { name: /^ingresar$/i }),
     /** ❓ No se vio un error de login: ySocial avisa con toasts. */
     error: (p: Page) => p.locator('.toast-error, .alert-danger').first(),

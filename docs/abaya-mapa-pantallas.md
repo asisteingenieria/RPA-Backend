@@ -26,7 +26,10 @@ confirmar que el navegador automatizado no se queda en un desafío de Cloudflare
 
 - El login del asesor tiene usuario, contraseña y el botón **INGRESAR**, más una barra de progreso.
   No se vio MFA, aunque el menú de perfil tiene «doble factor» (`showTwoFactorDialog`), sin activar
-  para este usuario.
+  para este usuario. Usuario y contraseña van dentro de `ng-if="!login.showTwoFactor"`: el campo
+  del código se busca con el atributo **exacto** `ng-if="login.showTwoFactor"` (15/10/2026, primer
+  `probar.cmd login` en el PC del robot: con `*=` coincidían los dos bloques y el login fallaba).
+  Tras INGRESAR hay una barra de carga: el robot espera la bandeja hasta 45 s.
 - **Cerrar el navegador cierra la sesión del asesor**. Reutilizar `storageState` no sirvió: al
   volver a abrir, pidió login. El robot inicia sesión en cada arranque.
 - Mantener viva la sesión: la consola hace `POST /services/agents/keepalive` cada ~minuto.
