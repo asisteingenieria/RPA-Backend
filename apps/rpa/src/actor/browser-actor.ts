@@ -385,6 +385,13 @@ export class BrowserActor {
     if (msg.status === 'SENDING') {
       return this.uncertain(messageId, chatId, start, 'envío de imagen interrumpido');
     }
+    // D-029: ySocial no envía un mensaje sin texto (TEXT_REQUIRED): no tocar Abaya.
+    if (!text.trim()) {
+      await this.d.outbound.setStatus(messageId, 'FAILED');
+      await this.log('SEND', chatId, 'ERROR', start);
+      await this.d.alerts.raise('SEND_IMAGE_NO_TEXT', 'ALTA', { messageId, abayaChatId: chatId });
+      return 'FAILED';
+    }
     const bytes = await this.d.outbound.imageBytes(messageId);
     if (!bytes) {
       // La versión del Brain ya no tiene la imagen: nada se envió y no tiene sentido reintentar.
