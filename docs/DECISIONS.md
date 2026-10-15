@@ -1,5 +1,27 @@
 # Decisiones de diseño
 
+## D-028 · Enviar según el modo del asesor en ySocial y no enviar respuestas vencidas · APROBADA — implementada
+
+**Contexto (15/10/2026, primera prueba con tráfico real, robot 46325302).** (1) El robot escribía
+la respuesta pero no salía: quedaba en la caja hasta que una persona pulsaba Enter (5 alertas
+`SEND_UNCERTAIN`). ySocial tiene un **modo de envío por usuario**
+(`settings.agent.settings.sendMode`): «click» (solo la flecha), «enter» (la flecha hace
+`preventDefault`) o «both»; ese usuario está en «enter». (2) Durante la pausa (el asesor humano
+tomó el chat) el motor siguió preparando respuestas: tras reconectarse quedaron 8 en cola, que al
+reanudar habrían salido de golpe. (3) ySocial real manda `PostedBy.ID` mayores que un entero
+seguro: el robot descartaba el caso completo («payload no reconocido»).
+
+**Decisión.**
+
+1. `BrowserActor.submit`: lee el modo del servicio de AngularJS (`ChatPage.sendMode`) y envía con
+   la flecha («click») o con Enter («enter»/«both»). Si no se puede leer: Enter y, **solo si la caja
+   sigue con el mismo texto y sin spinner** (prueba de que no salió nada, regla 2), la flecha.
+2. Una respuesta PENDING con más de 5 min (`STALE_AFTER_MS`; edad medida por el servidor,
+   `OutboundMessage.ageMs`) no se escribe: queda `FAILED`, alerta `SEND_STALE` (Media). Tras una
+   pausa, el robot solo responde lo que el cliente escriba después de reanudar.
+3. `PostedBy.ID` acepta cualquier número (solo se usa para saber si vino).
+4. `iniciar.cmd` pone la consola en UTF-8 (`chcp 65001`): los logs salían con «sesi├│n».
+
 ## D-027 · Notas de voz: pedir con respeto que escriba · APROBADA — implementada
 
 **Contexto (15/10/2026).** En ySocial real el robot todavía no descarga las notas de voz (captura

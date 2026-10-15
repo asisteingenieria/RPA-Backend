@@ -39,6 +39,7 @@
 | `SMOKE_TEST_FAILED`          | Alta      | La prueba de humo (cada 15 min) no pudo leer la bandeja.                                                                                                                                                                                           | Igual que `HEARTBEAT_LOST`; si la sesión está activa pero la bandeja no se lee, tratar como `SELECTOR_BROKEN`.                                                                                                                                                                                                   |
 | `CHATS_MISSING_FROM_INBOX`   | Alta      | Al reconciliar, chats abiertos en BD ya no están en la bandeja del robot (los movió un humano o expiraron).                                                                                                                                        | Confirmar en Abaya quién los tiene; quedaron en revisión.                                                                                                                                                                                                                                                        |
 | `SEND_IMAGE_MISSING`         | Alta      | El robot iba a enviar una imagen de planes que ya no existe en el servidor (la versión del Brain se purgó). No se envió nada.                                                                                                                      | Revisar que el Brain de imágenes esté publicado y conectado; responder al cliente a mano si hace falta.                                                                                                                                                                                                          |
+| `SEND_STALE`                 | Media     | Una respuesta llevaba más de 5 min sin salir (se preparó durante una pausa, un apagado de emergencia o una reconexión) y no se envió (D-028).                                                                                                      | Normal tras **Pausar/Reanudar**. Si el cliente quedó sin respuesta, responderle a mano o esperar a que escriba: el robot contesta lo nuevo.                                                                                                                                                                      |
 | `CLOSE_UNCERTAIN`            | Alta      | Un cierre sin venta no se pudo confirmar.                                                                                                                                                                                                          | Cerrar a mano en Abaya.                                                                                                                                                                                                                                                                                          |
 
 ## 3. Reiniciar un proceso
@@ -305,7 +306,8 @@ antivirus). Resolver los avisos con TI antes de poner el equipo en producción.
 - **nginx:** HTTPS con certificado autofirmado para la IP (`/etc/nginx/ssl/rpa.crt`, SAN
   `IP:10.255.255.194`, vence el 15/01/2029). `/admin`, `/robot-api`, `/health` y `/panel` van a la
   API (`127.0.0.1:3000`) con `Upgrade`/`Connection` para el WebSocket y `proxy_read_timeout 300s`
-  (el robot manda un latido cada 30 s). El resto es el panel `interfazRPA` (`~/rpa/frontend/dist`).
+  (el robot manda un latido cada 30 s). El resto es el panel `interfazRPA`, servido desde
+  **`/var/www/rpa-frontend`** (no desde `~/rpa/frontend/dist`: el build hay que copiarlo, ver 12.4).
 - **Paquete del robot:** `~/rpa/backend/dist/robot-package/abaya-robot-windows.zip` y su
   `.manifest.json` (versión `1.0.0+16b02c7.202610141527`). El panel → Robots debe decir «Firma
   válida».
@@ -410,6 +412,19 @@ En el PC del robot, con el usuario de Windows que lo va a correr:
   siguiente arranque diría `ALREADY_CONNECTED`) y los clientes asignados sin atender.
 - **Emergencia:** kill switch o **Pausar** en el panel (el robot deja de actuar al instante); el
   supervisor reasigna los chats y desconecta al agente.
+
+### 12.4.b Actualizar el panel (`interfazRPA`)
+
+`~/rpa/frontend` es un clon de git; nginx sirve una copia en `/var/www/rpa-frontend`. Sin el
+último paso el navegador sigue viendo el panel viejo:
+
+```bash
+cd ~/rpa/frontend && git pull && pnpm install --frozen-lockfile && pnpm build
+sudo cp -a /var/www/rpa-frontend /var/www/rpa-frontend-respaldo-$(date +%F)
+sudo rsync -a --delete ~/rpa/frontend/dist/ /var/www/rpa-frontend/
+sudo chown -R www-data:www-data /var/www/rpa-frontend
+curl -sk https://10.255.255.194/ | grep -o 'index-[^"]*\.js'   # = el de ~/rpa/frontend/dist/index.html
+```
 
 ### 12.5 Publicar un paquete nuevo del robot
 

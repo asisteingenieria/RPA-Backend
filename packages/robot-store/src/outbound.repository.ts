@@ -21,6 +21,11 @@ export interface OutboundMessage {
   attempts: number;
   /** D-014 fase 2: null = mensaje de solo texto. */
   image?: OutboundImage | null;
+  /**
+   * Antigüedad en ms, medida por quien lo guarda (el servidor en el robot hijo: sin desfase de
+   * relojes). Una respuesta vieja (preparada en una pausa) no se envía: ver `staleAfterMs`.
+   */
+  ageMs?: number;
 }
 
 export interface OutboundRepository {
@@ -51,6 +56,7 @@ export class PrismaOutboundRepository implements OutboundRepository {
       status: m.status ?? 'PENDING',
       attempts: m.attempts,
       image: m.imageId ? await this.imageMeta(m.imageId) : null,
+      ageMs: Math.max(0, Date.now() - m.createdAt.getTime()),
     };
   }
 

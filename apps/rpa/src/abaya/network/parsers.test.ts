@@ -47,6 +47,20 @@ describe('parseCaseResponse (ySocial)', () => {
     expect(r.value.messages[4]!.media).toBeUndefined();
   });
 
+  it('acepta ids de remitente más grandes que un entero seguro (ySocial real, 15/10/2026)', () => {
+    const raw = fixture('ysocial-case.json') as {
+      Result: { Case: { Messages: { PostedBy?: { ID: unknown } | null }[] } };
+    };
+    const big = structuredClone(raw);
+    for (const m of big.Result.Case.Messages) if (m.PostedBy) m.PostedBy.ID = 2 ** 60;
+    const parsed = parseCaseResponse(big);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.messages.map((m) => m.sender)).toEqual(
+      r.ok ? r.value.messages.map((m) => m.sender) : [],
+    );
+  });
+
   it('rechaza un payload con forma desconocida sin filtrar valores', () => {
     const bad = parseCaseResponse({
       Success: true,

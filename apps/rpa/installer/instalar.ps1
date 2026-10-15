@@ -150,4 +150,5 @@ $robot = (Get-Content $robotJson -Raw | ConvertFrom-Json).robotUser
 Write-Host "`nListo. Este equipo ($env:COMPUTERNAME) quedó registrado como $robot (versión $version)." -ForegroundColor Green
 Write-Host 'En el panel (pestaña Robots) debe aparecer En línea en menos de un minuto.'
 Write-Host "Revisión del equipo guardada en $Destino\preparacion.txt"
-Write-Host "Para detenerlo: cierre la ventana 'Robot Abaya'. Para desinstalar: $Destino\desinstalar.cmd"
+Write-Host "Para detenerlo: estado Break en Abaya, esperar la bandeja vacia y Ctrl+C en la ventana 'Robot Abaya' (no cerrarla con la X: Abaya deja la sesion abierta)."
+Write-Host "Para desinstalar: $Destino\desinstalar.cmd"

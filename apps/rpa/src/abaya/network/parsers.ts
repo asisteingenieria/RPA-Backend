@@ -24,6 +24,12 @@ export const REPLY_SOURCE_AGENT = 3;
 const id = z.union([z.number().int(), z.string().regex(/^\d+$/)]).transform(String);
 
 /**
+ * Quién escribió: el robot solo mira si viene. ySocial real (15/10/2026) manda ids de usuario
+ * más grandes que un entero seguro de JavaScript (`too_big`) y descartaba el caso completo.
+ */
+const posterId = z.union([z.number(), z.string().max(64)]);
+
+/**
  * D-010: adjunto. El enlace es un SAS de Azure Blob que se descarga sin la sesión. `MimeType`
  * libre para no descartar el mensaje si trae otro adjunto: solo `audio/*` es nota de voz.
  */
@@ -43,7 +49,7 @@ const messageSchema = z.object({
   Date: z.string().datetime({ offset: true }),
   IsReply: z.boolean(),
   ReplySource: z.number().int().nullish(),
-  PostedBy: z.object({ ID: id }).passthrough().nullish(),
+  PostedBy: z.object({ ID: posterId }).passthrough().nullish(),
   IsEvent: z.boolean().nullish(),
   Attachments: z.array(attachmentSchema).nullish(),
 });

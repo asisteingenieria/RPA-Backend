@@ -5,6 +5,9 @@ import { sel } from '../selectors.js';
 /** Espacios y saltos de línea no cuentan al comparar textos (la interfaz los puede reflujar). */
 const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
 
+/** Cómo envía el asesor en ySocial (ver `sel.chat.sendModeService`). */
+export type SendMode = 'click' | 'enter' | 'both';
+
 export class ChatPage {
   constructor(private readonly page: Page) {}
 
@@ -110,6 +113,48 @@ export class ChatPage {
   /** @mutating Solo desde BrowserActor (regla 4). */
   async clickSend(): Promise<void> {
     await sel.chat.send(this.page).click();
+  }
+
+  /** @mutating Solo desde BrowserActor (regla 4). Enter en la caja (Shift+Enter sería salto). */
+  async pressEnterToSend(): Promise<void> {
+    await sel.chat.input(this.page).press('Enter');
+  }
+
+  /**
+   * Modo de envío del usuario en ySocial, leído del servicio de AngularJS (no cambia nada).
+   * null si no se puede leer; sin valor guardado ySocial se comporta como «both».
+   */
+  async sendMode(): Promise<SendMode | null> {
+    const mode = await this.page
+      .evaluate((service) => {
+        type Settings = { settings?: { agent?: { settings?: { sendMode?: unknown } } } };
+        type Ng = {
+          element(el: Element): { injector?(): { get(name: string): Settings } | undefined };
+        };
+        const ng = (window as unknown as { angular?: Ng }).angular;
+        const injector = ng?.element(document.body).injector?.();
+        if (!injector) return null;
+        const value = injector.get(service)?.settings?.agent?.settings?.sendMode;
+        return typeof value === 'string' ? value.toLowerCase() : 'both';
+      }, sel.chat.sendModeService)
+      .catch(() => null);
+    return mode === 'click' || mode === 'enter' || mode === 'both' ? mode : null;
+  }
+
+  /** Lo que hay escrito en la caja de respuesta. */
+  async composerText(): Promise<string> {
+    return sel.chat.input(this.page).inputValue();
+  }
+
+  /** ySocial está enviando (spinner junto a la flecha). */
+  async isSending(): Promise<boolean> {
+    return (await sel.chat.sending(this.page).count()) > 0;
+  }
+
+  /** La caja conserva exactamente este texto: no salió nada (Enter o clic ignorados). */
+  async composerStill(text: string): Promise<boolean> {
+    const now = await this.composerText().catch(() => null);
+    return now !== null && normalize(now) === normalize(text) && !(await this.isSending());
   }
 
   /**

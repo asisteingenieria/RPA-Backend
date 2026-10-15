@@ -118,6 +118,23 @@ test('con KillSwitch activo no se envía nada', async () => {
   await t.mgr.stop();
 });
 
+test('respuesta vencida (preparada durante una pausa): no se escribe nada, FAILED y alerta', async () => {
+  const t = await boot(mock);
+  const id = t.queue('1001', 'Respuesta de hace 10 minutos');
+  t.outbound.messages.get(id)!.ageMs = 10 * 60_000;
+  expect(await t.actor.sendMessage(id)).toBe('STALE');
+  expect(mock.agentPosts).toHaveLength(0);
+  expect((await t.outbound.get(id))?.status).toBe('FAILED');
+  expect(t.alerts.raised).toEqual([
+    expect.objectContaining({ code: 'SEND_STALE', severity: 'MEDIA' }),
+  ]);
+  // Una reciente sí sale.
+  const fresh = t.queue('1001', 'Respuesta de ahora');
+  t.outbound.messages.get(fresh)!.ageMs = 2_000;
+  expect(await t.actor.sendMessage(fresh)).toBe('SENT_VERIFIED');
+  await t.mgr.stop();
+});
+
 test('falla de verificación: queda UNCERTAIN, alerta y no se reintenta', async () => {
   const t = await boot(mock);
   mock.dropOutgoing = true;
@@ -198,4 +215,50 @@ test('la compuerta de sesión cerrada detiene las acciones hasta que se abre', a
   t.gate.resume('session');
   expect(await p).toBe('SENT_VERIFIED');
   await t.mgr.stop();
+});
+
+// 15/10/2026: el modo de envío es por usuario en ySocial. Con «enter» la flecha no hace nada
+// (los mensajes quedaban escritos en la caja); con «click», Enter no envía.
+for (const sendMode of ['enter', 'click', 'both'] as const) {
+  test(`modo de envío «${sendMode}»: envía una vez y verifica`, async () => {
+    const m = new MockAbayaServer({ sendMode });
+    await m.start();
+    try {
+      const t = await boot(m);
+      const id = t.queue('1001', `Hola, modo ${sendMode}`);
+      expect(await t.actor.sendMessage(id)).toBe('SENT_VERIFIED');
+      expect(m.agentPosts.map((p) => p.text)).toEqual([`Hola, modo ${sendMode}`]);
+      await t.mgr.stop();
+    } finally {
+      await m.stop();
+    }
+  });
+}
+
+test('modo de envío ilegible y usuario en «click»: Enter no sale, la caja sigue igual y usa la flecha (una vez)', async () => {
+  const m = new MockAbayaServer({ sendMode: 'click', hideSendMode: true });
+  await m.start();
+  try {
+    const t = await boot(m);
+    const id = t.queue('1001', 'Texto con\nsalto de línea');
+    expect(await t.actor.sendMessage(id)).toBe('SENT_VERIFIED');
+    expect(m.agentPosts).toHaveLength(1);
+    await t.mgr.stop();
+  } finally {
+    await m.stop();
+  }
+});
+
+test('modo de envío ilegible y usuario en «enter»: sale con Enter, sin segundo envío', async () => {
+  const m = new MockAbayaServer({ sendMode: 'enter', hideSendMode: true });
+  await m.start();
+  try {
+    const t = await boot(m);
+    const id = t.queue('1001', 'Sale con Enter');
+    expect(await t.actor.sendMessage(id)).toBe('SENT_VERIFIED');
+    expect(m.agentPosts).toHaveLength(1);
+    await t.mgr.stop();
+  } finally {
+    await m.stop();
+  }
 });
