@@ -142,12 +142,19 @@ export const sel = {
   },
 
   session: {
-    /** Señal de sesión viva: el avatar del asesor en la barra superior. */
-    inboxMarker: (p: Page) => p.locator('img.user-image'),
-    /** «Salir»: se abre con clic en el avatar (`inboxMarker`). */
+    /**
+     * Señal de sesión viva: el avatar del asesor en la barra superior (las iniciales, «DC»). Con
+     * el panel del perfil abierto hay dos `img.user-image` (la grande del panel): la primera es la
+     * de la barra.
+     */
+    inboxMarker: (p: Page) => p.locator('img.user-image').first(),
+    /** «Salir» (ícono de apagado del panel del perfil): se abre con clic en el avatar. */
     logout: (p: Page) => p.locator('a[ng-click="navigation.signOut()"]'),
-    /** Confirmación de «Salir» (ACEPTAR, sin la cuenta regresiva del aviso de caso nuevo). */
-    logoutConfirm: (p: Page) => p.getByRole('button', { name: /^aceptar$/i }),
+    /**
+     * «Cierre de sesión · ¿Está seguro que desea cerrar sesión?» → ACEPTAR (sin la cuenta regresiva
+     * del aviso de caso nuevo). Visto en captura el 15/10/2026.
+     */
+    logoutConfirm: (p: Page) => p.getByRole('button', { name: /^aceptar$/i }).first(),
   },
 
   /**

@@ -146,6 +146,8 @@ export function inboxHtml(
   </div>
   <a data-toggle="profile"><img class="user-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a>
   <div class="profile-menu" hidden>
+    <!-- Como en ySocial real: el panel del perfil repite el avatar (dos img.user-image). -->
+    <img class="user-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
     <a class="button-profile col-xs-3" ng-click="navigation.signOut()">Salir</a>
   </div>
 </nav>
@@ -158,8 +160,10 @@ export function inboxHtml(
 </div></div>
 
 <div class="modal" data-modal="signout" hidden><div class="modal-dialog">
-  <p>¿Desea salir de la aplicación?</p>
+  <p>Cierre de sesión</p>
+  <p>¿Está seguro que desea cerrar sesión?</p>
   <button class="btn btn-flat btn-action" type="button" ng-click="signOutConfirm()">Aceptar</button>
+  <button class="btn btn-flat" type="button">Cancelar</button>
 </div></div>
 
 <div class="modal" data-modal="confirm" hidden><div class="modal-dialog">
