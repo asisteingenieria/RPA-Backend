@@ -85,6 +85,25 @@ describe('cierre por inactividad', () => {
     expect(await closeInactive(db.prisma, now, 120)).toBe(0);
   });
 
+  it('D-025: la tipificación del modelo va en el cierre; sin ella, «Cliente abandona conversación»', async () => {
+    const now = new Date();
+    const tagged = await conv('CH-T1', new Date(now.getTime() - 3 * HOUR));
+    await db.prisma.conversation.update({
+      where: { id: tagged.id },
+      data: { closeTag: 'SAC_FACTURACION' },
+    });
+    await conv('CH-T2', new Date(now.getTime() - 3 * HOUR));
+    expect(await closeInactive(db.prisma, now, 120)).toBe(2);
+    const tagOf = async (chat: string) =>
+      (
+        (await db.prisma.outboxEvent.findMany()).find(
+          (e) => (e.payload as { abayaChatId: string }).abayaChatId === chat,
+        )!.payload as { tag?: string }
+      ).tag;
+    expect(await tagOf('CH-T1')).toBe('SAC_FACTURACION');
+    expect(await tagOf('CH-T2')).toBe('NO_VENTA_ABANDONA');
+  });
+
   it('D-013: una venta ya autorizada que se queda callada NO se cierra: pasa al backoffice', async () => {
     const now = new Date();
     const sold = await conv('CH-9', new Date(now.getTime() - 3 * HOUR), 'WAITING_CONSENT');

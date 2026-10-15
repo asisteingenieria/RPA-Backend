@@ -730,6 +730,31 @@ describe('probar agente (chat de simulación)', () => {
     });
   });
 
+  it('D-021/D-022: conserva el tipo de línea, el proceso corregido y la plataforma pedida', async () => {
+    const admin = await ready('jefe', 'ADMIN');
+    const profile = {
+      process: 'MIGRACION',
+      processChangedFrom: 'PORTABILIDAD',
+      currentOperator: 'Claro',
+      lineType: 'PREPAGO',
+      platformRequested: 'win',
+      platformOffer: true,
+      portabilityCheck: 'DATA',
+    };
+    const r = await post(
+      '/admin/agent/test',
+      {
+        source: 'editor',
+        fields: fields(),
+        state: { stage: 'PERFIL', profile, history: [] },
+        message: 'B',
+      },
+      admin,
+    );
+    expect(r.status).toBe(201);
+    expect(tests[0]!.state.profile).toEqual(profile);
+  });
+
   it('el borrador con precios no se puede probar (misma revisión que al guardar)', async () => {
     const admin = await ready('jefe', 'ADMIN');
     const r = await post(

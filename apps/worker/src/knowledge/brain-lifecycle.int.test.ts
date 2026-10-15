@@ -16,8 +16,9 @@ import {
 import { createLogger } from '@abaya/logger';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Cada publicación corre la suite de evaluación completa (D-013: un turno más por venta).
-vi.setConfig({ testTimeout: 30_000 });
+// Cada publicación corre la suite de evaluación completa (D-013: un turno más por venta; 87 casos
+// desde D-021): con todo el repo en paralelo pasa de 30 s.
+vi.setConfig({ testTimeout: 60_000 });
 import { PublishedBrainCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/catalog.js';
 import { PrismaConversationStore } from '../conversation/prisma.store.js';
 import { TurnService } from '../conversation/turn.service.js';
@@ -116,7 +117,8 @@ async function conversationShowingP1(catalog: PublishedBrainCatalog, chat: strin
     reply: 'Claro.',
     option: null,
     planCode: null,
-    extracted: { name: null, currentOperator: null, usage: null },
+    extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+    tipificacion: null,
     confidence: 'ALTA',
     ...o,
   });
@@ -124,7 +126,7 @@ async function conversationShowingP1(catalog: PublishedBrainCatalog, chat: strin
     /Etapa actual: PERFIL/.test(req.systemDynamic)
       ? out({
           reply: 'Te recomiendo:\n{{OFERTA:P1}}',
-          extracted: { name: 'Ana', currentOperator: 'Tigo', usage: 'redes' },
+          extracted: { name: 'Ana', currentOperator: 'Tigo', lineType: null, usage: 'redes' },
         })
       : out({}),
   );

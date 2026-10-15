@@ -113,7 +113,7 @@ describe('probar agente (turno simulado)', () => {
       message: 'no gracias',
     });
     expect(r2.stage).toBe('SOPORTE');
-    expect(r2.events).toEqual(['Chat cerrado (soporte *611)']);
+    expect(r2.events).toEqual(['Chat cerrado (soporte *611) · tipificación por defecto']);
   });
 });
 

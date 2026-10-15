@@ -37,10 +37,13 @@ model Conversation {
   contentPurgedAt  DateTime?
   /// D-004: versión del agente con la que empezó (la conversación la conserva hasta el final).
   agentVersionId   String?
+  /// D-025: tipificación que eligió el modelo para el cierre sin venta (categoría, no dato personal).
+  closeTag         String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   messages         Message[]
   sale             Sale?
+  serviceCase      ServiceCase?
 
   @@index([robotUser, createdAt])
   @@index([status, createdAt])
@@ -118,6 +121,18 @@ model Sale {
   backofficeNoteOk Boolean      @default(false)
   /// v1.9: versión del Brain de catálogo de la que salió el plan aceptado (trazabilidad del precio).
   catalogVersionId String?
+  createdAt        DateTime     @default(now())
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+}
+
+/// D-023: caso que pasa al backoffice con «Finalizar» sin ser una venta (no cuenta en las métricas
+/// de ventas). Hoy: validación de una portabilidad cuya confirmación el cliente no recibió.
+model ServiceCase {
+  id               String       @id @default(cuid())
+  conversationId   String       @unique
+  kind             String // VALIDACION_PORTABILIDAD
+  summaryEncrypted Bytes // resumen con los datos del cliente, cifrado (AAD service-case:<id>)
+  transferredAt    DateTime?
   createdAt        DateTime     @default(now())
   conversation     Conversation @relation(fields: [conversationId], references: [id])
 }

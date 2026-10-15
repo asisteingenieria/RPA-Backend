@@ -3,6 +3,8 @@ import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import type { CloseRequest, HandoffOutcome, TransferRequest } from '../actor/browser-actor.js';
 import { MemoryAlertAdapter } from '@abaya/alerts';
+import { MOCK_TAGS } from '../../test/mock-abaya/templates.js';
+import { sel } from '../abaya/selectors.js';
 import { HandoffProcessor } from './handoff-processor.js';
 import { MemoryHandoffRepository } from './handoff.repository.js';
 
@@ -131,6 +133,39 @@ describe('HandoffProcessor.close', () => {
     expect(t.actor.closes).toEqual([
       { abayaChatId: 'CH-1', tag: 'SAC - Ecommerce Movil - Detalle plan movil' },
     ]);
+  });
+
+  it('D-025: con tipificación marca su etiqueta de ySocial; sin ella, la del motivo', async () => {
+    const t = setup();
+    await t.p.close({
+      conversationId: 'c1',
+      abayaChatId: 'CH-1',
+      reason: 'SUPPORT',
+      tag: 'SAC_FACTURACION',
+      afterMessageIds: [],
+    });
+    await t.p.close({
+      conversationId: 'c2',
+      abayaChatId: 'CH-2',
+      reason: 'INACTIVE',
+      tag: 'NO_VENTA_ABANDONA',
+      afterMessageIds: [],
+    });
+    await t.p.close({
+      conversationId: 'c3',
+      abayaChatId: 'CH-3',
+      reason: 'NO_SALE',
+      afterMessageIds: [],
+    });
+    expect(t.actor.closes.map((c) => c.tag)).toEqual([
+      'SAC - Ecommerce Movil - Facturacion',
+      'No venta - Ecommerce Movil -Cliente abandona conversación',
+      'No venta -Ecommerce Movil Reglas de Negocio - Politicas',
+    ]);
+  });
+
+  it('D-025: cada etiqueta de la tipificación existe en el árbol de ySocial (simulador)', () => {
+    for (const label of Object.values(sel.finish.closeTags)) expect(MOCK_TAGS).toContain(label);
   });
 
   it('cierre incierto: revisión y alerta alta', async () => {

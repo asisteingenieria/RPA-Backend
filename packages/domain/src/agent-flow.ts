@@ -42,9 +42,15 @@ export type ImageOrder = (typeof IMAGE_ORDERS)[number];
 /**
  * Imágenes compartidas con otros procesos: CON_LAS_DEMAS = se ofrecen como las propias (según el
  * orden); SI_PIDE_PLATAFORMA = solo cuando el cliente nombra una plataforma que incluyen sus planes
- * (p. ej. Prime Video), como la circular de apps de video.
+ * (p. ej. Prime Video), como la circular de apps de video; SI_USO_LABORAL (D-024) = solo si el
+ * cliente dice que usará el plan para el trabajo, y entonces van primero; si no, sus planes no se
+ * ofrecen.
  */
-export const SHARED_IMAGE_MODES = ['CON_LAS_DEMAS', 'SI_PIDE_PLATAFORMA'] as const;
+export const SHARED_IMAGE_MODES = [
+  'CON_LAS_DEMAS',
+  'SI_PIDE_PLATAFORMA',
+  'SI_USO_LABORAL',
+] as const;
 export type SharedImageMode = (typeof SHARED_IMAGE_MODES)[number];
 
 /**
@@ -61,6 +67,51 @@ export const SALE_DATA_LABEL: Record<SaleDataField, string> = {
   CORREO: 'tu correo electrónico',
   CELULAR: 'tu número celular',
 };
+
+/** Tipo de línea del cliente con su operador actual (lo extrae el modelo; decide el código). */
+export const LINE_TYPES = ['PREPAGO', 'POSPAGO'] as const;
+export type LineType = (typeof LINE_TYPES)[number];
+
+/**
+ * D-021: qué hace el código con un cliente propio (pospago) que eligió cambiarse de operador:
+ * YA_POSPAGO = plantilla del sistema que le aclara que no aplica y le ofrece la opción de «ya
+ * tengo plan»; la conversación vuelve al menú. SEGUIR = no se revisa.
+ */
+export const OWN_POSTPAID_ACTIONS = ['YA_POSPAGO', 'SEGUIR'] as const;
+export type OwnPostpaidAction = (typeof OWN_POSTPAID_ACTIONS)[number];
+
+/**
+ * D-021: el proceso se corrige con el operador que dice el cliente (14/10/2026). Eligió cambiarse
+ * de operador (A) pero su línea ya es del operador propio: si es prepago, es una migración; si es
+ * pospago, no es una venta. Eligió pasarse a pospago (B) pero su línea es de otro operador: es una
+ * portabilidad. El modelo solo extrae el operador y el tipo de línea; el cambio lo hace el código.
+ */
+export interface OperatorRouting {
+  /** Nombres del operador propio (p. ej. «Claro»). Vacío = no se corrige el proceso. */
+  ownNames: string[];
+  /** Portabilidad + línea propia prepago → este proceso (null = no cambia). */
+  ownPrepaidTo: FlowProcess | null;
+  /** Portabilidad + línea propia pospago. */
+  ownPostpaid: OwnPostpaidAction;
+  /** Migración + línea de otro operador → este proceso (null = no cambia). */
+  otherOperatorTo: FlowProcess | null;
+}
+
+/**
+ * D-022: el cliente pide una plataforma de video puntual (WIN, Disney+, Netflix…): OFRECER_DIRECTO =
+ * en cuanto se sabe su proceso, sin perfilar, se le ofrece lo que la incluye (la circular de esa
+ * plataforma); PERFILAR = el flujo normal (perfil y primera oferta del proceso).
+ */
+export const PLATFORM_REQUEST_MODES = ['OFRECER_DIRECTO', 'PERFILAR'] as const;
+export type PlatformRequestMode = (typeof PLATFORM_REQUEST_MODES)[number];
+
+/**
+ * D-023: el cliente pregunta en el menú por una portabilidad que ya solicitó. VALIDAR = se le
+ * pregunta si recibió la confirmación: si sí, no se puede verificar (plantilla de soporte); si no, se
+ * le piden los datos y pasa al backoffice para validarla. SOPORTE = plantilla de soporte directo.
+ */
+export const PORTABILITY_INQUIRY_MODES = ['VALIDAR', 'SOPORTE'] as const;
+export type PortabilityInquiryMode = (typeof PORTABILITY_INQUIRY_MODES)[number];
 
 export interface MenuOptionConfig {
   letter: MenuLetter;
@@ -91,10 +142,25 @@ export interface AgentFlow {
    * llegar en varios mensajes) antes de revisarlos y, si falta alguno, recordarle cuál.
    */
   saleDataWaitSeconds: number;
+  /** D-021: corregir el proceso según el operador y el tipo de línea del cliente. */
+  operatorRouting: OperatorRouting;
+  /** D-022: qué hacer cuando el cliente pide una plataforma de video puntual. */
+  platformRequest: PlatformRequestMode;
+  /** D-023: consulta de una portabilidad ya solicitada. */
+  portabilityInquiry: PortabilityInquiryMode;
+  /**
+   * D-024: palabras con las que el código reconoce que el cliente usará el plan para el trabajo
+   * (en el uso que contó al perfilar). Vacío = nunca es uso laboral.
+   */
+  workUsageWords: string[];
 }
 
 export const FLOW_LIMITS = {
   menuText: 60,
+  ownNames: 5,
+  ownName: 30,
+  workUsageWords: 20,
+  workUsageWord: 30,
   // Por debajo del «dame un momento» de D-009 (120 s), que no debe salir mientras espera los datos.
   saleDataWaitMin: 10,
   saleDataWaitMax: 90,
@@ -119,19 +185,19 @@ export const DEFAULT_FLOW: AgentFlow = {
     // A: como la asesora, primero el operador; B: de recargas a pospago, se empieza por el uso.
     // Imágenes (13/10/2026): en Portabilidad y Migración primero las propias de la opción y
     // después las compartidas; en Línea nueva primero la del plan más caro (como en el Word).
-    // Compartidas: en Portabilidad y Migración solo si el cliente nombra lo que incluyen (Prime
-    // Video); en Línea nueva la compartida es la oferta principal.
+    // Compartidas (D-024, 14/10/2026): en Portabilidad y Migración solo si el cliente usará el plan
+    // para el trabajo, y entonces van primero; en Línea nueva la compartida es la oferta principal.
     PORTABILIDAD: {
       asks: ['currentOperator', 'usage'],
       firstTemplate: 'perfil-operador',
       imageOrder: 'PROPIAS_PRIMERO',
-      sharedImages: 'SI_PIDE_PLATAFORMA',
+      sharedImages: 'SI_USO_LABORAL',
     },
     MIGRACION: {
       asks: ['usage'],
       firstTemplate: 'perfil-uso',
       imageOrder: 'PROPIAS_PRIMERO',
-      sharedImages: 'SI_PIDE_PLATAFORMA',
+      sharedImages: 'SI_USO_LABORAL',
     },
     LINEA_NUEVA: {
       asks: ['usage'],
@@ -145,7 +211,108 @@ export const DEFAULT_FLOW: AgentFlow = {
   // 13/10/2026: antes de transferir deben estar el documento, el nombre completo y el correo.
   saleData: ['DOCUMENTO', 'NOMBRE', 'CORREO'],
   saleDataWaitSeconds: 45,
+  // 14/10/2026: eligió A pero es de Claro prepago → migración; Claro pospago → no aplica (se le
+  // ofrece la opción «ya tengo plan»); eligió B pero es de otro operador → portabilidad.
+  operatorRouting: {
+    ownNames: ['Claro'],
+    ownPrepaidTo: 'MIGRACION',
+    ownPostpaid: 'YA_POSPAGO',
+    otherOperatorTo: 'PORTABILIDAD',
+  },
+  // 14/10/2026: pide WIN, Disney+ o Netflix → la circular de esa plataforma sin perfilar.
+  platformRequest: 'OFRECER_DIRECTO',
+  // 14/10/2026: «solicité una portabilidad y no sé si quedó» → ¿recibió la confirmación?
+  portabilityInquiry: 'VALIDAR',
+  // 14/10/2026: «más que todo para cosas laborales» → primero los planes compartidos.
+  workUsageWords: ['trabajo', 'trabajar', 'laboral', 'oficina', 'negocio', 'empresa'],
 };
+
+const normalizeName = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/** Respuestas que no nombran un operador («no sé», «ninguno»…): no cuentan como otro operador. */
+const NOT_AN_OPERATOR =
+  /^(no|ninguno|ninguna|nada|no se|no tengo|prepago|pospago|postpago|recargas?)$/;
+
+/** D-021: ¿el operador que dijo el cliente es el propio? («Claro», «claro colombia», «de Claro»). */
+export function isOwnOperator(operator: string | undefined, flow: AgentFlow): boolean {
+  if (!operator) return false;
+  const said = ` ${normalizeName(operator)} `;
+  return flow.operatorRouting.ownNames.some((n) => {
+    const name = normalizeName(n);
+    return !!name && said.includes(` ${name} `);
+  });
+}
+
+/** D-021: ¿nombró un operador distinto del propio? */
+export function isOtherOperator(operator: string | undefined, flow: AgentFlow): boolean {
+  if (!operator || isOwnOperator(operator, flow)) return false;
+  const said = normalizeName(operator);
+  return !!said && !NOT_AN_OPERATOR.test(said);
+}
+
+/** D-021: a dónde lleva el operador del cliente: otro proceso, la plantilla YA_POSPAGO o nada. */
+export type OperatorRoute = { to: FlowProcess } | { postpaid: true } | null;
+
+export function routeByOperator(
+  p: { process?: FlowProcess; currentOperator?: string; lineType?: LineType },
+  flow: AgentFlow,
+): OperatorRoute {
+  const r = flow.operatorRouting;
+  if (!r.ownNames.length) return null;
+  if (p.process === 'PORTABILIDAD' && isOwnOperator(p.currentOperator, flow)) {
+    if (p.lineType === 'PREPAGO' && r.ownPrepaidTo && r.ownPrepaidTo !== 'PORTABILIDAD')
+      return { to: r.ownPrepaidTo };
+    if (p.lineType === 'POSPAGO' && r.ownPostpaid === 'YA_POSPAGO') return { postpaid: true };
+    return null;
+  }
+  if (
+    p.process === 'MIGRACION' &&
+    isOtherOperator(p.currentOperator, flow) &&
+    r.otherOperatorTo &&
+    r.otherOperatorTo !== 'MIGRACION'
+  )
+    return { to: r.otherOperatorTo };
+  return null;
+}
+
+/**
+ * D-021: falta saber si la línea propia es prepago o pospago antes de ofrecer (eligió cambiarse de
+ * operador y su operador es el propio). Solo si el flujo hace algo con la respuesta.
+ */
+export function needsLineType(
+  p: { process?: FlowProcess; currentOperator?: string; lineType?: LineType },
+  flow: AgentFlow,
+): boolean {
+  const r = flow.operatorRouting;
+  return (
+    p.process === 'PORTABILIDAD' &&
+    !p.lineType &&
+    !!r.ownNames.length &&
+    (!!r.ownPrepaidTo || r.ownPostpaid === 'YA_POSPAGO') &&
+    isOwnOperator(p.currentOperator, flow)
+  );
+}
+
+/**
+ * D-024: ¿el uso que contó el cliente es laboral? Una palabra del flujo (o su plural) en lo que
+ * dijo, salvo que vaya negada justo antes («no es para trabajo»).
+ */
+export function isWorkUsage(usage: string | undefined, flow: AgentFlow): boolean {
+  if (!usage) return false;
+  const tokens = normalizeName(usage).split(' ');
+  const words = flow.workUsageWords.map(normalizeName).filter(Boolean);
+  return tokens.some((t, i) => {
+    const hit = words.some((w) => t === w || t === `${w}s` || t === `${w}es`);
+    const negated = tokens.slice(Math.max(0, i - 3), i).some((x) => x === 'no' || x === 'ni');
+    return hit && !negated;
+  });
+}
 
 /** Opciones del menú tal como se envían. */
 export function menuOptionsText(flow: AgentFlow): string {
@@ -236,6 +403,26 @@ export function storedFlow(raw: unknown): AgentFlow {
       isOneOf(OUT_OF_SCOPE_ACTIONS, oosRaw[s]) ? oosRaw[s] : DEFAULT_FLOW.outOfScope[s],
     ]),
   ) as Record<OutOfScopeStage, OutOfScopeAction>;
+  // D-021: versiones anteriores no lo tienen → el de la campaña.
+  const orRaw = (
+    r.operatorRouting && typeof r.operatorRouting === 'object' ? r.operatorRouting : {}
+  ) as Record<string, unknown>;
+  const defRouting = DEFAULT_FLOW.operatorRouting;
+  const processOrNull = (v: unknown, def: FlowProcess | null) =>
+    v === null ? null : isOneOf(FLOW_PROCESSES, v) ? v : def;
+  const operatorRouting: OperatorRouting = {
+    ownNames: Array.isArray(orRaw.ownNames)
+      ? (orRaw.ownNames as unknown[])
+          .filter((n): n is string => typeof n === 'string')
+          .map((n) => n.trim())
+          .filter(Boolean)
+      : defRouting.ownNames,
+    ownPrepaidTo: processOrNull(orRaw.ownPrepaidTo, defRouting.ownPrepaidTo),
+    ownPostpaid: isOneOf(OWN_POSTPAID_ACTIONS, orRaw.ownPostpaid)
+      ? orRaw.ownPostpaid
+      : defRouting.ownPostpaid,
+    otherOperatorTo: processOrNull(orRaw.otherOperatorTo, defRouting.otherOperatorTo),
+  };
   return {
     menu,
     processes,
@@ -247,6 +434,20 @@ export function storedFlow(raw: unknown): AgentFlow {
       typeof r.saleDataWaitSeconds === 'number' && Number.isInteger(r.saleDataWaitSeconds)
         ? r.saleDataWaitSeconds
         : DEFAULT_FLOW.saleDataWaitSeconds,
+    operatorRouting,
+    platformRequest: isOneOf(PLATFORM_REQUEST_MODES, r.platformRequest)
+      ? r.platformRequest
+      : DEFAULT_FLOW.platformRequest,
+    portabilityInquiry: isOneOf(PORTABILITY_INQUIRY_MODES, r.portabilityInquiry)
+      ? r.portabilityInquiry
+      : DEFAULT_FLOW.portabilityInquiry,
+    // D-024: versiones anteriores no la tienen → la de la campaña.
+    workUsageWords: Array.isArray(r.workUsageWords)
+      ? (r.workUsageWords as unknown[])
+          .filter((n): n is string => typeof n === 'string')
+          .map((n) => n.trim())
+          .filter(Boolean)
+      : DEFAULT_FLOW.workUsageWords,
   };
 }
 
@@ -287,6 +488,41 @@ export function reviewFlow(flow: AgentFlow, responseTemplateIds: readonly string
   )
     issues.push({
       message: `datos de la venta: la espera va entre ${FLOW_LIMITS.saleDataWaitMin} y ${FLOW_LIMITS.saleDataWaitMax} segundos`,
+    });
+  const routing = flow.operatorRouting;
+  if (routing.ownNames.length > FLOW_LIMITS.ownNames)
+    issues.push({
+      message: `operador propio: máximo ${FLOW_LIMITS.ownNames} nombres`,
+    });
+  for (const n of routing.ownNames) {
+    if (n.length > FLOW_LIMITS.ownName || FIGURES.test(n) || /\{\{|https?:\/\//i.test(n))
+      issues.push({
+        message: `operador propio: «${n.slice(0, 40)}» no es un nombre válido (máximo ${FLOW_LIMITS.ownName} caracteres, sin cifras ni enlaces)`,
+      });
+  }
+  if (routing.ownPrepaidTo === 'PORTABILIDAD')
+    issues.push({
+      message: 'operador propio: la línea prepago no puede seguir en portabilidad',
+    });
+  if (routing.otherOperatorTo === 'MIGRACION')
+    issues.push({
+      message: 'otro operador: una línea de otro operador no puede seguir en migración',
+    });
+  if (flow.workUsageWords.length > FLOW_LIMITS.workUsageWords)
+    issues.push({ message: `uso laboral: máximo ${FLOW_LIMITS.workUsageWords} palabras` });
+  for (const w of flow.workUsageWords) {
+    if (w.length > FLOW_LIMITS.workUsageWord || FIGURES.test(w) || /\{\{|https?:\/\//i.test(w))
+      issues.push({
+        message: `uso laboral: «${w.slice(0, 40)}» no es una palabra válida (máximo ${FLOW_LIMITS.workUsageWord} caracteres, sin cifras ni enlaces)`,
+      });
+  }
+  if (
+    flow.workUsageWords.length === 0 &&
+    FLOW_PROCESSES.some((p) => flow.processes[p].sharedImages === 'SI_USO_LABORAL')
+  )
+    issues.push({
+      message:
+        'uso laboral: sin palabras, las imágenes compartidas «solo si el uso es laboral» nunca se ofrecen',
     });
   if (!flow.menu.some((o) => o.action !== 'PREGUNTAR_NECESIDAD'))
     issues.push({ message: 'menú: al menos una opción debe llevar a un proceso de venta' });

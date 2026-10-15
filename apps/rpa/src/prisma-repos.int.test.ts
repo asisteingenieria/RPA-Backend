@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { FieldCipher, verifyChain } from '@abaya/crypto';
 import { startTestDatabase, type TestDatabase } from '@abaya/db/testing';
-import { outboundAad, saleAad } from '@abaya/domain';
+import { outboundAad, saleAad, serviceCaseAad } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaActionLog, actionLogHashInput } from './audit/action-log.js';
@@ -164,6 +164,32 @@ describe('PrismaOutboundRepository y PrismaHandoffRepository', () => {
     expect(await db.prisma.outboxEvent.count({ where: { type: 'ConversationTransferred' } })).toBe(
       1,
     );
+  });
+
+  it('D-023: un caso de servicio (sin venta) también se entrega al backoffice', async () => {
+    const conv = await db.prisma.conversation.create({
+      data: { abayaChatId: 'CH-CASO', robotUser: 'robot' },
+    });
+    const h = new PrismaHandoffRepository(db.prisma, cipher);
+    expect(await h.sale(conv.id)).toBeNull();
+    await db.prisma.serviceCase.create({
+      data: {
+        conversationId: conv.id,
+        kind: 'VALIDACION_PORTABILIDAD',
+        summaryEncrypted: new Uint8Array(
+          cipher.encrypt('Validación de portabilidad', serviceCaseAad(conv.id)),
+        ),
+      },
+    });
+    expect(await h.sale(conv.id)).toEqual({ summary: 'Validación de portabilidad', noteOk: false });
+    await h.markNoteOk(conv.id); // sin venta no falla
+    await h.markTransferred(conv.id, 'BACKOFFICE');
+    const c = await db.prisma.serviceCase.findUniqueOrThrow({ where: { conversationId: conv.id } });
+    expect(c.transferredAt).not.toBeNull();
+    expect(await db.prisma.sale.count({ where: { conversationId: conv.id } })).toBe(0);
+    expect(
+      (await db.prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } })).status,
+    ).toBe('TRANSFERRED_BACKOFFICE');
   });
 });
 

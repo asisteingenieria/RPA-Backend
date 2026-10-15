@@ -1,3 +1,4 @@
+import { closeTagsForModel } from './close-tags.js';
 import {
   DEFAULT_FLOW,
   menuForModel,
@@ -151,9 +152,12 @@ Intenciones posibles:
 - ACEPTA_PLAN: acepta un plan concreto (llena "planCode" con el código).
 - AUTORIZA / NO_AUTORIZA: responde a la solicitud de autorización de datos.
 - NO_INTERESADO: dice claramente que no quiere continuar.
-- FUERA_DE_ALCANCE: servicio al cliente de una línea o plan que ya tiene (soporte, factura, quejas del servicio), temas ajenos a la venta o algo que no puedes resolver. Los insultos, groserías, amenazas o bromas NO son FUERA_DE_ALCANCE (regla 9).
+- CONSULTA_PORTABILIDAD: solo en MENU: el cliente ya solicitó una portabilidad (cambiarse a Claro) y pregunta si quedó o en qué va. El sistema sigue con sus plantillas: en "reply" escribe solo «Entiendo.».
+- FUERA_DE_ALCANCE: servicio al cliente de una línea o plan que ya tiene (soporte, factura, quejas del servicio), temas ajenos a la venta o algo que no puedes resolver (una portabilidad ya solicitada es CONSULTA_PORTABILIDAD). Los insultos, groserías, amenazas o bromas NO son FUERA_DE_ALCANCE (regla 9).
 
-En "extracted" llena solo lo que el cliente dijo en esta conversación (null si no lo dijo). Usa "confidence" BAJA si el mensaje es ambiguo.`;
+En "extracted" llena solo lo que el cliente dijo en esta conversación (null si no lo dijo). En "lineType": PREPAGO si dice que su línea con su operador actual es de recargas o prepago (o responde que todavía no es pospago), POSPAGO si dice que ya tiene un plan pospago con ese operador. Si en "Datos que faltan" aparece lineType, pregunta si ya tiene plan pospago. Usa "confidence" BAJA si el mensaje es ambiguo.
+
+En "tipificacion" (D-025) marca, según toda la conversación, el motivo por el que este chat no terminaría en venta, si ya lo sabes: ${closeTagsForModel()}. Si no aplica ninguno (o el cliente quiere comprar), null. Es solo para tipificar el cierre: no cambia lo que respondes.`;
 
 /** Guion v1: el contenido que antes vivía fijo en el código (prompts por estado). */
 const DEFAULT_PROMPT = `# Rol

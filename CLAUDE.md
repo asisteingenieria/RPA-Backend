@@ -124,9 +124,10 @@ abaya-rpa/
 - [x] F5 Motor de conversación (catálogo y textos SINTÉTICOS; falta correr evals con proveedores reales)
 - [x] F6 Venta y transferencia (probada contra el simulador; formato de nota pendiente de Claro)
 - [x] F7 Robustez, operación y panel (falta la prueba de resistencia de 8 h en ambiente real)
-- [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; falta despliegue y piloto con Claro
+- [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; servidor de producción desplegado (14/10/2026, runbook §12); falta instalar el robot en el PC dedicado y el piloto con Claro
 - [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
-- [x] v1.10 Abaya = ySocial (D-012), plantillas (D-013) y oferta con imágenes (D-014): Brain «Planes Agosto» v8 publicado y conectado (79/79, 0 inventados; descuentos por imagen, D-016), agente v21 publicado (D-015: conversación configurable en el panel; D-018: insultos y amenazas; imágenes por proceso); el robot pega la imagen en Abaya (probado en el simulador). Falta la prueba en vivo y activar `SEND_PLAN_IMAGES`
+- [x] v1.10 Abaya = ySocial (D-012), plantillas (D-013) y oferta con imágenes (D-014): Brain «Planes Agosto» v8 publicado y conectado (79/79, 0 inventados; descuentos por imagen, D-016), agente v22 publicado en local (D-015: conversación configurable en el panel; D-018: insultos y amenazas; imágenes por proceso); el robot pega la imagen en Abaya (probado en el simulador). Falta la prueba en vivo y activar `SEND_PLAN_IMAGES`
+- [~] 14/10/2026: D-020 (`probar.cmd`) en producción; D-021 (proceso según el operador), D-022 (plataforma de video pedida) y D-023 (consulta de portabilidad, `ServiceCase`) , D-024 (compartidas solo con uso laboral) y D-025 (tipificación del cierre) hechos y probados en local, agente v22 publicado y v23 (D-024) en borrador en local; falta subirlos a producción (runbook §12.3)
 
 ## Abaya simulado
 
@@ -183,6 +184,24 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   falta se pide con la plantilla `DATOS_FALTANTES` solo cuando el cliente deja de escribir
   (`saleDataWaitSeconds`, 45 s; mientras manda datos el robot calla); 3 mensajes sin datos nuevos →
   transfiere igual.
+- Proceso según el operador (D-021): A + Claro prepago → Migración en el mismo turno (se vuelve a
+  generar con sus planes); A + Claro pospago → plantilla `YA_POSPAGO` y vuelve al menú; B + otro
+  operador → Portabilidad. El modelo solo extrae `lineType`; lo decide el código con
+  `AgentFlow.operatorRouting` (configurable en el panel).
+- Plataforma pedida (D-022): si antes de la oferta pide WIN, Disney+ o Netflix (circular de apps de
+  video), al saber el proceso se salta el perfil y la primera oferta es esa circular
+  (`AgentFlow.platformRequest`); Prime Video sigue la oferta normal.
+- Uso laboral (D-024): en Portabilidad y Migración (modo `SI_USO_LABORAL`) los planes de las
+  imágenes compartidas solo se ofrecen si el uso del cliente es laboral (`isWorkUsage`, palabras
+  `AgentFlow.workUsageWords`; queda fijo en `Profile.workUsage`), y entonces van primero; si no, salen del catálogo del turno
+  (`scopeToUsage`). Línea nueva sigue con la compartida primero.
+- Tipificación del cierre (D-025): el modelo elige `tipificacion` (lista cerrada `MODEL_CLOSE_TAGS`,
+  `packages/domain/src/close-tags.ts`); queda en `Profile.closeTag` y `Conversation.closeTag`; el
+  cierre sin venta (y por inactividad) la lleva en `CloseJob.tag` y el robot marca su etiqueta
+  (`sel.finish.closeTags`); sin ella, la etiqueta por motivo (`sel.finish.tags`).
+- Consulta de portabilidad (D-023): en el menú, intención `CONSULTA_PORTABILIDAD` → «¿recibiste la
+  confirmación?»; sí → `PORTABILIDAD_CONFIRMADA` + `SOPORTE`; no → datos (`saleData`) y «Finalizar»
+  al backoffice como `ServiceCase` (no es venta). Flujo `portabilityInquiry`.
 - Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso
   (regla 9 del sistema). Amenazas de violencia: alerta `CUSTOMER_THREAT` a supervisores (determinista).
 - Apertura (D-017): al asignarse un caso nuevo el robot envía el saludo con el menú sin esperar

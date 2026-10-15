@@ -1,5 +1,212 @@
 # Decisiones de diseño
 
+## D-025 · Tipificación del cierre sin venta según la conversación · APROBADA — implementada
+
+**Contexto (15/10/2026).** En la grabación de la asesora (09/10/2026, pasos 120–137) un chat que no
+es venta se cierra con FINALIZAR ▾ → «Finalizar y cerrar el caso» → SI → «Detalles del caso» →
+etiqueta del árbol E-COMMERCE MOVIL (No Venta / SAC / Venta) → ACEPTAR; la venta se cierra con
+«Finalizar» sin etiqueta. El robot ya cerraba así, pero con tres etiquetas fijas por motivo
+(soporte → SAC Detalle plan movil; no venta → Reglas de Negocio - Políticas; inactividad →
+Cliente abandona conversación).
+
+**Decisión (del usuario).** El «cerebro» analiza la conversación y elige la tipificación. Solo
+estas (las demás del árbol no se usan por ahora):
+
+| Tipificación                              | Cuándo                                                      |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| No venta · Cliente interesado hogar - T&T | quiere adquirir servicios hogar o T&T                       |
+| No venta · Cliente prefiere Prepago       | prefiere mantenerse en prepago                              |
+| No venta · Mejor oferta otros operadores  | dice que hay mejores ofertas en otros operadores            |
+| No venta · Cliente abandona conversación  | deja de responder (la pone el sistema, D-013)               |
+| SAC · Cambio de plan                      | ya tiene pospago y quiere cambiar de plan                   |
+| SAC · Cancelación hogar                   | quiere cancelar un plan hogar                               |
+| SAC · Cancelación móvil                   | quiere cancelar un plan móvil (opción D)                    |
+| SAC · Consulta - Radicación PQR           | petición, queja o reclamo                                   |
+| SAC · Demora entrega SIM CARD             | no le han entregado su SIM                                  |
+| SAC · Detalle plan hogar                  | pregunta detalles de planes hogar                           |
+| SAC · Detalle plan móvil                  | pregunta detalles de planes móviles (la grabación: roaming) |
+| SAC · Facturación                         | pregunta por sus facturas                                   |
+| SAC · Pagos y recargas                    | pregunta por pagos o recargas                               |
+| SAC · Soporte                             | problemas de red, señal o ayuda con un problema             |
+
+**Casos del menú de servicio de la opción C** (15/10/2026, del usuario: solo para tipificar; el robot
+no envía ese menú y el flujo no cambia):
+
+| Caso                                                                 | Tipificación                                        |
+| -------------------------------------------------------------------- | --------------------------------------------------- |
+| Soporte técnico (datos, llamadas, señal, conexión)                   | SAC · Soporte                                       |
+| Facturación (factura, cobros, valor a pagar)                         | SAC · Facturación                                   |
+| Cambio de plan (otros planes, condiciones del plan actual)           | SAC · Cambio de plan                                |
+| Pagos (confirmar un pago, estado de cuenta)                          | SAC · Pagos y recargas                              |
+| Consumos y servicios (datos, minutos, beneficios, servicios activos) | SAC · Detalle plan móvil                            |
+| Roaming internacional                                                | SAC · Detalle plan móvil                            |
+| Reposición de SIM o eSIM, activación de SIM digital                  | SAC · Soporte (supuesto)                            |
+| Suspensión o bloqueo de línea                                        | SAC · Soporte (supuesto)                            |
+| Datos personales (actualizar o validar)                              | SAC · PQR, como petición (supuesto)                 |
+| PQR (petición, queja o reclamo)                                      | SAC · PQR                                           |
+| Retención o cancelación                                              | SAC · Cancelación móvil (hogar si es un plan hogar) |
+
+Los tres «supuestos» no tienen etiqueta propia entre las elegidas (Retención y las demás del árbol
+no se usan por ahora); se cambian en `CLOSE_TAG_INFO` si Claro indica otra.
+
+**Cómo funciona.**
+
+1. **El modelo clasifica, el código decide (regla 12):** la salida del turno suma `tipificacion`
+   (lista cerrada `MODEL_CLOSE_TAGS`, null si no aplica); el esquema rechaza cualquier otra. El
+   perfil guarda la última (`closeTag`) y la conversación también, en claro (es una categoría, no
+   un dato del cliente), para el cierre por inactividad.
+2. **Al cerrar sin transferir** (soporte, no venta), el evento lleva la tipificación; el robot marca
+   la etiqueta exacta de ySocial (`sel.finish.closeTags`, regla 3). Sin tipificación, la de antes
+   por motivo.
+3. **Inactividad:** si el modelo ya tipificó la conversación (p. ej. preguntó por su factura y se
+   fue), esa; si no, «Cliente abandona conversación».
+4. **Compatibilidad:** el trabajo de cierre suma `tag` opcional; un robot anterior lo ignora y usa
+   la etiqueta por motivo. Para que el robot instalado tipifique hay que publicar un paquete nuevo.
+5. Se ve en Trazabilidad («Cerrada sin venta · SAC · Facturación») y en «Probar agente».
+
+**Implementación.** `packages/domain/src/close-tags.ts` (lista, cuándo aplica, regla del sistema),
+`output-schema.ts` (`tipificacion`), `mergeProfile` (`closeTag`), `turn.service.ts` (tag en
+`ConversationClosed`), `maintenance.ts` (inactividad), `outbox-publisher.ts`, `CloseJob.tag`,
+`handoff-processor.ts` y `selectors.ts` (`closeTags`); migración
+`20261027000000_tipificacion` (`Conversation.closeTag`); simulador con el árbol completo de la
+grabación. Suite: `evals/conversations/11-tipificacion.yaml` (expectativa nueva `closeTag`).
+
+## D-024 · Los planes compartidos solo con uso laboral, y entonces van primero · APROBADA — implementada
+
+**Contexto (14/10/2026).** Los planes de 99.900, 75.900 y 65.900 (imagen `todos-los-procesos`) son
+de los tres procesos. En Portabilidad y Migración solo salían si el cliente nombraba Prime Video
+(13/10/2026); en Línea nueva son la primera oferta. El usuario los quiere para quien usará el plan
+para el trabajo.
+
+**Decisión (del usuario).**
+
+1. **Portabilidad y Migración:** si en el perfil el cliente dice que usará el plan más que todo para
+   el trabajo, la primera oferta es la imagen compartida. Si no la acepta o pide algo más barato,
+   van las de su opción, de la más cara a la más barata (la segunda `{{IMAGENES}}`, como antes).
+2. **Solo con uso laboral:** si no es para el trabajo, esos planes no se ofrecen (tampoco por
+   nombrar Prime Video): salen del catálogo del turno, así que el modelo no los ve y el validador
+   rechaza sus cifras (regla 11). Lo demás sigue como estaba.
+3. **Línea nueva no cambia:** la compartida (la más cara) sigue siendo su primera oferta.
+4. **Mostró todos y no acepta ninguno:** son todos los planes que tiene para ofrecer, resuelve sus
+   dudas y cierra según la conversación (¿algo más? → no: `NO_INTERESADO`). Va en el guion (D-015).
+5. **Lo decide el código (regla 12):** el modelo extrae el uso como siempre; el código busca en él
+   las palabras del flujo (`workUsageWords`: trabajo, trabajar, laboral, oficina, negocio, empresa;
+   plural incluido; no si va negada: «no es para trabajo»). Cuenta lo que contestó a la pregunta
+   del uso: una vez reconocido queda fijo en el perfil (`workUsage`), aunque luego diga su red
+   social y el modelo guarde otro uso (corregido el 14/10/2026 tras una prueba: «laborales» →
+   «redes sociales» no mostraba la compartida). Si el cliente lo dice en el mismo
+   mensaje en que el modelo ya ofrece, la respuesta se vuelve a generar con los planes compartidos
+   (una llamada más, solo en ese turno; como D-021).
+6. **Configurable en el panel:** modo nuevo de imágenes compartidas por proceso `SI_USO_LABORAL`
+   («Solo si el uso es laboral (y entonces van primero)»; el de la campaña en Portabilidad y
+   Migración) y la lista de palabras («Uso laboral: palabras que lo indican»). Versiones anteriores
+   guardaron `SI_PIDE_PLATAFORMA`: siguen igual hasta publicar una con el modo nuevo (agente v23).
+
+**Implementación.** `packages/domain/src/agent-flow.ts` (`SI_USO_LABORAL`, `workUsageWords`,
+`isWorkUsage`, revisión); motor: `scopeToUsage` (catálogo del turno), `offerImages` (compartidas
+primero), dato «Uso laboral» en la parte dinámica y nueva generación en `runTurn`. Panel
+(interfazRPA): «Flujo → Por proceso». Agente v23 (borrador en local): flujo con el modo nuevo y
+guion con las reglas 1 y 4. La suite de evaluación usa un catálogo sin imágenes, así que la regla la
+cubren las pruebas del motor (`conversation-engine.test.ts`, «D-024»).
+
+## D-023 · Pregunta por una portabilidad que ya solicitó · APROBADA — implementada
+
+**Contexto (14/10/2026).** En «Probar agente» un cliente escribió en el menú «solicité una
+portabilidad y no sé si ya quedó» y recibió la plantilla de soporte («chat exclusivo de ventas»).
+Como la asesora, primero hay que preguntarle si recibió la confirmación de su solicitud.
+
+**Decisión (del usuario).**
+
+1. **Solo en el menú.** El modelo clasifica el mensaje con la intención nueva
+   `CONSULTA_PORTABILIDAD` (solo permitida en MENU); el resto lo decide el código.
+2. Plantilla del sistema **`PORTABILIDAD_CONFIRMACION`**: «¿Ya recibiste la confirmación de tu
+   solicitud de portabilidad?». Su respuesta la lee el código (sí / no):
+   - **Sí** → `PORTABILIDAD_CONFIRMADA` («por este chat no puedo verificar su estado») y la
+     plantilla `SOPORTE` con los canales de atención; queda en el menú como tras el soporte (si dice
+     que no quiere nada más, despedida de soporte).
+   - **No** → `PORTABILIDAD_VALIDAR` («podemos validarlo, compárteme {datos_faltantes}»): los
+     mismos datos del flujo (`saleData`) y la misma mecánica que tras el «SÍ» (varios mensajes,
+     espera de 45 s, `DATOS_FALTANTES`, 3 mensajes sin datos nuevos → pasa igual). Con los datos,
+     `PORTABILIDAD_TRANSFERENCIA` y **«Finalizar» al backoffice** (decidido por el usuario).
+   - Otra respuesta → sigue el flujo normal (p. ej. elige una opción).
+3. **No es una venta:** la transferencia lleva un **caso de servicio** (`ServiceCase`, tabla nueva,
+   resumen cifrado con los datos) que el «Finalizar» acepta igual que una venta; no cuenta en las
+   métricas de ventas ni registra consentimiento. Se ve en Trazabilidad («Validación de
+   portabilidad»).
+4. **Configurable:** flujo `portabilityInquiry` = `VALIDAR` (por defecto) o `SOPORTE` (la plantilla
+   de soporte directo, como antes). Los cuatro textos son plantillas del sistema (Plantillas).
+
+**Implementación.** Migración `20261026000000_caso_servicio` (`ServiceCase`); `serviceCaseAad`;
+motor: `CONSULTA_PORTABILIDAD`, `portabilityCheck` (ASKED / DATA), `portabilityTransfer`,
+`dataWaitMs`; `TRANSFER_BACKOFFICE.serviceCase`; stores y `PrismaHandoffRepository` (venta o caso);
+Trazabilidad (`serviceCase`). Suite: `evals/conversations/10-consulta-portabilidad.yaml`.
+
+## D-022 · Pide una plataforma de video puntual → su circular, sin perfilar · APROBADA — implementada
+
+**Contexto (14/10/2026).** En «Probar agente» un cliente escribió «hola quiero WIn o plan con Win»;
+el agente le preguntó bien el proceso (A, B o línea nueva) y, al elegir, empezó a perfilar («¿El plan
+lo vas a utilizar…?»). La circular de apps de video tiene una sola opción con WIN, una con Disney+ y
+dos con Netflix: perfilar no sirve; hay que ofrecerle directo esa imagen.
+
+**Decisión (del usuario).**
+
+1. **La plataforma la reconoce el código** (WIN, Disney+, Netflix… en lo que escribe el cliente en el
+   menú o al perfilar, antes de la primera oferta) y queda en el perfil (`platformRequested`).
+2. **En cuanto hay proceso** (letra del menú, o el modelo reconoce A/B/E en el texto) y la
+   **circular de apps de video** de ese proceso trae la plataforma, se salta el perfil
+   (`platformOffer`: no faltan datos) y la primera oferta es la imagen de esa plataforma (con el
+   texto del modelo como pie de foto). Si el modelo reconoció el proceso en el texto, la respuesta se
+   vuelve a generar ya con el proceso (como D-021). Aunque el modelo escriba `{{IMAGENES}}`, va la
+   de su plataforma. Sin imágenes (`SEND_PLAN_IMAGES=false`) se ofrecen con la ficha los planes de
+   esa circular.
+3. **Prime Video no** cambia nada: viene en planes de la oferta normal (regla del 13/10/2026).
+   Plataformas sin circular (HBO…) siguen el flujo normal.
+4. **Lo que se dice después va en el guion (D-015):** si acepta, sigue la autorización y la
+   transferencia; si no, que son las únicas ofertas con esa plataforma; si sigue sin querer, si le
+   puede ayudar con algo más (sí → el flujo; no → despedida, `NO_INTERESADO`).
+5. **Configurable en el flujo:** `platformRequest` = `OFRECER_DIRECTO` (por defecto) o `PERFILAR`.
+
+**Implementación.** `packages/domain/src/agent-flow.ts` (`PlatformRequestMode`); motor:
+`platformsIn`, `platformReady`, `platformCirculars`, `missingProfileFields` (con `platformOffer` no
+falta nada), primera imagen en `apply` y su instrucción en `imagesOnlyInstructions`. Panel
+(interfazRPA): «Flujo → Si pide una plataforma de video».
+
+## D-021 · El proceso se corrige con el operador y el tipo de línea del cliente · APROBADA — implementada
+
+**Contexto (14/10/2026).** En «Probar agente» un cliente eligió 🅐 «Cambiarme de operador», dijo que
+su operador es Claro y que no es pospago (es prepago). El agente preguntó bien «¿Ya haces parte de
+Claro postpago?», pero ofreció `portabilidad-1` con el descuento de cambio de operador: el proceso
+solo se fijaba en el menú y el modelo recibe el catálogo, las imágenes y los descuentos del proceso
+que fija el código. Un cliente de Claro prepago es una **migración** (🅑).
+
+**Decisión (del usuario).**
+
+1. **El modelo extrae, el código decide (regla 12).** La salida del turno suma
+   `extracted.lineType` (`PREPAGO` | `POSPAGO` | null), como el operador. El perfil lo guarda.
+2. **Portabilidad + operador propio:** antes de ofrecer falta el tipo de línea (`lineType` va
+   primero en «Datos que faltan»; el validador no deja ofrecer antes). El agente pregunta con la
+   plantilla `ya-pospago` de la campaña.
+   - **Prepago** → el código pasa a **Migración** en ese mismo turno y vuelve a pedir la respuesta
+     al modelo con los planes, imágenes y descuentos de migración (una llamada más, solo en ese
+     turno). Si ya había ofrecido planes de portabilidad, la oferta empieza de nuevo.
+   - **Pospago** → no aplica: plantilla del sistema **`YA_POSPAGO`** («no puedo ayudarte con un
+     cambio de operador por ser pospago… 🅒 Ya tengo plan: soporte, factura o cambio») y la
+     conversación **vuelve al menú** sin proceso. Si elige una opción sigue el flujo normal (🅒 →
+     «¿en qué te puedo ayudar?»); si dice que no, despedida de soporte (como tras la plantilla de
+     soporte).
+3. **Migración + otro operador** (Tigo, Movistar…) → **Portabilidad**, de la misma forma.
+4. Si lo dice al elegir en el menú («quiero cambiarme, soy Claro prepago»), empieza ya en migración.
+5. **Configurable en el panel (D-015):** el flujo suma `operatorRouting`: nombres del operador
+   propio (vacío = apagado), a qué proceso va la línea propia prepago, qué hacer con la pospago
+   (`YA_POSPAGO` o `SEGUIR`) y a qué proceso va «otro operador» en migración. Versiones anteriores
+   toman lo de la campaña. El texto de `YA_POSPAGO` se edita en Plantillas.
+
+**Implementación.** `packages/domain/src/agent-flow.ts` (`OperatorRouting`, `routeByOperator`,
+`needsLineType`, `isOwnOperator`), plantilla `sistema-ya-pospago` en `agent-templates.ts`, regla de
+extracción en `SYSTEM_RULES`; motor: `ConversationEngine.generate` (la llamada al modelo, repetible
+con el proceso corregido), `switchProcess` / `backToMenu`, `missingProfileFields`. Panel
+(interfazRPA): «Flujo → Según el operador del cliente». Suite: `evals/conversations/09-operador.yaml`.
+
 ## D-020 · Diagnóstico de Abaya real por pasos · APROBADA — implementada (probada en el simulador)
 
 **Contexto (14/10/2026).** Con el servidor en producción y las credenciales del usuario robot, hay

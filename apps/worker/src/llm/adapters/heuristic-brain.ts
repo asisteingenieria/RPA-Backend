@@ -22,12 +22,47 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
   reply: '¡Claro! Cuéntame un poco más para ayudarte.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'MEDIA',
   ...over,
 });
 
+/** D-025: tipificación por palabras clave (línea base; el modelo real lee toda la conversación). */
+const TIPIFICACION: [RegExp, NonNullable<TurnOutput['tipificacion']>][] = [
+  [/cancelar.*(hogar|internet|tv\b|televisi)/, 'SAC_CANCELACION_HOGAR'],
+  [/cancelar|cancelaci[oó]n/, 'SAC_CANCELACION_MOVIL'],
+  [/factura/, 'SAC_FACTURACION'],
+  [/\bpago|recarga(r|s)? (no|saldo)|saldo/, 'SAC_PAGOS_RECARGAS'],
+  [/se[ñn]al|sin red|no tengo (internet|datos)|no funciona/, 'SAC_SOPORTE'],
+  [/queja|reclamo|petici[oó]n|\bpqr/, 'SAC_PQR'],
+  [/\bsim\b.*(lleg|entreg)|(lleg|entreg).*\bsim\b/, 'SAC_DEMORA_SIM'],
+  [
+    /roaming|fuera del pa[ií]s|consumos?|datos disponibles|minutos (disponibles|que me quedan)/,
+    'SAC_DETALLE_MOVIL',
+  ],
+  [/suspendid|bloquead|reposici[oó]n|reponer (la )?sim|esim/, 'SAC_SOPORTE'],
+  [/actualizar (mis )?datos|datos personales/, 'SAC_PQR'],
+  [/cambiar (de |mi )?plan|cambio de plan/, 'SAC_CAMBIO_PLAN'],
+  [/prefiero (el |seguir en |quedarme en )?(prepago|recargas)/, 'NO_VENTA_PREFIERE_PREPAGO'],
+  [
+    /(otro operador|tigo|movistar|wom).*(m[aá]s barat|mejor)|(mejor|m[aá]s barat).*(otro operador|tigo|movistar|wom)/,
+    'NO_VENTA_MEJOR_OFERTA',
+  ],
+  [
+    /internet (del |para la )?(casa|hogar)|servicios? (del )?hogar|t ?& ?t|\btyt\b/,
+    'NO_VENTA_HOGAR_TYT',
+  ],
+];
+
 export function heuristicBrain(req: LlmRequest): TurnOutput {
+  const out = turn(req);
+  const lower = req.messages.at(-1)!.content.toLowerCase();
+  const tag = TIPIFICACION.find(([re]) => re.test(lower))?.[1] ?? null;
+  return tag ? { ...out, tipificacion: tag } : out;
+}
+
+function turn(req: LlmRequest): TurnOutput {
   const text = req.messages.at(-1)!.content.trim();
   const lower = text.toLowerCase();
   const stage = /Etapa actual: ([A-Z_]+)/.exec(req.systemDynamic)?.[1] ?? '';
@@ -45,6 +80,13 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
 
   switch (stage) {
     case 'MENU': {
+      // D-023: pregunta por una portabilidad que ya solicitó.
+      if (
+        /(solicit|ped|hic|tramit)[a-záéíóúñ]*\s+(una\s+|la\s+)?portabilidad|mi\s+portabilidad/.test(
+          lower,
+        )
+      )
+        return base({ intent: 'CONSULTA_PORTABILIDAD', reply: 'Entiendo.' });
       const option = /n[uú]mero nuevo|l[ií]nea nueva|otra l[ií]nea/.test(lower)
         ? 'E'
         : /prepago|pospago/.test(lower)
@@ -59,12 +101,24 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
         : base({ reply: 'Con gusto te ayudo. Por favor elige una letra del menú.' });
     }
     case 'PERFIL': {
-      if (/^\[(audio|imagen)\]$|^(ok|s[ií]|mmm)$/i.test(lower)) {
+      const needs = missing.split(', ').filter(Boolean);
+      // D-021: tipo de línea con el operador propio, también como «sí»/«no» a «¿ya eres pospago?».
+      const lineType: 'PREPAGO' | 'POSPAGO' | null = /prepago|recarga/.test(lower)
+        ? 'PREPAGO'
+        : /pos(t)?pago|ya tengo plan/.test(lower)
+          ? 'POSPAGO'
+          : needs[0] === 'lineType' && /^no\b/.test(lower)
+            ? 'PREPAGO'
+            : needs[0] === 'lineType' && /^s[ií]\b/.test(lower)
+              ? 'POSPAGO'
+              : null;
+      if (/^\[(audio|imagen)\]$|^(ok|s[ií]|mmm)$/i.test(lower) && !lineType) {
         return base({ reply: 'No alcancé a entenderte. ¿Me lo puedes escribir?' });
       }
       const ex = {
         name: null as string | null,
         currentOperator: null as string | null,
+        lineType,
         usage: null as string | null,
       };
       const name = /(?:me llamo|me yamo|soy|mi nombre es|me dicen)\s+([a-záéíóúñ]+)/i.exec(
@@ -80,13 +134,19 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
       ) {
         ex.usage = text;
       }
-      const needs = missing.split(', ').filter(Boolean);
-      if (!name && !op && !ex.usage && needs[0]) {
+      if (!name && !op && !ex.usage && !lineType && needs[0]) {
         if (needs[0] === 'name') ex.name = text.split(/\s+/)[0]!;
         else if (needs[0] === 'currentOperator') ex.currentOperator = text;
         else ex.usage = text;
       }
       const stillMissing = needs.filter((f) => !(ex as Record<string, string | null>)[f]);
+      if (stillMissing[0] === 'lineType') {
+        return base({
+          intent: 'DA_DATO',
+          extracted: ex,
+          reply: '{{PLANTILLA:ya-pospago}}',
+        });
+      }
       if (!stillMissing.length && codes[0]) {
         return base({
           intent: 'DA_DATO',

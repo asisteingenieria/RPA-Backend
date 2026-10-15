@@ -1,0 +1,17 @@
+# D-021 (14/10/2026): el proceso se corrige con el operador y el tipo de línea del cliente.
+# Datos de clientes 100 % sintéticos.
+group: operador
+cases:
+  - id: operador-claro-prepago
+    # Eligió «cambiarme de operador» pero ya es de Claro prepago: es una migración.
+    turns:
+      ['Hola', 'A', 'Claro', 'No', 'redes sociales y TikTok', 'me gusta, quiero ese', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: operador-claro-pospago
+    # Ya es pospago de Claro: no aplica; se le ofrece la opción C y, si no quiere nada, despedida.
+    turns: ['Hola', 'A', 'Claro', 'Sí, ya tengo plan', 'no']
+    expect: { finalStage: SOPORTE }
+  - id: operador-migracion-otro
+    # Eligió «pasarme de recargas a pospago» pero su línea es de otro operador: es una portabilidad.
+    turns: ['Hola', 'B', 'tengo Movistar prepago', 'redes sociales', 'lo tomo', 'SÍ AUTORIZO']
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }

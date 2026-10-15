@@ -1,5 +1,5 @@
 import { openChatsByRobot, responseTimeByRobot, utcParam, type PrismaClient } from '@abaya/db';
-import type { AlertPort, AlertSeverity } from '@abaya/domain';
+import { isCloseTag, type AlertPort, type AlertSeverity } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 
 const OPEN_STATUSES = ['ACTIVE', 'WAITING_CONSENT'] as const;
@@ -44,7 +44,13 @@ export async function closeInactive(
             ],
           }),
     },
-    select: { id: true, abayaChatId: true, robotUser: true, sale: { select: { id: true } } },
+    select: {
+      id: true,
+      abayaChatId: true,
+      robotUser: true,
+      closeTag: true,
+      sale: { select: { id: true } },
+    },
   });
   let closed = 0;
   for (const c of candidates) {
@@ -72,7 +78,15 @@ export async function closeInactive(
       await tx.outboxEvent.create({
         data: sold
           ? { type: 'TransferRequested', payload: { ...base, target: 'BACKOFFICE' } }
-          : { type: 'ConversationClosed', payload: { ...base, reason: 'INACTIVE' } },
+          : {
+              type: 'ConversationClosed',
+              // D-025: si el modelo ya tipificó la conversación, esa; si no, «abandona».
+              payload: {
+                ...base,
+                reason: 'INACTIVE',
+                tag: isCloseTag(c.closeTag) ? c.closeTag : 'NO_VENTA_ABANDONA',
+              },
+            },
       });
     });
   }

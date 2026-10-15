@@ -1,3 +1,4 @@
+import { MODEL_CLOSE_TAGS } from '@abaya/domain';
 import { z } from 'zod';
 import { INTENTS } from './types.js';
 
@@ -18,9 +19,12 @@ export const turnOutputSchema = z
       .object({
         name: z.string().max(60).nullable(),
         currentOperator: z.string().max(40).nullable(),
+        lineType: z.enum(['PREPAGO', 'POSPAGO']).nullable(),
         usage: z.string().max(120).nullable(),
       })
       .strict(),
+    /** D-025: motivo para tipificar el cierre si el chat no termina en venta (lo elige el modelo). */
+    tipificacion: z.enum(MODEL_CLOSE_TAGS).nullable(),
     confidence: z.enum(['ALTA', 'MEDIA', 'BAJA']),
   })
   .strict();

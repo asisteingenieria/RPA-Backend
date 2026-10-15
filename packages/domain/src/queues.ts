@@ -1,4 +1,5 @@
 import type { AgentConfig } from './agent-config.js';
+import type { CloseTag } from './close-tags.js';
 import type { Stage } from './index.js';
 import type { TranscriptStatus } from './speech.js';
 
@@ -104,6 +105,8 @@ export interface CloseJob {
   conversationId: string;
   abayaChatId: string;
   reason: 'SUPPORT' | 'NO_SALE' | 'INACTIVE';
+  /** D-025: tipificación elegida; sin ella (robots anteriores) la etiqueta sale del motivo. */
+  tag?: CloseTag;
   afterMessageIds: string[];
 }
 

@@ -26,7 +26,8 @@ const out = (over: Partial<TurnOutput> = {}): TurnOutput => ({
   reply: 'Con gusto te cuento.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'ALTA',
   ...over,
 });
@@ -224,7 +225,7 @@ describe('perfil → oferta', () => {
       out({
         intent: 'DA_DATO',
         reply: 'Te recomiendo este plan:\n{{OFERTA:P2}}\n¿Te gustaría?',
-        extracted: { name: null, currentOperator: null, usage: 'videos y redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'videos y redes' },
       }),
     ]);
     const r = await e.runTurn(perfil, ['uso mucho videos y redes']);
@@ -241,7 +242,7 @@ describe('perfil → oferta', () => {
       out({
         intent: 'DA_DATO',
         reply: '¡Gracias, Ana!',
-        extracted: { name: null, currentOperator: null, usage: 'llamadas' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'llamadas' },
       }),
     ]);
     const r = await e.runTurn(perfil, ['más que todo llamadas']);
@@ -613,7 +614,7 @@ describe('otros caminos', () => {
       out({
         intent: 'DA_DATO',
         reply: '¡Gracias! ¿Cuál es tu operador actual?',
-        extracted: { name: 'Ana', currentOperator: null, usage: null },
+        extracted: { name: 'Ana', currentOperator: null, lineType: null, usage: null },
       }),
     ]);
     const r = await e.runTurn(state({ stage: 'PERFIL', profile: { process: 'PORTABILIDAD' } }), [
@@ -768,7 +769,7 @@ describe('Brains: catálogo publicado (v1.9, D-001)', () => {
       out({
         intent: 'DA_DATO',
         reply: 'Mira:\n{{OFERTA:P2}}',
-        extracted: { name: null, currentOperator: null, usage: 'videos' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'videos' },
       }),
     ]);
     const cat = new MemoryCatalog(records, SOURCE);
@@ -858,7 +859,7 @@ describe('Brains: catálogo publicado (v1.9, D-001)', () => {
       const obeys = out({
         intent: 'DA_DATO',
         reply: '¡Buenas noticias! Este plan cuesta $1.000 y es gratis.',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       });
       const llm = new ScriptedLlmAdapter([obeys, obeys]);
       const r = await new ConversationEngine({ llm, catalog: poisoned, now: () => NOW }).runTurn(
@@ -918,7 +919,7 @@ describe('D-011: imágenes de planes', () => {
   const gaveName = out({
     intent: 'DA_DATO',
     reply: 'Mucho gusto, Ana 😊 ¿Con qué operador estás hoy?',
-    extracted: { name: 'Ana', currentOperator: null, usage: null },
+    extracted: { name: 'Ana', currentOperator: null, lineType: null, usage: null },
   });
 
   it('al dar el nombre envía las imágenes del proceso después de la respuesta, una sola vez', async () => {
@@ -943,7 +944,7 @@ describe('D-011: imágenes de planes', () => {
       out({
         intent: 'DA_DATO',
         reply: '¿Y para qué usas más el celular?',
-        extracted: { name: null, currentOperator: 'Tigo', usage: null },
+        extracted: { name: null, currentOperator: 'Tigo', lineType: null, usage: null },
       }),
     );
     expect(images(again.r)).toEqual([]);
@@ -1000,7 +1001,7 @@ describe('D-011: imágenes de planes', () => {
       out({
         intent: 'DA_DATO',
         reply: '¡Perfecto! Mira las opciones que tengo para ti.',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     );
     expect(r.stage).toBe('OFERTA');
@@ -1113,7 +1114,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       out({
         intent: 'DA_DATO',
         reply: '¡Mira esta opción que tengo para ti, Ana! 😍 {{IMAGENES}}',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     ]);
     expect(r.stage).toBe('OFERTA');
@@ -1135,12 +1136,12 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       out({
         intent: 'DA_DATO',
         reply: 'Mira: {{OFERTA:P37230}}',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
       out({
         intent: 'DA_DATO',
         reply: 'Mira esta opción {{IMAGENES}}',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     ]);
     expect(r.validationResult).toBe('REGENERATED');
@@ -1194,7 +1195,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
   });
 
   it('la primera oferta es la imagen del proceso aunque el cliente nombre Netflix (sin circular)', async () => {
-    const { r, llm } = await run('OFERTA', { ...full, usage: 'trabajo' }, [
+    const { r, llm } = await run('OFERTA', { ...full, usage: 'diario' }, [
       out({
         intent: 'DA_DATO',
         reply: 'Mira estas opciones con tus plataformas: {{IMAGENES_VIDEO}}',
@@ -1207,7 +1208,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
   });
 
   it('en la oferta sin ninguna imagen aún, el respaldo envía la del proceso', async () => {
-    const { r } = await run('OFERTA', { ...full, usage: 'trabajo' }, [
+    const { r } = await run('OFERTA', { ...full, usage: 'diario' }, [
       out({ intent: 'DA_DATO', reply: '¡Buena elección de plataformas!' }),
     ]);
     expect(images(r).map((a) => a.image.imageId)).toEqual(['bajo']);
@@ -1272,7 +1273,8 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
   });
 
   it('{{DETALLE:CODIGO}} describe el plan con el formato de la campaña y los datos del catálogo', async () => {
-    const offered = { ...full, usage: 'redes', planImagesSent: true };
+    // D-024: el plan es de la imagen compartida, que se ofrece con uso laboral.
+    const offered = { ...full, usage: 'trabajo', planImagesSent: true };
     const { r } = await run('OFERTA', offered, [
       out({
         intent: 'PREGUNTA',
@@ -1305,7 +1307,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       out({
         intent: 'DA_DATO',
         reply: '¡Perfecto, Ana!',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     ]);
     expect(r.stage).toBe('OFERTA');
@@ -1314,7 +1316,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
   });
 
   it('acepta un plan leído de la imagen y pasa a la autorización', async () => {
-    const offered = { ...full, usage: 'redes', planImagesSent: true };
+    const offered = { ...full, usage: 'trabajo', planImagesSent: true };
     const { r } = await run('OFERTA', offered, [
       out({ intent: 'ACEPTA_PLAN', planCode: 'P37230', reply: '¡Excelente elección, Ana!' }),
     ]);
@@ -1386,7 +1388,7 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       out({
         intent: 'DA_DATO',
         reply: 'Mira esta opción {{IMAGENES}}',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     ]);
     const r = await new ConversationEngine({
@@ -1417,13 +1419,27 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
     ];
     const catalogo = new MemoryCatalog(recordsFromImages(conPrime), SOURCE, conPrime);
     const offered = { ...full, usage: 'redes', planImagesSent: true };
+    // Hasta D-024 era el modo de Portabilidad y Migración; sigue disponible en el flujo.
+    const agent: AgentConfig = {
+      ...DEFAULT_AGENT_CONFIG,
+      flow: {
+        ...DEFAULT_AGENT_CONFIG.flow,
+        processes: {
+          ...DEFAULT_AGENT_CONFIG.flow.processes,
+          PORTABILIDAD: {
+            ...DEFAULT_AGENT_CONFIG.flow.processes.PORTABILIDAD,
+            sharedImages: 'SI_PIDE_PLATAFORMA',
+          },
+        },
+      },
+    };
 
     it('«más barato» no envía la compartida (solo las propias, y aquí no quedan)', async () => {
       const { r, llm } = await run(
         'OFERTA',
         offered,
         [out({ intent: 'OBJECION', reply: 'Entiendo, mira esta otra opción {{IMAGENES}}' })],
-        { catalog: catalogo, message: 'hay otra más barata' },
+        { catalog: catalogo, agent, message: 'hay otra más barata' },
       );
       expect(images(r)).toEqual([]);
       expect(llm.requests[0]!.systemDynamic).toContain('o Prime Video');
@@ -1434,14 +1450,14 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
         'OFERTA',
         offered,
         [out({ intent: 'PREGUNTA', reply: 'Claro, mira esta opción {{IMAGENES_VIDEO}}' })],
-        { catalog: catalogo, message: '¿tienen planes con Prime Video?' },
+        { catalog: catalogo, agent, message: '¿tienen planes con Prime Video?' },
       );
       expect(images(p.r).map((a) => a.image.imageId)).toEqual(['alto']);
       const n = await run(
         'OFERTA',
         { ...offered, videoImagesSentIds: 'alto' },
         [out({ intent: 'PREGUNTA', reply: 'Claro, mira {{IMAGENES_VIDEO}}' })],
-        { catalog: catalogo, message: 'y con netflix?' },
+        { catalog: catalogo, agent, message: 'y con netflix?' },
       );
       expect(images(n.r).map((a) => a.image.imageId)).toEqual(['netflix']);
     });
@@ -1454,12 +1470,133 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
           out({
             intent: 'DA_DATO',
             reply: 'Mira esta opción {{IMAGENES_VIDEO}}',
-            extracted: { name: null, currentOperator: null, usage: 'prime video' },
+            extracted: { name: null, currentOperator: null, lineType: null, usage: 'prime video' },
           }),
         ],
-        { catalog: catalogo, message: 'veo prime video' },
+        { catalog: catalogo, agent, message: 'veo prime video' },
       );
       expect(images(r).map((a) => a.image.imageId)).toEqual(['bajo']);
+    });
+  });
+
+  describe('D-024: las compartidas solo con uso laboral, y entonces van primero', () => {
+    it('uso laboral: la primera oferta es la compartida; si no la acepta, las del proceso', async () => {
+      const { r, llm } = await run('PERFIL', { ...full, usage: 'para el trabajo' }, [
+        out({ intent: 'DA_DATO', reply: 'Mira estas opciones, Ana {{IMAGENES}}' }),
+      ]);
+      expect(images(r).map((a) => a.image.imageId)).toEqual(['alto']);
+      const dynamic = llm.requests[0]!.systemDynamic;
+      expect(dynamic).toContain('Uso laboral (lo reconoció el sistema)');
+      expect(dynamic).toContain('P37230');
+      expect(dynamic).toContain('una imagen con 2 planes: redacta en plural');
+
+      const cheaper = await run(
+        'OFERTA',
+        { ...r.profile },
+        [out({ intent: 'OBJECION', reply: 'Entiendo, mira esta otra opción {{IMAGENES}}' })],
+        { message: 'muy caro, ¿hay otro más barato?' },
+      );
+      expect(images(cheaper.r).map((a) => a.image.imageId)).toEqual(['bajo']);
+      expect(cheaper.r.profile.planImagesRestSent).toBe(true);
+    });
+
+    it('sin uso laboral: los planes compartidos no están en el catálogo ni se pueden ofrecer', async () => {
+      const { r, llm } = await run('PERFIL', { ...full, usage: 'redes' }, [
+        out({ intent: 'DA_DATO', reply: 'Tengo el de $99.900. {{IMAGENES}}' }),
+        out({ intent: 'DA_DATO', reply: 'Mira esta opción {{IMAGENES}}' }),
+      ]);
+      const dynamic = llm.requests[0]!.systemDynamic;
+      expect(dynamic).not.toContain('P37230');
+      expect(dynamic).not.toContain('Uso laboral');
+      // La cifra de un plan compartido no está en su catálogo: se regenera (regla 11).
+      expect(r.validationResult).toBe('REGENERATED');
+      expect(images(r).map((a) => a.image.imageId)).toEqual(['bajo']);
+      // «Más barato» ya no tiene a dónde ir: la compartida tampoco sale.
+      const more = await run(
+        'OFERTA',
+        { ...r.profile },
+        [out({ intent: 'OBJECION', reply: 'Entiendo, mira {{IMAGENES}}' })],
+        { message: 'otro más barato' },
+      );
+      expect(images(more.r)).toEqual([]);
+      expect(more.llm.requests[0]!.systemDynamic).toContain('ya recibió todas las imágenes');
+    });
+
+    it('dice el uso laboral y en el mismo turno se ofrece: se vuelve a generar con la compartida', async () => {
+      const { r, llm } = await run(
+        'PERFIL',
+        full,
+        [
+          out({
+            intent: 'DA_DATO',
+            reply: 'Mira esta opción {{IMAGENES}}',
+            extracted: { name: null, currentOperator: null, lineType: null, usage: 'trabajo' },
+          }),
+          out({
+            intent: 'DA_DATO',
+            reply: 'Para tu trabajo mira estas opciones {{IMAGENES}}',
+            extracted: { name: null, currentOperator: null, lineType: null, usage: 'trabajo' },
+          }),
+        ],
+        { message: 'más que todo para cosas laborales, uso WhatsApp' },
+      );
+      expect(llm.requests).toHaveLength(2);
+      expect(llm.requests[1]!.systemDynamic).toContain('Uso laboral (lo reconoció el sistema)');
+      expect(images(r).map((a) => a.image.imageId)).toEqual(['alto']);
+      expect(images(r)[0]!.caption).toBe('Para tu trabajo mira estas opciones');
+    });
+
+    it('dijo «laborales» al preguntarle el uso y luego su red social: igual la compartida primero', async () => {
+      // Turno 1: el uso («laborales»); el modelo pregunta la red social.
+      const uso = await run(
+        'PERFIL',
+        full,
+        [
+          out({
+            intent: 'DA_DATO',
+            reply: '{{PLANTILLA:perfil-redes}}',
+            extracted: { name: null, currentOperator: null, lineType: null, usage: 'laborales' },
+          }),
+        ],
+        { message: 'laborales' },
+      );
+      expect(uso.r.profile.workUsage).toBe(true);
+      // Turno 2: la red social; el modelo guarda otro uso, pero lo que cuenta es lo primero.
+      const red = await run(
+        'PERFIL',
+        uso.r.profile,
+        [
+          out({
+            intent: 'DA_DATO',
+            reply: 'Mira estas opciones {{IMAGENES}}',
+            extracted: {
+              name: null,
+              currentOperator: null,
+              lineType: null,
+              usage: 'redes sociales',
+            },
+          }),
+        ],
+        { message: 'redes sociales' },
+      );
+      expect(red.r.profile.usage).toBe('redes sociales');
+      expect(red.r.profile.workUsage).toBe(true);
+      expect(images(red.r).map((a) => a.image.imageId)).toEqual(['alto']);
+      expect(red.llm.requests[0]!.systemDynamic).toContain('Uso laboral (lo reconoció el sistema)');
+    });
+
+    it('Línea nueva no cambia: la compartida va con las demás, por precio', async () => {
+      const ln = [
+        img('ln', ['LINEA_NUEVA'], [card('11111', '40 GB', 53_900)]),
+        img('todos', ['PORTABILIDAD', 'LINEA_NUEVA'], [card('22222', 'GB ILIMITADAS', 99_900)]),
+      ];
+      const { r } = await run(
+        'PERFIL',
+        { process: 'LINEA_NUEVA', name: 'Ana', usage: 'redes' },
+        [out({ intent: 'DA_DATO', reply: 'Mira {{IMAGENES}}' })],
+        { catalog: new MemoryCatalog(recordsFromImages(ln), SOURCE, ln) },
+      );
+      expect(images(r).map((a) => a.image.imageId)).toEqual(['todos']);
     });
   });
 
@@ -1472,7 +1609,8 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       imgs[2]!,
     ];
     const catalogo = new MemoryCatalog(recordsFromImages(conDescuento), SOURCE, conDescuento);
-    const offered = { ...full, usage: 'redes', planImagesSent: true };
+    // D-024: el plan con descuento es de la imagen compartida (uso laboral).
+    const offered = { ...full, usage: 'trabajo', planImagesSent: true };
 
     it('el modelo sabe qué planes tienen descuento y puede decir sus porcentajes', async () => {
       const { r, llm } = await run(
@@ -1509,6 +1647,44 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
       const sin = recordsFromImages(conDescuento).find((x) => x.code === 'P38327')!;
       expect(T.planDescription(sin as never)).not.toContain('Descuento');
     });
+  });
+});
+
+describe('D-025: tipificación del cierre', () => {
+  it('guarda la tipificación del modelo y la conserva aunque luego venga null', async () => {
+    const first = await engine([
+      out({ intent: 'OBJECION', reply: 'Entiendo.', tipificacion: 'NO_VENTA_PREFIERE_PREPAGO' }),
+    ]).e.runTurn(state({ stage: 'OFERTA', profile: { process: 'MIGRACION' } }), [
+      'prefiero seguir en prepago',
+    ]);
+    expect(first.profile.closeTag).toBe('NO_VENTA_PREFIERE_PREPAGO');
+    const next = await engine([out({ intent: 'NO_INTERESADO', reply: 'Entiendo.' })]).e.runTurn(
+      state({ stage: 'OBJECIONES', profile: first.profile }),
+      ['no gracias'],
+    );
+    expect(next.profile.closeTag).toBe('NO_VENTA_PREFIERE_PREPAGO');
+    expect(next.actions.at(-1)).toMatchObject({ type: 'CLOSE', reason: 'NO_SALE' });
+  });
+
+  it('una tipificación fuera de la lista no pasa la validación del esquema', async () => {
+    const r = await engine([
+      out({ intent: 'PREGUNTA', reply: 'Claro.', tipificacion: 'INVENTADA' as never }),
+      out({ intent: 'PREGUNTA', reply: 'Claro.' }),
+    ]).e.runTurn(state({ stage: 'OFERTA', profile: { process: 'MIGRACION' } }), ['hola']);
+    expect(r.validationResult).toBe('REGENERATED');
+    expect(r.profile.closeTag).toBeUndefined();
+  });
+
+  it('el modelo recibe la lista cerrada con cuándo aplica cada una', async () => {
+    const llm = new ScriptedLlmAdapter([out()]);
+    await new ConversationEngine({ llm, catalog, now: () => NOW }).runTurn(
+      state({ stage: 'MENU' }),
+      ['hola'],
+    );
+    const sys = llm.requests[0]!.systemFixed;
+    expect(sys).toContain('"tipificacion"');
+    expect(sys).toContain('SAC_CANCELACION_MOVIL = el cliente quiere cancelar su plan móvil');
+    expect(sys).not.toContain('NO_VENTA_ABANDONA');
   });
 });
 
@@ -1581,7 +1757,7 @@ describe('D-013: perfilamiento con plantillas', () => {
       out({
         intent: 'DA_DATO',
         reply: '{{PLANTILLA:perfil-redes}}',
-        extracted: { name: null, currentOperator: null, usage: 'diario' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'diario' },
       }),
     ]);
     const r = await e.runTurn(
@@ -1695,7 +1871,7 @@ describe('D-015: la conversación se configura en el panel (plantillas del siste
       out({
         intent: 'DA_DATO',
         reply: 'Te recomiendo este: {{OFERTA:P1}}',
-        extracted: { name: null, currentOperator: null, usage: 'redes' },
+        extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
       }),
     ]);
     const r = await e.runTurn(state({ stage: 'PERFIL', profile: { process: 'PORTABILIDAD' } }), [
@@ -1719,5 +1895,460 @@ describe('D-015: la conversación se configura en el panel (plantillas del siste
     );
     expect(sent(r)).toEqual(['Escríbeme SI o NO, por favor.']);
     expect(r.actions.some((a) => a.type === 'RECORD_CONSENT')).toBe(false);
+  });
+});
+
+describe('D-021: el proceso se corrige con el operador y el tipo de línea', () => {
+  const perfil = (profile: Profile): ConversationState =>
+    state({ stage: 'PERFIL', profile, history: [{ role: 'bot', text: '¿Con qué operador?' }] });
+  const ex = (over: Partial<TurnOutput['extracted']>): TurnOutput['extracted'] => ({
+    name: null,
+    currentOperator: null,
+    lineType: null,
+    usage: null,
+    ...over,
+  });
+
+  it('eligió A y su operador es Claro: no ofrece hasta saber si ya es pospago', async () => {
+    const { e, llm } = engine([
+      out({
+        intent: 'DA_DATO',
+        reply: 'Mira este plan: {{OFERTA:P2}}',
+        extracted: ex({ currentOperator: 'Claro' }),
+      }),
+      out({
+        intent: 'DA_DATO',
+        reply: '¿Ya haces parte de Claro postpago?',
+        extracted: ex({ currentOperator: 'Claro' }),
+      }),
+    ]);
+    const r = await e.runTurn(perfil({ process: 'PORTABILIDAD', usage: 'redes' }), ['Claro']);
+    expect(r.validationResult).toBe('REGENERATED');
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(r.profile.currentOperator).toBe('Claro');
+    expect(sent(r)).toEqual(['¿Ya haces parte de Claro postpago?']);
+    expect(llm.requests[1]!.messages.at(-1)!.content).toContain('perfil incompleto');
+  });
+
+  it('Claro prepago: pasa a migración y ofrece los planes de migración en el mismo turno', async () => {
+    const { e, llm } = engine([
+      out({
+        intent: 'DA_DATO',
+        reply: 'Por el proceso de cambio de operador: {{OFERTA:P2}}',
+        extracted: ex({ lineType: 'PREPAGO' }),
+      }),
+      out({ intent: 'DA_DATO', reply: 'Por pasarte a pospago te puedo otorgar: {{OFERTA:M2}}' }),
+    ]);
+    const r = await e.runTurn(
+      perfil({ process: 'PORTABILIDAD', currentOperator: 'Claro', usage: 'redes' }),
+      ['No'],
+    );
+    expect(llm.requests).toHaveLength(2);
+    const dyn = llm.requests[1]!.systemDynamic;
+    expect(dyn).toContain('Proceso: MIGRACION (corregido por el sistema');
+    expect(dyn).toContain('"lineType":"PREPAGO"');
+    expect(dyn).toContain('- M2:');
+    expect(dyn).not.toContain('- P2:');
+    expect(r.profile.process).toBe('MIGRACION');
+    expect(r.profile.processChangedFrom).toBe('PORTABILIDAD');
+    expect(r.stage).toBe('OFERTA');
+    expect(r.profile.offeredPlanCode).toBe('M2');
+    expect(sent(r).join('\n')).not.toContain('cambio de operador');
+  });
+
+  it('si ya le había ofrecido portabilidad, la oferta de migración empieza de nuevo', async () => {
+    const { e } = engine([
+      out({ reply: 'Entiendo.', extracted: ex({ currentOperator: 'Claro', lineType: 'PREPAGO' }) }),
+      out({ reply: 'Por pasarte a pospago: {{OFERTA:M1}}' }),
+    ]);
+    const r = await e.runTurn(
+      state({
+        stage: 'OFERTA',
+        profile: {
+          process: 'PORTABILIDAD',
+          usage: 'redes',
+          offeredPlanCode: 'P2',
+          planImagesSent: true,
+        },
+      }),
+      ['ah pero yo soy de Claro, de recargas'],
+    );
+    expect(r.profile.process).toBe('MIGRACION');
+    expect(r.profile.planImagesSent).toBeUndefined();
+    expect(r.profile.offeredPlanCode).toBe('M1');
+  });
+
+  it('Claro pospago: le aclara que no aplica, le ofrece «ya tengo plan» y vuelve al menú', async () => {
+    const { e, llm } = engine([
+      out({ intent: 'DA_DATO', reply: 'Perfecto.', extracted: ex({ lineType: 'POSPAGO' }) }),
+    ]);
+    const r = await e.runTurn(
+      perfil({ process: 'PORTABILIDAD', currentOperator: 'Claro', usage: 'redes' }),
+      ['Sí'],
+    );
+    expect(llm.requests).toHaveLength(1);
+    expect(r.stage).toBe('MENU');
+    expect(sent(r)).toEqual([T.ALREADY_POSTPAID]);
+    expect(T.ALREADY_POSTPAID).toContain('🅒 Ya tengo plan');
+    expect(r.profile.process).toBeUndefined();
+    expect(r.profile.supportRedirected).toBe(true);
+    expect(r.actions.some((a) => a.type === 'CLOSE' || a.type === 'ESCALATE')).toBe(false);
+
+    // Elige la opción C: sigue el flujo normal (pregunta qué necesita).
+    const c = await e.runTurn(state({ profile: r.profile }), ['C']);
+    expect(sent(c)).toEqual([T.ASK_NEED]);
+    // No quiere nada más: despedida de soporte, según el flujo.
+    const no = await e.runTurn(state({ profile: r.profile }), ['no gracias']);
+    expect(no.stage).toBe('SOPORTE');
+    expect(no.actions).toContainEqual({ type: 'CLOSE', reason: 'SUPPORT' });
+  });
+
+  it('eligió B pero su línea es de otro operador: pasa a portabilidad', async () => {
+    const { e, llm } = engine([
+      out({
+        intent: 'DA_DATO',
+        reply: 'Por pasarte a pospago: {{OFERTA:M1}}',
+        extracted: ex({ currentOperator: 'Tigo', lineType: 'PREPAGO', usage: 'redes' }),
+      }),
+      out({ intent: 'DA_DATO', reply: 'Por el cambio de operador: {{OFERTA:P1}}' }),
+    ]);
+    const r = await e.runTurn(perfil({ process: 'MIGRACION' }), ['tengo Tigo, uso redes']);
+    expect(llm.requests).toHaveLength(2);
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(r.profile.processChangedFrom).toBe('MIGRACION');
+    expect(r.profile.offeredPlanCode).toBe('P1');
+  });
+
+  it('si al elegir del menú ya dice «soy Claro prepago», empieza en migración', async () => {
+    const { e } = engine([
+      out({
+        intent: 'ELIGE_OPCION',
+        option: 'A',
+        reply: '¡Perfecto! ¿Cómo usas tu celular?',
+        extracted: ex({ currentOperator: 'Claro', lineType: 'PREPAGO' }),
+      }),
+    ]);
+    const r = await e.runTurn(state(), ['quiero cambiarme, soy claro prepago']);
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.process).toBe('MIGRACION');
+    expect(r.profile.processChangedFrom).toBe('PORTABILIDAD');
+  });
+
+  it('el flujo puede apagarlo desde el panel (sin operador propio no se corrige)', async () => {
+    const llm = new ScriptedLlmAdapter([
+      out({
+        intent: 'DA_DATO',
+        reply: 'Mira: {{OFERTA:P2}}',
+        extracted: ex({ currentOperator: 'Claro', lineType: 'PREPAGO' }),
+      }),
+    ]);
+    const agent: AgentConfig = {
+      ...DEFAULT_AGENT_CONFIG,
+      flow: {
+        ...DEFAULT_AGENT_CONFIG.flow,
+        operatorRouting: { ...DEFAULT_AGENT_CONFIG.flow.operatorRouting, ownNames: [] },
+      },
+    };
+    const e = new ConversationEngine({ llm, catalog, now: () => NOW, agentConfig: () => agent });
+    const r = await e.runTurn(perfil({ process: 'PORTABILIDAD', usage: 'redes' }), ['Claro']);
+    expect(llm.requests).toHaveLength(1);
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(r.profile.offeredPlanCode).toBe('P2');
+  });
+});
+
+describe('D-022: pide una plataforma de video puntual → su circular, sin perfilar', () => {
+  const SOURCE = { brainId: 'b3', brainName: 'Planes Agosto', versionId: 'v8', version: 8 };
+  const ALL = ['PORTABILIDAD', 'MIGRACION', 'LINEA_NUEVA'] as (
+    'PORTABILIDAD' | 'MIGRACION' | 'LINEA_NUEVA'
+  )[];
+  const img = (
+    id: string,
+    processes: typeof ALL,
+    cards: { code: string; priceCop: number; includesText: string }[],
+    videoApps = false,
+  ) => ({
+    id,
+    sourceName: `${id}.png`,
+    sourceHash: `h-${id}`,
+    blobRef: `blob-${id}`,
+    mime: 'image/png',
+    sizeBytes: 1000,
+    processes,
+    ord: 0,
+    cards: cards.map((c) => ({ ...c, dataText: '50 GB', callsText: 'Minutos ilimitados' })),
+    videoApps,
+  });
+  const imgs = [
+    img(
+      'porta',
+      ['PORTABILIDAD'],
+      [{ code: '38327', priceCop: 56_900, includesText: 'Claro video' }],
+    ),
+    img(
+      'nueva',
+      ['LINEA_NUEVA'],
+      [{ code: '38081', priceCop: 53_900, includesText: 'Claro video' }],
+    ),
+    img(
+      'win',
+      ALL,
+      [{ code: '35086', priceCop: 60_900, includesText: 'Claro video + WIN play' }],
+      true,
+    ),
+    img(
+      'netflix',
+      ALL,
+      [
+        { code: '32080', priceCop: 62_900, includesText: 'Claro video + NETFLIX' },
+        { code: '28958', priceCop: 83_900, includesText: 'Claro video + NETFLIX' },
+      ],
+      true,
+    ),
+  ];
+  const catalogo = new MemoryCatalog(recordsFromImages(imgs), SOURCE, imgs);
+  const images = (r: { actions: { type: string }[] }) =>
+    r.actions
+      .filter((a): a is Extract<TurnAction, { type: 'SEND_IMAGE' }> => a.type === 'SEND_IMAGE')
+      .map((a) => a.image.imageId);
+  const make = (steps: ScriptStep[], opts: { agent?: AgentConfig; images?: boolean } = {}) => {
+    const llm = new ScriptedLlmAdapter(steps);
+    const e = new ConversationEngine({
+      llm,
+      catalog: catalogo,
+      now: () => NOW,
+      offerWithImages: opts.images ?? true,
+      ...(opts.agent ? { agentConfig: () => opts.agent! } : {}),
+    });
+    return { e, llm };
+  };
+  const asked = out({
+    reply:
+      '¡Con gusto! ¿Te quieres cambiar de operador (A), pasar de prepago a pospago (B) o una línea nueva (E)?',
+  });
+
+  it('pide WIN en el menú y elige A: sin perfilar, la circular de WIN', async () => {
+    const { e, llm } = make([
+      asked,
+      out({ intent: 'DA_DATO', reply: 'Con WIN tengo esta opción para ti: {{IMAGENES_VIDEO}}' }),
+    ]);
+    const m = await e.runTurn(state(), ['hola quiero WIn o plan con Win']);
+    expect(m.stage).toBe('MENU');
+    expect(m.profile.platformRequested).toBe('win');
+    const r = await e.runTurn(
+      state({
+        profile: m.profile,
+        history: [
+          { role: 'bot', text: T.MENU },
+          { role: 'customer', text: 'hola quiero WIn' },
+        ],
+      }),
+      ['a'],
+    );
+    expect(llm.requests).toHaveLength(2);
+    const dyn = llm.requests[1]!.systemDynamic;
+    expect(dyn).toContain('Etapa actual: PERFIL');
+    expect(dyn).toContain('Datos que faltan: ninguno');
+    expect(dyn).toContain('El cliente pidió un plan con WIN');
+    expect(r.stage).toBe('OFERTA');
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(r.profile.platformOffer).toBe(true);
+    expect(images(r)).toEqual(['win']);
+    expect(r.profile.planImagesSent).toBeUndefined();
+  });
+
+  it('elige «e» (el modelo lo reconoce): se vuelve a generar y ofrece la circular', async () => {
+    const { e, llm } = make([
+      out({
+        intent: 'ELIGE_OPCION',
+        option: 'E',
+        reply: '¿El plan lo vas a usar para trabajo o uso diario?',
+      }),
+      out({ intent: 'PREGUNTA', reply: 'Con WIN tengo esta opción: {{IMAGENES_VIDEO}}' }),
+    ]);
+    const r = await e.runTurn(state({ profile: { platformRequested: 'win' } }), ['e']);
+    expect(llm.requests).toHaveLength(2);
+    expect(r.profile.process).toBe('LINEA_NUEVA');
+    expect(r.stage).toBe('OFERTA');
+    expect(images(r)).toEqual(['win']);
+    expect(sent(r)).toEqual([]); // el texto va como pie de foto, sin la pregunta de perfil
+  });
+
+  it('aunque el modelo escriba {{IMAGENES}}, la primera oferta es la de su plataforma', async () => {
+    const { e } = make([out({ intent: 'DA_DATO', reply: 'Mira estas opciones: {{IMAGENES}}' })]);
+    const r = await e.runTurn(
+      state({
+        stage: 'PERFIL',
+        profile: { process: 'PORTABILIDAD', platformRequested: 'netflix' },
+      }),
+      ['quiero netflix'],
+    );
+    expect(images(r)).toEqual(['netflix']);
+    expect(r.profile.videoImagesSent).toBe(true);
+  });
+
+  it('si no la acepta no se repite; si acepta un plan de la circular, sigue a la autorización', async () => {
+    const offered = {
+      process: 'PORTABILIDAD' as const,
+      platformRequested: 'win',
+      platformOffer: true,
+      videoImagesSent: true,
+      videoImagesSentIds: 'win',
+    };
+    const { e, llm } = make([
+      out({
+        intent: 'OBJECION',
+        reply: 'Es la única oferta disponible con WIN. ¿Te puedo ayudar con algo más?',
+      }),
+      out({ intent: 'ACEPTA_PLAN', planCode: 'P35086', reply: '¡Excelente elección!' }),
+    ]);
+    const no = await e.runTurn(state({ stage: 'OFERTA', profile: offered }), ['no me convence']);
+    expect(images(no)).toEqual([]);
+    expect(llm.requests[0]!.systemDynamic).toContain('ya recibió la imagen de WIN');
+    const yes = await e.runTurn(state({ stage: 'OBJECIONES', profile: no.profile }), [
+      'bueno, lo tomo',
+    ]);
+    expect(yes.stage).toBe('AUTORIZACION');
+    expect(yes.profile.planCode).toBe('P35086');
+  });
+
+  it('sin imágenes (SEND_PLAN_IMAGES=false) ofrece con la ficha los planes de la circular', async () => {
+    const { e, llm } = make([out({ intent: 'DA_DATO', reply: 'Con Netflix: {{OFERTA:P28958}}' })], {
+      images: false,
+    });
+    const r = await e.runTurn(
+      state({
+        stage: 'PERFIL',
+        profile: { process: 'PORTABILIDAD', platformRequested: 'netflix' },
+      }),
+      ['quiero netflix'],
+    );
+    expect(llm.requests[0]!.systemDynamic).toContain(
+      'los planes del catálogo que la incluyen (P32080, P28958)',
+    );
+    expect(r.stage).toBe('OFERTA');
+    expect(r.profile.offeredPlanCode).toBe('P28958');
+  });
+
+  it('Prime Video o una plataforma sin circular siguen el flujo normal (perfil)', async () => {
+    const { e, llm } = make([]);
+    for (const p of ['prime', 'hbo']) {
+      const r = await e.runTurn(state({ profile: { platformRequested: p } }), ['a']);
+      expect(r.stage).toBe('PERFIL');
+      expect(r.profile.platformOffer).toBeUndefined();
+      expect(r.validationResult).toBe('NO_LLM');
+    }
+    expect(llm.requests).toHaveLength(0);
+  });
+
+  it('el flujo puede pedir perfilar igual (PERFILAR)', async () => {
+    const agent: AgentConfig = {
+      ...DEFAULT_AGENT_CONFIG,
+      flow: { ...DEFAULT_AGENT_CONFIG.flow, platformRequest: 'PERFILAR' },
+    };
+    const { e, llm } = make([], { agent });
+    const r = await e.runTurn(state({ profile: { platformRequested: 'win' } }), ['a']);
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.platformOffer).toBeUndefined();
+    expect(llm.requests).toHaveLength(0);
+  });
+});
+
+describe('D-023: pregunta por una portabilidad que ya solicitó', () => {
+  const tx = (role: Parameters<typeof T.systemText>[1], name?: string, missing?: string) =>
+    T.systemText(DEFAULT_AGENT_CONFIG, role, name, NOW, missing);
+  const asked: Profile = { portabilityCheck: 'ASKED' };
+  const next = (r: { stage: ConversationState['stage']; profile: Profile }) =>
+    state({ stage: r.stage, profile: r.profile });
+
+  it('en el menú: le pregunta si recibió la confirmación (sin la plantilla de soporte)', async () => {
+    const { e } = engine([out({ intent: 'CONSULTA_PORTABILIDAD', reply: 'Entiendo.' })]);
+    const r = await e.runTurn(state(), ['Hola, solicité una portabilidad y no sé si ya quedó']);
+    expect(r.stage).toBe('MENU');
+    expect(sent(r)).toEqual([tx('PORTABILIDAD_CONFIRMACION')]);
+    expect(sent(r)[0]).toContain('¿Ya recibiste la confirmación');
+    expect(r.profile.portabilityCheck).toBe('ASKED');
+    expect(r.profile.supportRedirected).toBeUndefined();
+  });
+
+  it('sí la recibió: no se puede verificar y van los canales de servicio al cliente', async () => {
+    const { e, llm } = engine([]);
+    for (const yes of ['Sí', 'si señor', 'ya me llegó', 'Claro, me llegó un mensaje']) {
+      const r = await e.runTurn(state({ profile: asked }), [yes]);
+      expect(sent(r)).toEqual([tx('PORTABILIDAD_CONFIRMADA'), T.SUPPORT]);
+      expect(r.stage).toBe('MENU');
+      expect(r.profile.portabilityCheck).toBeUndefined();
+      expect(r.profile.supportRedirected).toBe(true);
+    }
+    expect(llm.requests).toHaveLength(0);
+    // Después, «no» → despedida de soporte (como tras la plantilla de soporte).
+    const bye = await e.runTurn(state({ profile: { supportRedirected: true } }), ['no gracias']);
+    expect(bye.actions).toContainEqual({ type: 'CLOSE', reason: 'SUPPORT' });
+  });
+
+  it('no la recibió: le pide los datos y, al tenerlos, pasa al backoffice como caso (no venta)', async () => {
+    const { e, llm } = engine([]);
+    const r1 = await e.runTurn(state({ profile: asked }), ['No, nada todavía']);
+    expect(sent(r1)).toEqual([
+      tx(
+        'PORTABILIDAD_VALIDAR',
+        undefined,
+        'tu número de documento de identidad, tu nombre completo y tu correo electrónico',
+      ),
+    ]);
+    expect(r1.profile.portabilityCheck).toBe('DATA');
+    // Un «1» mientras manda datos no es la opción A del menú.
+    const r2 = await e.runTurn(next(r1), ['1020304050']);
+    expect(r2.stage).toBe('MENU');
+    expect(r2.profile.process).toBeUndefined();
+    expect(sent(r2)[0]).toContain('me falta tu nombre completo y tu correo electrónico');
+    const r3 = await e.runTurn(next(r2), ['Ana María Pérez ana@correo.com']);
+    expect(r3.stage).toBe('TRANSFERENCIA');
+    expect(sent(r3)).toEqual([tx('PORTABILIDAD_TRANSFERENCIA', 'Ana María Pérez')]);
+    const transfer = r3.actions.find((a) => a.type === 'TRANSFER_BACKOFFICE') as {
+      serviceCase?: string;
+      saleDataNote?: string;
+    };
+    expect(transfer.serviceCase).toBe('VALIDACION_PORTABILIDAD');
+    expect(transfer.saleDataNote).toContain('Documento: 1020304050');
+    expect(transfer.saleDataNote).toContain('Correo: ana@correo.com');
+    expect(r3.actions.some((a) => a.type === 'RECORD_CONSENT')).toBe(false);
+    expect(r3.profile.portabilityCheck).toBeUndefined();
+    expect(llm.requests).toHaveLength(0);
+  });
+
+  it('mientras manda los datos de la validación, el robot espera a que termine', async () => {
+    const { e } = engine([]);
+    const st = state({ profile: { portabilityCheck: 'DATA' } });
+    expect(await e.dataWaitMs(st, ['1020304050'], NOW, NOW)).toBe(45_000);
+    expect(await e.dataWaitMs(st, ['1020304050 Ana María Pérez ana@correo.com'], NOW, NOW)).toBe(0);
+  });
+
+  it('si responde otra cosa, sigue el flujo normal (p. ej. elige una opción)', async () => {
+    const { e } = engine([]);
+    const r = await e.runTurn(state({ profile: asked }), ['A']);
+    expect(r.stage).toBe('PERFIL');
+    expect(r.profile.process).toBe('PORTABILIDAD');
+    expect(r.profile.portabilityCheck).toBeUndefined();
+  });
+
+  it('el flujo puede mandar la plantilla de soporte directo (SOPORTE)', async () => {
+    const llm = new ScriptedLlmAdapter([
+      out({ intent: 'CONSULTA_PORTABILIDAD', reply: 'Entiendo.' }),
+    ]);
+    const agent: AgentConfig = {
+      ...DEFAULT_AGENT_CONFIG,
+      flow: { ...DEFAULT_AGENT_CONFIG.flow, portabilityInquiry: 'SOPORTE' },
+    };
+    const r = await new ConversationEngine({
+      llm,
+      catalog,
+      now: () => NOW,
+      agentConfig: () => agent,
+    }).runTurn(state(), ['pedí una portabilidad, ¿ya quedó?']);
+    expect(sent(r)).toEqual([T.SUPPORT]);
+    expect(r.profile.supportRedirected).toBe(true);
+    expect(r.profile.portabilityCheck).toBeUndefined();
   });
 });

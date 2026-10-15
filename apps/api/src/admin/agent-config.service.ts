@@ -54,7 +54,14 @@ const PROFILE_KEYS = new Set([
   'process',
   'name',
   'currentOperator',
+  // D-021: tipo de línea y proceso que eligió en el menú si el código lo corrigió.
+  'lineType',
+  'processChangedFrom',
   'usage',
+  // D-022: plataformas de video que pidió (ids separados por coma).
+  'platformRequested',
+  // D-023: consulta de una portabilidad ya solicitada (ASKED o DATA).
+  'portabilityCheck',
   'planCode',
   'offeredPlanCode',
   'authorizationShownAt',
@@ -80,6 +87,10 @@ const PROFILE_FLAGS = new Set([
   'planImagesSent',
   'planImagesRestSent',
   'videoImagesSent',
+  // D-022: se le ofrece directo la circular de la plataforma que pidió.
+  'platformOffer',
+  // D-024: dijo que el plan es para el trabajo (queda fijo aunque luego diga la red social).
+  'workUsage',
 ]);
 const MAX_TEST_TEXT = 2_000;
 /** D-010: nota de voz de prueba (2 min de WAV a 16 kHz mono ≈ 3,8 MB). */

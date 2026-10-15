@@ -637,6 +637,29 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   está fuera de alcance en cada etapa y el orden de las imágenes. Un cambio de conversación no toca
   código; el código queda para la seguridad (reglas de la sección 7) y para acciones nuevas en
   Abaya. Detalle en `docs/DECISIONS.md` (D-015).
+- **D-021 (14/10/2026): el proceso se corrige con el operador del cliente.** Eligió cambiarse de
+  operador pero ya es del operador propio: prepago → migración (en el mismo turno, con sus planes);
+  pospago → plantilla `YA_POSPAGO` y vuelve al menú. Eligió migración y es de otro operador →
+  portabilidad. El modelo solo extrae el operador y el tipo de línea; el cambio lo hace el código y
+  se configura en el flujo (`operatorRouting`). Detalle en `docs/DECISIONS.md` (D-021).
+- **D-022 (14/10/2026): pide una plataforma de video puntual.** Si antes de la oferta el cliente
+  pide WIN, Disney+ o Netflix, en cuanto se sabe su proceso se salta el perfil y la primera oferta es
+  la circular de esa plataforma (flujo `platformRequest`). Qué decir si no la acepta va en el guion.
+  Detalle en `docs/DECISIONS.md` (D-022).
+- **D-023 (14/10/2026): pregunta por una portabilidad que ya solicitó.** En el menú se le pregunta si
+  recibió la confirmación: sí → no se puede verificar y van los canales de soporte; no → se le piden
+  los datos y pasa al backoffice con «Finalizar» como **caso de servicio** (`ServiceCase`, no es una
+  venta). Flujo `portabilityInquiry`. Detalle en `docs/DECISIONS.md` (D-023).
+- **D-024 (14/10/2026): planes compartidos solo con uso laboral.** En Portabilidad y Migración, los
+  planes de la imagen compartida (99.900, 75.900 y 65.900) se ofrecen solo si el cliente usará el
+  plan para el trabajo, y entonces van primero; si no los acepta, los de su opción de la más cara a
+  la más barata. Sin uso laboral no se ofrecen (salen del catálogo del turno). Línea nueva no
+  cambia. Lo decide el código con las palabras del flujo (`workUsageWords`, modo
+  `SI_USO_LABORAL`). Detalle en `docs/DECISIONS.md` (D-024).
+- **D-025 (15/10/2026): tipificación del cierre sin venta.** El modelo elige, según la conversación,
+  la tipificación (lista cerrada de No venta y SAC) y el robot la marca al «Finalizar y cerrar el
+  caso» en ySocial; sin ella, la etiqueta por motivo; por inactividad, la tipificada o «Cliente
+  abandona conversación». Detalle en `docs/DECISIONS.md` (D-025).
 
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 

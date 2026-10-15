@@ -62,6 +62,9 @@ const defaultText = (role: SystemTemplateRole, name?: string) =>
  */
 export const SUPPORT = defaultText('SOPORTE');
 
+/** D-021: eligió cambiarse de operador pero ya es pospago del operador propio (texto de la campaña). */
+export const ALREADY_POSTPAID = defaultText('YA_POSPAGO');
+
 /** Pregunta del nombre justo después de elegir la opción del menú (D-003). */
 export function askName(option: 'A' | 'B'): string {
   return option === 'A'

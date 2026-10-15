@@ -40,6 +40,8 @@ export class MemoryConversationStore implements ConversationStore {
   readonly events: { type: string; payload: Record<string, unknown> }[] = [];
   readonly llmCalls: LlmCallRecord[] = [];
   readonly sales: NonNullable<TurnCommit['sale']>[] = [];
+  /** D-023: casos de servicio que pasan al backoffice sin ser una venta. */
+  readonly serviceCases: NonNullable<TurnCommit['serviceCase']>[] = [];
   readonly knowledge: NonNullable<TurnCommit['knowledge']> = [];
   readonly consents: NonNullable<TurnCommit['consent']>[] = [];
   private seq = 0;
@@ -162,6 +164,7 @@ export class MemoryConversationStore implements ConversationStore {
     });
     this.llmCalls.push(...t.llmCalls);
     if (t.sale) this.sales.push(t.sale);
+    if (t.serviceCase) this.serviceCases.push(t.serviceCase);
     if (t.saleDataNote) {
       const sale = this.sales.at(-1);
       if (sale)

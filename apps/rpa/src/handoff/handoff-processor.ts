@@ -73,7 +73,8 @@ export class HandoffProcessor {
     if (!(await this.previousMessagesSettled(job.afterMessageIds))) return 'WAIT';
     const outcome = await this.d.actor.closeConversation({
       abayaChatId: job.abayaChatId,
-      tag: sel.finish.tags[job.reason],
+      // D-025: la tipificación de la conversación; sin ella, la etiqueta por motivo.
+      tag: (job.tag && sel.finish.closeTags[job.tag]) || sel.finish.tags[job.reason],
     });
     if (outcome.result === 'OK') return 'DONE';
     if (outcome.result === 'BLOCKED_KILL_SWITCH') return 'BLOCKED';

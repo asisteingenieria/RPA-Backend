@@ -28,12 +28,32 @@ export interface MockChat {
   messages: MockMessage[];
 }
 
-/** Etiquetas de cierre de la cola de la campaña (subconjunto real). */
+/**
+ * Etiquetas de cierre de la cola de la campaña: el árbol E-COMMERCE MOVIL (No Venta y SAC) tal como
+ * se ve en la grabación del 09/10/2026 (D-025).
+ */
 export const MOCK_TAGS = [
-  'SAC - Ecommerce Movil - Detalle plan movil',
-  'No venta -Ecommerce Movil Reglas de Negocio - Politicas',
-  'No venta - Ecommerce Movil -Cliente abandona conversación',
+  'No venta - Ecommerce Movil - Caída de IdClaro',
+  'No venta - Ecommerce Movil - Cliente carrusel < 90 dias',
+  'No venta - Ecommerce Movil - Cliente interesado hogar -T&T',
   'No venta - Ecommerce Movil - Cliente prefiere Prepago',
+  'No venta - Ecommerce Movil - Mejor oferta otros operadores',
+  'No venta - Ecommerce Movil - Rechazado por validacion de identidad',
+  'No venta - Ecommerce Movil- Caída de Poliedro',
+  'No venta - Ecommerce Movil -Cliente abandona conversación',
+  'No venta -Ecommerce Movil - Bot Respuesta Autómatica -Ocioso',
+  'No venta -Ecommerce Movil Reglas de Negocio - Politicas',
+  'SAC - Ecommerce Movil - Cambio de plan',
+  'SAC - Ecommerce Movil - Cancelacion Hogar',
+  'SAC - Ecommerce Movil - Cancelacion Movil',
+  'SAC - Ecommerce Movil - Consulta - Radicacion PQR',
+  'SAC - Ecommerce Movil - Demora entrega SIM CARD',
+  'SAC - Ecommerce Movil - Detalle plan hogar',
+  'SAC - Ecommerce Movil - Detalle plan movil',
+  'SAC - Ecommerce Movil - Facturacion',
+  'SAC - Ecommerce Movil - Pagos y recargas',
+  'SAC - Ecommerce Movil - Retencion',
+  'SAC - Ecommerce Movil - Soporte',
 ];
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

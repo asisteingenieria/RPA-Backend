@@ -1,7 +1,7 @@
 # Informe del proyecto — Agente RPA de ventas en Abaya
 
-> Fecha: 2026-10-08 · Fuente de verdad del diseño: `docs/planRPA.md` · Decisiones posteriores al
-> plan: `docs/DECISIONS.md` (D-001 a D-005) · Operación: `docs/runbook.md` · Seguridad:
+> Fecha: 2026-10-14 (estado actualizado en §5.0) · Fuente de verdad del diseño: `docs/planRPA.md` ·
+> Decisiones posteriores al plan: `docs/DECISIONS.md` (D-001 a D-024) · Operación: `docs/runbook.md` · Seguridad:
 > `docs/security-review.md` · Panel: repositorio `interfazRPA`
 
 ## Contenido
@@ -162,6 +162,34 @@ Criterio: 0 mensajes en chat equivocado, 0 duplicados, 0 perdidos, **p95 < 15 s*
 
 ## 5. Estado del proyecto
 
+### 5.0 Estado al 14/10/2026: servidor en producción, falta el robot
+
+| Pieza                                          | Estado                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Servidor de producción (padre)                 | ✅ En marcha: `rpa-api` y `rpa-worker` con pm2, PostgreSQL local, nginx con HTTPS publicando el panel, `/admin` y `/robot-api` (con WebSocket). `~/rpa/backend` es un clon de `main` (llave de despliegue): se actualiza con `git pull`. Detalle en `docs/runbook.md` §12. |
+| Abaya real                                     | ✅ Es ySocial (D-012): `ABAYA_BASE_URL=https://claro-co.ysocial.net/agent/`. El usuario robot entra solo con usuario y contraseña (sin MFA).                                                                                                                               |
+| Paquete del robot                              | ✅ `v1.0.0+16b02c7.202610141527` (con Chromium y `probar.cmd`), firmado y publicado en el servidor: el panel muestra «Firma válida».                                                                                                                                       |
+| Robot en el panel                              | ✅ Creado en producción con su usuario de Abaya y «Sin MFA».                                                                                                                                                                                                               |
+| **PC dedicado del robot**                      | ⏳ **Pendiente**: instalar con `instalar.cmd -NoIniciar -SinArranqueAutomatico` tras confiar en el certificado del servidor (`NODE_EXTRA_CA_CERTS`) y probar por pasos con `probar.cmd` (D-020). Pasos en `docs/runbook.md` §12.4.                                         |
+| Cambios de conversación de hoy (D-021 a D-024) | 🟡 Hechos y probados en local (agente **v22** publicado y **v23** en borrador en local, D-024); **falta subirlos a producción**: commit y PR, `git pull` + migración en el servidor y llevar la v23 con exportar/importar (D-019). Ver §12.3 del runbook.                  |
+
+Lo que se agregó el 14/10/2026 (detalle en `docs/DECISIONS.md`):
+
+- **D-020** Diagnóstico de Abaya real por pasos (`probar.cmd url | login | estado | disponible | bandeja`).
+- **D-021** El proceso se corrige con el operador: eligió 🅐 pero es Claro prepago → Migración (con
+  sus planes e imágenes en el mismo turno); Claro pospago → plantilla «Ya es pospago» y vuelve al
+  menú; eligió 🅑 pero es de otro operador → Portabilidad.
+- **D-022** Pide WIN, Disney+ o Netflix antes de la oferta → sin perfilar, la circular de esa
+  plataforma; si no la acepta, «son las únicas ofertas con esa plataforma» y «¿algo más?» (guion v22).
+- **D-023** «Solicité una portabilidad y no sé si quedó» → «¿recibiste la confirmación?»: sí →
+  no se puede verificar y canales de soporte; no → datos y «Finalizar» al backoffice como **caso de
+  servicio** (tabla `ServiceCase`, no cuenta como venta).
+- **D-024** Los planes de 99.900, 75.900 y 65.900 (compartidos) solo para quien usará el plan para
+  el trabajo, en Portabilidad y Migración, y entonces van primero; si no los acepta, los de su
+  opción de la más cara a la más barata. Línea nueva no cambia (agente v23, borrador).
+- Corrección en «Probar agente»: la API conserva entre turnos los datos nuevos del perfil (tipo de
+  línea, plataforma pedida, consulta de portabilidad).
+
 ### 5.1 Avance por fase
 
 | Fase                              | Estado | Detalle                                                                                                                                                                                                    |
@@ -174,7 +202,7 @@ Criterio: 0 mensajes en chat equivocado, 0 duplicados, 0 perdidos, **p95 < 15 s*
 | F5 Motor de conversación          | ✅     | Máquina de estados, validadores anti-alucinación, adaptadores de LLM para Anthropic y OpenAI, suite de 69 casos. Flujo de la campaña (D-003). Catálogo y texto legal **sintéticos**.                       |
 | F6 Venta y transferencia          | ✅     | Venta, consentimiento con cadena de hashes, nota y transferencia. Formato de nota pendiente de Claro.                                                                                                      |
 | F7 Robustez, operación y panel    | ✅     | Colas por robot, reconciliación, alertas, trazas cifradas, prueba de humo, panel con usuarios y roles, robots padre/hijo con instalador y rendimiento por equipo. Falta la prueba de 8 h en ambiente real. |
-| F8 Seguridad, despliegue y piloto | 🟡     | Revisión de seguridad y runbook hechos. Falta desplegar y el piloto.                                                                                                                                       |
+| F8 Seguridad, despliegue y piloto | 🟡     | Revisión de seguridad y runbook hechos. Servidor desplegado (14/10/2026); falta instalar el robot en su PC y el piloto.                                                                                    |
 
 Cambios posteriores a las fases (en `docs/planRPA.md` v1.8–v1.9 y `docs/DECISIONS.md`):
 
@@ -189,12 +217,14 @@ Cambios posteriores a las fases (en `docs/planRPA.md` v1.8–v1.9 y `docs/DECISI
 
 ### 5.2 Calidad
 
-- 475 pruebas automáticas en verde en el backend (2026-10-08): `worker` 158, `rpa` 93, `api` 85,
-  `knowledge` 82, `crypto` 24, `domain` 13, `config` 7, `db` 6, `alerts` 3, `logger` 2,
-  `robot-store` 2. Son unitarias, de integración con PostgreSQL real temporal y de navegador contra
-  el Abaya simulado. El panel (`interfazRPA`) suma 13. La prueba «DOCX dañado» de `knowledge` falló
-  una vez al correr todo el monorepo y pasa sola: sensible a la carga de la máquina.
-- Suite de evaluación del motor: 69 conversaciones guionadas. Con el modelo heurístico de
+- 695 pruebas automáticas en verde en el backend (2026-10-14): `worker` 308, `rpa` 102 (+47 de
+  navegador contra el simulador), `api` 100, `knowledge` 100, `domain` 40, `crypto` 24, `config` 8,
+  `db` 6, `alerts` 3, `logger` 2, `robot-store` 2. Son unitarias, de integración con PostgreSQL real temporal y de navegador contra
+  el Abaya simulado. El panel (`interfazRPA`) suma 14. Con todo el monorepo en paralelo en un equipo cargado,
+  «DOCX dañado» (`knowledge`) o alguna de navegador (`rpa`) pueden pasar del tiempo límite; solas
+  pasan (`pnpm turbo run test --concurrency=2` evita la carga).
+- Suite de evaluación del motor: 87 conversaciones guionadas (85/87 con el heurístico; los 2 de
+  «ambiguos» fallan desde antes). Con el modelo heurístico de
   referencia cumple la meta (≥ 95 % de casos correctos y **0 datos inventados**). **Falta correrla
   con un LLM real** (requiere la API key en el servidor).
 - CI: formato, lint, typecheck, pruebas y evaluación en cada cambio.
@@ -674,7 +704,8 @@ ORDER BY r."robotUser";
 | Documento escrito de la autorización para la Trazabilidad (referencia en D-002)                   | Claro          |
 | Días de retención del contenido de las conversaciones (y si ventas y consentimientos tienen otro) | Claro          |
 | API keys de al menos dos proveedores de LLM (o modelo en la nube de Claro); sin ella no se evalúa | Equipo / Claro |
-| Servidor de despliegue con Docker                                                                 | Equipo         |
+| ~~Servidor de despliegue~~ (en producción desde el 14/10/2026, con pm2 en lugar de Docker)        | Equipo         |
+| Instalar el robot en el PC dedicado y probar Abaya real por pasos (`probar.cmd`)                  | Equipo         |
 
 ### 15.2 Trabajo técnico pendiente (no depende de terceros)
 

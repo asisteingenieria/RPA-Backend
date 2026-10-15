@@ -15,4 +15,6 @@ export const knowledgeBlobAad = (id: string) => `knowledge-blob:${id}`;
 
 export const profileAad = (conversationId: string) => `profile:${conversationId}`;
 export const saleAad = (conversationId: string) => `sale:${conversationId}`;
+/** D-023: caso de servicio que pasa al backoffice sin ser una venta (validación de portabilidad). */
+export const serviceCaseAad = (conversationId: string) => `service-case:${conversationId}`;
 export const consentAad = (conversationId: string) => `consent:${conversationId}`;
