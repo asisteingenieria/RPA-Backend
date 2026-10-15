@@ -37,6 +37,13 @@ class FakeDriver implements SessionDriver {
   async exportState() {
     return STATE;
   }
+  logouts = 0;
+  async logout() {
+    this.logouts++;
+    const was = this.loggedIn;
+    this.loggedIn = false;
+    return was;
+  }
   async close() {
     this.loggedIn = false;
   }
@@ -206,26 +213,35 @@ describe('SessionManager', () => {
     expect(JSON.stringify(t.alerts.raised)).not.toContain(SECRET);
   });
 
-  it('reciclar el navegador: guarda la sesión, reabre con ella y no hace login', async () => {
+  it('reciclar el navegador: «Salir», reabre sin sesión guardada y entra de nuevo', async () => {
+    // ySocial real (15/10/2026): sin «Salir» el login dice «ya se encuentra conectado».
     const t = setup();
     await t.mgr.start(); // login inicial
     const logins = t.driver.loginCalls;
     t.driver.opens = [];
     expect(await t.mgr.recycle()).toBe('ACTIVE');
-    expect(t.driver.opens).toEqual([STATE]);
-    expect(t.driver.loginCalls).toBe(logins);
+    expect(t.driver.logouts).toBe(1);
+    expect(t.driver.opens).toEqual([undefined]);
+    expect(t.driver.loginCalls).toBe(logins + 1);
     expect(t.gate.isOpen()).toBe(true);
     expect(await t.store.load()).toEqual(STATE);
   });
 
-  it('reciclar sin sesión válida: relogin y la fila del robot vuelve a abrirse', async () => {
+  it('reciclar con login fallido: relogin y la fila del robot vuelve a abrirse', async () => {
     const t = setup();
     await t.mgr.start();
-    t.driver.stateValid = false;
+    t.driver.loginResults = ['TIMEOUT', 'OK'];
     const logins = t.driver.loginCalls;
     expect(await t.mgr.recycle()).toBe('ACTIVE');
-    expect(t.driver.loginCalls).toBe(logins + 1);
+    expect(t.driver.loginCalls).toBe(logins + 2);
     expect(t.gate.isOpen()).toBe(true);
+  });
+
+  it('detener el robot hace «Salir» en Abaya antes de cerrar el navegador', async () => {
+    const t = setup();
+    await t.mgr.start();
+    await t.mgr.stop();
+    expect(t.driver.logouts).toBe(1);
   });
 
   it('no recicla si la sesión no está activa', async () => {

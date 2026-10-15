@@ -8,5 +8,10 @@ export interface SessionDriver {
   isInboxVisible(): Promise<boolean>;
   login(creds: LoginCredentials): Promise<LoginResult>;
   exportState(): Promise<StorageState>;
+  /**
+   * «Salir» en ySocial (avatar → Salir → ACEPTAR). Cerrar el navegador NO cierra la sesión del
+   * asesor: sin esto, el siguiente login responde «ya se encuentra conectado». true = salió.
+   */
+  logout(): Promise<boolean>;
   close(): Promise<void>;
 }

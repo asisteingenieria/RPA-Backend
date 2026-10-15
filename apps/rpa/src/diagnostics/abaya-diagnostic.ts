@@ -32,6 +32,7 @@ export interface DiagnosticDriver {
   open(): Promise<void>;
   readonly page: Page;
   login(creds: LoginCredentials): Promise<LoginResult>;
+  logout(): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -51,11 +52,20 @@ export interface DiagnosticDeps {
   credentials: () => LoginCredentials;
   /** Avisa cada paso apenas termina (la consola lo imprime). */
   onStep?: (r: StepResult) => void;
+  /** Al final, si entró: true si cerró la sesión en Abaya («Salir»), false si no pudo. */
+  onLogout?: (ok: boolean) => void;
+  /**
+   * `--dejar-abierto`: no hace «Salir» ni cierra el navegador; la persona mira la ventana, sale
+   * de Abaya a mano y la cierra (quien llama espera ese cierre).
+   */
+  keepOpen?: boolean;
 }
 
 const LOGIN_FAIL: Record<Exclude<LoginResult, 'OK'>, string> = {
   INVALID_CREDENTIALS: 'Abaya rechazó el usuario o la contraseña (revise el robot en el panel)',
   MFA_REQUIRED: 'Abaya pide doble factor y el robot no tiene ABAYA_TOTP_SECRET',
+  ALREADY_CONNECTED:
+    'Abaya dice que el agente ya está conectado: cierre esa sesión (avatar → Salir) o espere a que venza, y repita',
   TIMEOUT: 'no apareció la bandeja (avatar img.user-image) ni un mensaje de error',
 };
 
@@ -80,7 +90,13 @@ export class AbayaDiagnostic {
         if (!r.ok) break;
       }
     } finally {
-      await this.d.driver.close();
+      if (!this.d.keepOpen) {
+        // Si entró, «Salir» antes de cerrar: si no, el siguiente login no entra (ya conectado).
+        if (results.some((r) => r.step === 'login' && r.ok)) {
+          this.d.onLogout?.(await this.d.driver.logout().catch(() => false));
+        }
+        await this.d.driver.close();
+      }
     }
     return results;
   }

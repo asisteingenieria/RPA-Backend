@@ -105,7 +105,9 @@ export function loginHtml(opts: { error?: string; mfa?: boolean; server?: boolea
     });
     if (r.ok) { location.reload(); return; }
     const err = document.querySelector('.toast-error');
-    err.textContent = 'Usuario o contraseña incorrectos';
+    err.textContent = r.status === 409
+      ? 'El agente ya se encuentra conectado, no puede ingresar nuevamente.'
+      : 'Usuario o contraseña incorrectos';
     err.hidden = false;
   });
 })();
@@ -144,6 +146,8 @@ export function inboxHtml(
   </div>
   <a data-toggle="profile"><img class="user-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a>
   <div class="profile-menu" hidden>
+    <!-- Como en ySocial real: el panel del perfil repite el avatar (dos img.user-image). -->
+    <img class="user-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
     <a class="button-profile col-xs-3" ng-click="navigation.signOut()">Salir</a>
   </div>
 </nav>
@@ -153,6 +157,13 @@ export function inboxHtml(
   <p>SMCC Web Agent</p>
   <div class="alert-info">TiendaOnLine - Usuario desbordado por opción de venta</div>
   <button class="btn btn-flat btn-action" type="button">ACEPTAR (<span class="button-progress-remaining">7</span>)</button>
+</div></div>
+
+<div class="modal" data-modal="signout" hidden><div class="modal-dialog">
+  <p>Cierre de sesión</p>
+  <p>¿Está seguro que desea cerrar sesión?</p>
+  <button class="btn btn-flat btn-action" type="button" ng-click="signOutConfirm()">Aceptar</button>
+  <button class="btn btn-flat" type="button">Cancelar</button>
 </div></div>
 
 <div class="modal" data-modal="confirm" hidden><div class="modal-dialog">
@@ -427,6 +438,12 @@ function consoleScript(data: string): string {
       return;
     }
     if (ng === 'navigation.signOut()') {
+      $('.profile-menu').hidden = true;
+      $('[data-modal="signout"]').hidden = false;
+      return;
+    }
+    if (ng === 'signOutConfirm()') {
+      $('[data-modal="signout"]').hidden = true;
       if (SERVER) void api('/services/agents/disconnect?id=1', {}).then(() => location.reload());
       return;
     }

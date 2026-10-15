@@ -75,14 +75,16 @@ test('login inicial y storageState cifrado en disco', async () => {
   await t.mgr.stop();
 });
 
-test('al reiniciar reutiliza el storageState sin volver a hacer login', async () => {
+test('detener hace «Salir» en Abaya y el siguiente arranque vuelve a entrar', async () => {
+  // ySocial real (15/10/2026): sin «Salir» el login dice «ya se encuentra conectado».
   const a = await makeManager(mock);
   await a.mgr.start();
   await a.mgr.stop();
+  expect(mock.sessions.size).toBe(0);
 
   const b = await makeManager(mock, { dir: a.dir });
   expect(await b.mgr.start()).toBe('ACTIVE');
-  expect(mock.loginAttempts).toBe(1);
+  expect(mock.loginAttempts).toBe(2);
   await b.mgr.stop();
 });
 

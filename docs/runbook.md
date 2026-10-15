@@ -188,6 +188,13 @@ del robot en el panel:
 
 Agregar `--ver` para mirar el navegador. Cada paso corre los anteriores y se detiene en el primero
 que falle; la línea `[FALLA]` dice qué no encontró (el selector a ajustar en `selectors.ts`).
+Al terminar hace **Salir** en Abaya («Sesión cerrada en Abaya»): cerrar el navegador no cierra la
+sesión del asesor y el siguiente login diría «ya se encuentra conectado» (`ALREADY_CONNECTED`).
+Con `--dejar-abierto` (en PowerShell: `& "$env:LOCALAPPDATA\AbayaRobot\probar.cmd" login --dejar-abierto`)
+la ventana queda abierta para mirarla: cerrar sesión a mano (iniciales arriba a la derecha → ícono
+de apagado → ACEPTAR) y después cerrar la ventana; ahí termina el diagnóstico. Si
+quedó una sesión abierta sin salir, cerrarla así desde un navegador con la sesión, esperar a que
+venza o pedir al supervisor que desconecte al agente.
 Las credenciales salen del servidor, como para el robot. En desarrollo:
 `pnpm --filter @abaya/rpa build && pnpm --filter @abaya/rpa probar-abaya -- <paso> [--ver]`
 (usa el `.env`).

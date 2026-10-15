@@ -91,6 +91,36 @@ export class PlaywrightSessionDriver implements SessionDriver {
     return available ? r : 'TIMEOUT';
   }
 
+  /** Resuelve cuando la persona cierra la ventana del navegador (`probar --dejar-abierto`). */
+  async waitUntilClosed(): Promise<void> {
+    const page = this._page;
+    if (!page || page.isClosed()) return;
+    await new Promise<void>((done) => {
+      page.once('close', () => done());
+      this.browser?.once('disconnected', () => done());
+    });
+  }
+
+  async logout(): Promise<boolean> {
+    const page = this._page;
+    if (!page || page.isClosed()) return false;
+    const avatar = sel.session.inboxMarker(page);
+    if (!(await avatar.isVisible().catch(() => false))) return false;
+    try {
+      await avatar.click({ timeout: 5_000 });
+      await sel.session.logout(page).click({ timeout: 5_000 });
+      const confirm = sel.session.logoutConfirm(page);
+      await confirm
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => confirm.click({ timeout: 5_000 }))
+        .catch(() => undefined);
+      await sel.login.submit(page).waitFor({ state: 'visible', timeout: 15_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async exportState(): Promise<StorageState> {
     if (!this.context) throw new Error('Sesión sin contexto');
     return this.context.storageState();

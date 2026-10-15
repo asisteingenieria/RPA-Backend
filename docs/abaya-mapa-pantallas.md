@@ -30,8 +30,11 @@ confirmar que el navegador automatizado no se queda en un desafío de Cloudflare
   del código se busca con el atributo **exacto** `ng-if="login.showTwoFactor"` (15/10/2026, primer
   `probar.cmd login` en el PC del robot: con `*=` coincidían los dos bloques y el login fallaba).
   Tras INGRESAR hay una barra de carga: el robot espera la bandeja hasta 45 s.
-- **Cerrar el navegador cierra la sesión del asesor**. Reutilizar `storageState` no sirvió: al
-  volver a abrir, pidió login. El robot inicia sesión en cada arranque.
+- **Cerrar el navegador NO cierra la sesión del asesor en el servidor** (15/10/2026, PC del robot):
+  el siguiente login responde «El agente ya se encuentra conectado, no puede ingresar nuevamente»
+  (`LoginResult` `ALREADY_CONNECTED`). Reutilizar `storageState` tampoco sirve: al volver a abrir
+  pide login. Por eso el robot hace **Salir** al detenerse, al reciclar el navegador y al terminar
+  `probar.cmd`, y entra con un login nuevo en cada arranque.
 - Mantener viva la sesión: la consola hace `POST /services/agents/keepalive` cada ~minuto.
 - Al conectarse: `POST /services/agents/connect` y `GET /services/agents/init`.
 - Salir: avatar arriba a la derecha (`img.user-image`) → `a.button-profile` con
