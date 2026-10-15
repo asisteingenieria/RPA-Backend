@@ -1,5 +1,49 @@
 # Decisiones de diseño
 
+## D-027 · Notas de voz: pedir con respeto que escriba · APROBADA — implementada
+
+**Contexto (15/10/2026).** En ySocial real el robot todavía no descarga las notas de voz (captura
+pendiente de D-010): llegaban al motor como el texto «[audio]» y el modelo improvisaba. El usuario
+pidió que, cuando el cliente mande un audio, el robot le pida de manera respetuosa que escriba su
+solicitud.
+
+**Decisión.** «[audio]» (`AUDIO_PLACEHOLDER`) se trata como una nota de voz que no se pudo oír:
+plantilla del sistema **NOTA_DE_VOZ_ILEGIBLE** («Gracias por tu mensaje 🙏 Por este medio no podemos
+escuchar notas de voz. ¿Me escribes tu solicitud en texto, por favor?»; se edita en el panel,
+D-015), sin llamar al modelo y sin cambiar de etapa. Con texto en la misma ráfaga, responde el texto
+y agrega la plantilla. Para no transcribir aunque el robot llegue a descargar audios:
+`STT_PROVIDER=ninguno` en el servidor (todas las notas → la misma plantilla). La transcripción de
+D-010 sigue disponible si se decide volver a ella.
+
+## D-026 · Horario de los robots y «Salir» de ySocial · APROBADA — implementada
+
+**Contexto (15/10/2026, primera instalación en el PC del robot).** En ySocial real: (1) cerrar el
+navegador no cierra la sesión del asesor: el siguiente login responde «El agente ya se encuentra
+conectado, no puede ingresar nuevamente»; (2) ySocial esconde «Salir» mientras el asesor tiene casos
+asignados (`ng-hide="navigation.removeLogoutButton()"`); (3) el paso `disponible` del diagnóstico
+recibió 2 casos reales y el diagnóstico cerró el navegador igual. El usuario pidió que los robots
+trabajen todos los días de 7 a. m. a 10 p. m.
+
+**Decisión.**
+
+1. «Salir» (iniciales → ícono de apagado → «Cierre de sesión» → ACEPTAR) al detener el robot, al
+   reciclar el navegador (con login nuevo: la sesión guardada no sirve) y al terminar `probar.cmd`.
+   Login rechazado por sesión abierta = `ALREADY_CONNECTED`, con mensaje claro.
+2. Nunca se cierra el navegador con casos asignados en el diagnóstico: queda abierto para atenderlos
+   (y `--dejar-abierto` lo pide a propósito).
+3. Horario `ROBOT_WORK_HOURS` en el servidor (hora de Colombia, p. ej. `07:00-22:00`; vacío =
+   siempre), entregado a cada robot por la pasarela. Fuera de horario el robot no abre Abaya y
+   espera. A la hora de fin pasa a **FinTurno** (con chats, ySocial lo deja «Trabajando (Pend.
+   Aux.)»), sigue atendiendo hasta vaciar la bandeja (a los 30 min con chats, alerta
+   `SHIFT_END_PENDING`; nunca abandona un chat por la hora), hace «Salir» y sale con el código 5;
+   el lanzador lo vuelve a arrancar y espera el día siguiente. El proceso queda siempre encendido:
+   no se usa el Programador de tareas de Windows.
+4. **El horario se cambia en el panel** (Robots → «Horario de los robots», solo ADMIN, auditado
+   `ROBOT_WORK_HOURS_CHANGED`): se guarda en `AppSetting` (migración `20261028000000_ajustes_panel`);
+   `ROBOT_WORK_HOURS` queda como valor inicial. Cada robot lo consulta cada minuto por la pasarela
+   (`settings.workHours`): un turno que ya terminó dispara el cierre del punto 3 y uno que ya empezó
+   hace arrancar al robot que esperaba. Un solo horario, todos los días, para todos los robots.
+
 ## D-025 · Tipificación del cierre sin venta según la conversación · APROBADA — implementada
 
 **Contexto (15/10/2026).** En la grabación de la asesora (09/10/2026, pasos 120–137) un chat que no

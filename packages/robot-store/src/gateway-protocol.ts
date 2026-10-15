@@ -61,6 +61,8 @@ export const rpcParams = {
   'presence.beat': z.object({ instanceId: z.string().uuid() }),
   'presence.release': z.object({ instanceId: z.string().uuid() }),
   'sweep.idleChats': z.object({ abayaChatIds: z.array(id).max(200) }),
+  /** D-026: horario vigente de los robots (`07:00-22:00` o null); el robot lo consulta cada minuto. */
+  'settings.workHours': z.object({}),
   'update.report': z.object({
     status: z.enum(['WAITING_IDLE', 'DOWNLOADING', 'STAGED', 'APPLIED', 'FAILED', 'ROLLED_BACK']),
     version: z.string().max(64).optional(),

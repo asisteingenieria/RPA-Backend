@@ -15,3 +15,4 @@ export * from './robot-queues.js';
 export * from './session.repository.js';
 export * from './sweep.repository.js';
 export * from './release.js';
+export * from './work-hours.store.js';

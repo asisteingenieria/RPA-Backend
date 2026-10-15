@@ -65,6 +65,7 @@ const robots = new RobotsService(
     nodeEnv: cfg.NODE_ENV,
     abayaBaseUrl: cfg.ABAYA_BASE_URL,
     heartbeatMs: cfg.HEARTBEAT_INTERVAL_MS,
+    workHours: cfg.ROBOT_WORK_HOURS,
   },
   {
     maxChatsPerRobot: cfg.MAX_CHATS_PER_ROBOT,
@@ -79,6 +80,7 @@ const gateway = new RobotGateway({
   redisUrl: cfg.REDIS_URL,
   alerts,
   traceDir: cfg.TRACE_DIR,
+  workHoursDefault: cfg.ROBOT_WORK_HOURS,
 });
 /** Lo que necesita el WebSocket de la pasarela (lo monta main.ts sobre el servidor HTTP). */
 export const hubDeps: HubDeps = {

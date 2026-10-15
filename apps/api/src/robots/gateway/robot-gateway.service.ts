@@ -22,6 +22,7 @@ import {
   PrismaSweepRepository,
   TRACE_REF_RE,
   inboundAudioParams,
+  readWorkHours,
   rpcParams,
   traceAad,
   type InboundQueue,
@@ -64,6 +65,8 @@ export class RobotGateway {
       redisUrl: string;
       alerts: AlertPort;
       traceDir: string;
+      /** D-026: `ROBOT_WORK_HOURS` del servidor (valor inicial del horario si el panel no lo fijó). */
+      workHoursDefault?: string;
       /** Pruebas: cola de entrantes y reencolado de envíos sin Redis. */
       inboundQueue?: InboundQueue;
       enqueueOutbound?: (
@@ -154,6 +157,8 @@ export class RobotGateway {
       'presence.beat': async (r, p) => this.presence.beat(r, p.instanceId, new Date()),
       'presence.release': async (r, p) => this.presence.release(r, p.instanceId, new Date()),
       'sweep.idleChats': async (r, p) => this.sweep.idleChats(r, p.abayaChatIds),
+      'settings.workHours': async () =>
+        (await readWorkHours(this.d.prisma, this.d.workHoursDefault)).hours,
       'update.report': async (r, p) => {
         const finished = ['APPLIED', 'FAILED', 'ROLLED_BACK'].includes(p.status);
         await this.d.prisma.robot.update({

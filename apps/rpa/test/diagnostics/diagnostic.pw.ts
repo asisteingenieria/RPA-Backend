@@ -147,8 +147,22 @@ test('con kill switch no inicia sesión', async () => {
 
 test('los casos que ya estaban asignados no cuentan como nuevos', async () => {
   mock.assignChat('1234567890');
-  const r = await diagnostic().run('bandeja');
+  const t = diagnostic();
+  const r = await t.run('bandeja');
   expect(r.every((x) => x.ok)).toBe(true);
   expect(r[3]!.detail).not.toContain('ATENCIÓN');
   expect(r[4]!.detail).toBe('1 caso(s) asignado(s)');
+  await t.driver.close();
+});
+
+test('con casos asignados no puede salir: deja la ventana abierta (no abandona a los clientes)', async () => {
+  // 15/10/2026, ySocial real: entraron 2 casos en «disponible», «Salir» estaba oculto y el
+  // diagnóstico cerraba el navegador igual.
+  mock.assignChat('1234567890');
+  const t = diagnostic();
+  expect((await t.run('bandeja')).every((x) => x.ok)).toBe(true);
+  expect(t.logouts).toEqual([false]);
+  expect(t.driver.page.isClosed()).toBe(false);
+  expect(mock.sessions.size).toBe(1);
+  await t.driver.close();
 });

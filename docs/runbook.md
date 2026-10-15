@@ -394,6 +394,23 @@ En el PC del robot, con el usuario de Windows que lo va a correr:
 5. Con todo en `[OK]` y en el horario de piloto acordado con Claro: `%LOCALAPPDATA%\AbayaRobot\iniciar.cmd`.
    Para que arranque con Windows, **Reinstalar** en el panel e instalar sin `-SinArranqueAutomatico`.
 
+### 12.6 Horario de los robots y cómo detenerlos (D-026)
+
+- **Horario:** panel → **Robots** → «Horario de los robots» → **Cambiar horario** (solo ADMIN;
+  hora de Colombia, todos los días; «Siempre» = sin horario). Los robots lo toman en menos de un
+  minuto, sin reiniciar. `ROBOT_WORK_HOURS` en el `.env` del servidor es solo el valor inicial
+  mientras nadie lo haya guardado en el panel. Fuera de horario la ventana «Robot Abaya» queda abierta esperando, sin navegador; en el
+  panel el robot aparece Apagado. A la hora de fin pasa a FinTurno, termina sus chats, hace «Salir»
+  y espera al día siguiente. Si a los 30 min sigue con chats, alerta `SHIFT_END_PENDING`.
+- **Para que funcione solo todos los días:** instalar **sin** `-SinArranqueAutomatico` (arranca al
+  iniciar sesión en Windows) y pedir a TI el inicio de sesión automático del usuario del robot.
+- **Detener a mano en medio del turno:** en el Chromium del robot pasar a **Break** (no entran casos
+  nuevos), esperar la bandeja vacía y **Ctrl+C** en la ventana «Robot Abaya». ySocial no deja
+  «Salir» con casos asignados: con chats abiertos o cerrando con la X queda la sesión abierta (el
+  siguiente arranque diría `ALREADY_CONNECTED`) y los clientes asignados sin atender.
+- **Emergencia:** kill switch o **Pausar** en el panel (el robot deja de actuar al instante); el
+  supervisor reasigna los chats y desconecta al agente.
+
 ### 12.5 Publicar un paquete nuevo del robot
 
 Solo cuando cambia el código del robot (`apps/rpa`). En el equipo de desarrollo (el que tiene

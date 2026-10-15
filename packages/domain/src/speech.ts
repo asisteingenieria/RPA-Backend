@@ -3,6 +3,13 @@
  * el worker lo transcribe y el motor recibe el texto, como si el cliente lo hubiera escrito.
  */
 
+/**
+ * Texto con el que llega una nota de voz que el robot no descargó (hoy, en ySocial real, todas:
+ * la captura está pendiente). El worker la trata como nota de voz que no se pudo oír: responde
+ * la plantilla NOTA_DE_VOZ_ILEGIBLE (pedir que escriba), sin llamar al modelo (15/10/2026).
+ */
+export const AUDIO_PLACEHOLDER = '[audio]';
+
 /** Tope del archivo que acepta la pasarela (una nota de 2 min en Opus pesa unos 300 KB). */
 export const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 

@@ -1,4 +1,4 @@
-import { fingerprintInput, type InboundMessage } from '@abaya/domain';
+import { AUDIO_PLACEHOLDER, fingerprintInput, type InboundMessage } from '@abaya/domain';
 import { sha256, type FieldCipher } from '@abaya/crypto';
 import type { Logger } from '@abaya/logger';
 import { DirectInboundSink, type InboundSink } from '@abaya/robot-store';
@@ -121,7 +121,7 @@ export class InboundProcessor {
       fingerprint,
       // D-010: mientras el robot no descarga la nota de voz (captura pendiente), llega como
       // `[audio]`, igual que antes: el motor no recibe un mensaje vacío.
-      text: m.media && !m.text.trim() ? '[audio]' : m.text,
+      text: m.media && !m.text.trim() ? AUDIO_PLACEHOLDER : m.text,
       via,
       occurredAt: m.occurredAt,
     });

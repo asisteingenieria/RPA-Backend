@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  AUDIO_PLACEHOLDER,
   LlmProviderError,
   type AlertPort,
   type ConversationStatus,
@@ -87,7 +88,9 @@ export class TurnService {
     const customerTexts: string[] = [];
     let voiceUnreadable = false;
     for (const p of input.pending) {
-      if (!p.voice) customerTexts.push(p.text);
+      // Nota de voz que el robot no pudo descargar: se pide escribir, igual que una ilegible.
+      if (!p.voice && p.text.trim() === AUDIO_PLACEHOLDER) voiceUnreadable = true;
+      else if (!p.voice) customerTexts.push(p.text);
       else if (p.voice.status === 'OK' && p.text.trim()) customerTexts.push(asVoice(p.text));
       else voiceUnreadable = true;
     }

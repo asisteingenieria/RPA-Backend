@@ -31,6 +31,8 @@ export interface RemoteRobotConfig {
   mfaMode: 'none' | 'totp';
   totpSecret?: string;
   heartbeatMs: number;
+  /** Horario del robot (`07:00-22:00`); null o ausente (servidor anterior) = siempre. */
+  workHours?: string | null;
 }
 
 export class GatewayError extends Error {

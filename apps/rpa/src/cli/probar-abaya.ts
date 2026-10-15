@@ -135,7 +135,7 @@ try {
     alerts,
     logger: createLogger('rpa.actor'),
   });
-  const results = await new AbayaDiagnostic({
+  const { results, leftOpen } = await new AbayaDiagnostic({
     robotUser: abaya.robotUser,
     driver,
     actor,
@@ -151,10 +151,10 @@ try {
       console.log(
         ok
           ? '\nSesión cerrada en Abaya (Salir).'
-          : '\nATENCIÓN: no se pudo cerrar la sesión en Abaya. Ciérrela a mano (avatar → Salir) antes de volver a probar.',
+          : '\nATENCIÓN: no se pudo cerrar la sesión en Abaya (¿tiene casos asignados?). La ventana queda abierta.',
       ),
     keepOpen,
-  }).run(step);
+  }).runAndReport(step);
 
   const failed = results.find((r) => !r.ok);
   console.log(
@@ -163,11 +163,12 @@ try {
       : `\nTodo bien hasta «${step}».`,
   );
   exitCode = failed ? 1 : 0;
-  if (keepOpen) {
+  if (leftOpen) {
     console.log(
       '\nLa ventana del navegador queda abierta. Para terminar:\n' +
-        '  1. En Abaya cierre sesión: iniciales arriba a la derecha → ícono de apagado → ACEPTAR.\n' +
-        '  2. Cierre la ventana del navegador.\n' +
+        '  1. Si hay casos asignados, atiéndalos o transfiéralos (ySocial no deja salir con casos).\n' +
+        '  2. En Abaya cierre sesión: iniciales arriba a la derecha → ícono de apagado → ACEPTAR.\n' +
+        '  3. Cierre la ventana del navegador.\n' +
         'Si la cierra sin cerrar sesión, Abaya no dejará volver a entrar («ya se encuentra conectado»).',
     );
     await driver.waitUntilClosed();

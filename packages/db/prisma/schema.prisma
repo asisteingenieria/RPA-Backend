@@ -323,6 +323,14 @@ model AdminAuditLog {
   @@index([createdAt])
 }
 
+/// D-026: ajustes de operación que se cambian en el panel (p. ej. el horario de los robots).
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedBy String
+  updatedAt DateTime @updatedAt
+}
+
 enum AdminRole {
   ADMIN
   OPERADOR

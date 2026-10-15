@@ -555,6 +555,19 @@ describe('D-010: notas de voz', () => {
     expect(none.store.outboundTexts('v4').at(-1)).toBe(T.VOICE_UNREADABLE);
   });
 
+  it('nota de voz que el robot no descargó («[audio]»): pide escribir, sin llamar al modelo', async () => {
+    // 15/10/2026: en ySocial real el robot aún no descarga las notas: llegan como «[audio]».
+    const { store, svc, seen } = voiceSetup(new ScriptedSpeechAdapter());
+    await toOffer(store, svc, 'v7');
+    const calls = seen.length;
+    store.addInbound('v7', '[audio]');
+    await svc.handle('v7');
+    expect(seen.length).toBe(calls);
+    expect(store.outboundTexts('v7').at(-1)).toBe(T.VOICE_UNREADABLE);
+    expect(T.VOICE_UNREADABLE).toContain('escribes tu solicitud en texto');
+    expect(store.get('v7').stage).toBe('PERFIL');
+  });
+
   it('texto + nota que no se entiende: responde el texto y avisa de la nota', async () => {
     const { store, svc } = voiceSetup(new ScriptedSpeechAdapter());
     await toOffer(store, svc, 'v5');

@@ -8,7 +8,8 @@ import {
   type Robot,
 } from '@abaya/db';
 import { base32Decode, type FieldCipher } from '@abaya/crypto';
-import { robotPauseKey, type AlertPort } from '@abaya/domain';
+import { normalizeWorkHours, robotPauseKey, type AlertPort } from '@abaya/domain';
+import { readWorkHours, saveWorkHours } from '@abaya/robot-store';
 import { startOfBogotaDay } from '../admin/admin.service.js';
 import { ServiceError } from '../admin/errors.js';
 import type { FlagStore } from '../admin/flags.js';
@@ -34,6 +35,8 @@ export interface ChildSettings {
   nodeEnv: string;
   abayaBaseUrl?: string;
   heartbeatMs: number;
+  /** Horario de los robots (`ROBOT_WORK_HOURS`, hora de Colombia); sin él trabajan siempre. */
+  workHours?: string;
 }
 
 /**
@@ -462,7 +465,35 @@ export class RobotsService {
       mfaMode: robot.mfaMode as 'none' | 'totp',
       ...(robot.totpSecretEncrypted ? { totpSecret: decrypt(robot.totpSecretEncrypted) } : {}),
       heartbeatMs: this.child.heartbeatMs,
+      workHours: (await readWorkHours(this.prisma, this.child.workHours)).hours,
     };
+  }
+
+  // ---------- Horario de los robots (D-026) ----------
+
+  /** Horario vigente (panel o, si nadie lo guardó, `ROBOT_WORK_HOURS` del servidor). */
+  workHours() {
+    return readWorkHours(this.prisma, this.child.workHours);
+  }
+
+  /**
+   * Cambia el horario de todos los robots: `{ hours: '07:00-22:00' }` o `{ hours: null }` (siempre).
+   * Cada robot lo toma en menos de un minuto; si el turno nuevo ya terminó, cierra el suyo
+   * (pausa, termina sus chats y «Salir»).
+   */
+  async setWorkHours(actor: string, raw: unknown) {
+    if (raw !== null && typeof raw !== 'string') {
+      throw new ServiceError(400, 'hours debe ser «HH:MM-HH:MM» o null (siempre)');
+    }
+    let hours: string | null;
+    try {
+      hours = normalizeWorkHours(raw);
+    } catch (err) {
+      throw new ServiceError(400, err instanceof Error ? err.message : 'Horario inválido');
+    }
+    await saveWorkHours(this.prisma, hours, actor.slice(0, 60));
+    await this.audit(actor, 'ROBOT_WORK_HOURS_CHANGED', hours ?? 'siempre');
+    return this.workHours();
   }
 
   // ---------- Consulta (ambos roles) ----------

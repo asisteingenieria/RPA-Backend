@@ -4,6 +4,7 @@
 # - Si el robot se cae, lo reinicia a los 30 s.
 # - Código 3: el servidor rechazó este equipo (deshabilitado, duplicado, revocado): no reintenta.
 # - Código 4: hay una versión nueva preparada (pending.txt): la activa "a prueba".
+# - Código 5: horario (ROBOT_WORK_HOURS): terminó el turno o la espera; se vuelve a arrancar ya.
 # - Si la versión a prueba se cae dos veces en sus primeros 2 minutos, vuelve a la anterior
 #   (rollback.txt) y el robot lo informa al servidor.
 
@@ -59,6 +60,10 @@ while ($true) {
   $segundos = ((Get-Date) - $inicio).TotalSeconds
 
   if ($codigo -eq 0) { exit 0 }
+  if ($codigo -eq 5) {
+    Log 'Horario del robot: vuelve a arrancar (fuera de turno espera sin abrir Abaya).'
+    continue
+  }
   if ($codigo -eq 3) {
     Write-Host ''
     Write-Host 'El servidor indicó que este equipo no debe ejecutar el robot:'

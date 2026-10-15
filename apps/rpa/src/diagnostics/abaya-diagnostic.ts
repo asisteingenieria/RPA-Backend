@@ -61,6 +61,16 @@ export interface DiagnosticDeps {
   keepOpen?: boolean;
 }
 
+export interface DiagnosticRun {
+  results: StepResult[];
+  /**
+   * La ventana quedó abierta: con `keepOpen`, o porque no pudo hacer «Salir» (ySocial lo esconde
+   * con casos asignados: p. ej. entraron casos en el paso «disponible»). Quien llama espera a que
+   * la persona atienda los casos, salga de Abaya y cierre la ventana.
+   */
+  leftOpen: boolean;
+}
+
 const LOGIN_FAIL: Record<Exclude<LoginResult, 'OK'>, string> = {
   INVALID_CREDENTIALS: 'Abaya rechazó el usuario o la contraseña (revise el robot en el panel)',
   MFA_REQUIRED: 'Abaya pide doble factor y el robot no tiene ABAYA_TOTP_SECRET',
@@ -74,7 +84,12 @@ export class AbayaDiagnostic {
 
   /** Corre los pasos hasta `target` (incluido) y se detiene en el primero que falle. */
   async run(target: Step): Promise<StepResult[]> {
+    return (await this.runAndReport(target)).results;
+  }
+
+  async runAndReport(target: Step): Promise<DiagnosticRun> {
     const results: StepResult[] = [];
+    let leftOpen = !!this.d.keepOpen;
     try {
       for (const step of STEPS.slice(0, STEPS.indexOf(target) + 1)) {
         const start = Date.now();
@@ -90,15 +105,20 @@ export class AbayaDiagnostic {
         if (!r.ok) break;
       }
     } finally {
-      if (!this.d.keepOpen) {
+      if (!leftOpen) {
         // Si entró, «Salir» antes de cerrar: si no, el siguiente login no entra (ya conectado).
+        let out = true;
         if (results.some((r) => r.step === 'login' && r.ok)) {
-          this.d.onLogout?.(await this.d.driver.logout().catch(() => false));
+          out = await this.d.driver.logout().catch(() => false);
+          this.d.onLogout?.(out);
         }
-        await this.d.driver.close();
+        // Sin «Salir» (casos asignados) la ventana queda abierta: cerrarla dejaría a los clientes
+        // asignados a una sesión que nadie ve (15/10/2026, paso «disponible» en ySocial real).
+        if (out) await this.d.driver.close();
+        else leftOpen = true;
       }
     }
-    return results;
+    return { results, leftOpen };
   }
 
   private runStep(step: Step): Promise<{ ok: boolean; detail: string }> {

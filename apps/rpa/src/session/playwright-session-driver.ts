@@ -72,6 +72,11 @@ export class PlaywrightSessionDriver implements SessionDriver {
       .catch(() => undefined);
   }
 
+  /** Fin del turno: un relogin durante el cierre no vuelve a «Disponible». */
+  setGoAvailable(v: boolean): void {
+    this.opts.goAvailable = v;
+  }
+
   async isInboxVisible(): Promise<boolean> {
     if (!this._page || this._page.isClosed()) return false;
     return sel.session
@@ -108,7 +113,18 @@ export class PlaywrightSessionDriver implements SessionDriver {
     if (!(await avatar.isVisible().catch(() => false))) return false;
     try {
       await avatar.click({ timeout: 5_000 });
-      await sel.session.logout(page).click({ timeout: 5_000 });
+      const exit = sel.session.logout(page);
+      // ySocial esconde «Salir» con casos asignados: se rinde rápido y cierra el panel del perfil.
+      if (
+        !(await exit.waitFor({ state: 'visible', timeout: 3_000 }).then(
+          () => true,
+          () => false,
+        ))
+      ) {
+        await avatar.click({ timeout: 2_000 }).catch(() => undefined);
+        return false;
+      }
+      await exit.click({ timeout: 5_000 });
       const confirm = sel.session.logoutConfirm(page);
       await confirm
         .waitFor({ state: 'visible', timeout: 5_000 })
