@@ -102,7 +102,13 @@ export class SessionManager {
     clearInterval(this.timer);
     this.timer = undefined;
     // Como un asesor al terminar el turno: sin «Salir», ySocial no deja volver a entrar.
-    if (this.record.status === 'ACTIVE') await this.d.driver.logout().catch(() => false);
+    if (this.record.status === 'ACTIVE' && !(await this.d.driver.logout().catch(() => false))) {
+      // ySocial esconde «Salir» mientras hay casos asignados: la sesión queda abierta.
+      this.d.logger.warn(
+        { robotUser: this.d.robotUser },
+        'no se pudo hacer «Salir» en Abaya (¿chats asignados?): la sesión queda abierta',
+      );
+    }
     await this.d.driver.close();
   }
 

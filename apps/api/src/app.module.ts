@@ -65,6 +65,7 @@ const robots = new RobotsService(
     nodeEnv: cfg.NODE_ENV,
     abayaBaseUrl: cfg.ABAYA_BASE_URL,
     heartbeatMs: cfg.HEARTBEAT_INTERVAL_MS,
+    workHours: cfg.ROBOT_WORK_HOURS,
   },
   {
     maxChatsPerRobot: cfg.MAX_CHATS_PER_ROBOT,

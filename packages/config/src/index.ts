@@ -121,6 +121,15 @@ export const envSchema = z.object({
   LLM_FALLBACK_MODEL: optionalString,
   /** El robot recicla su navegador tras estas horas, solo con la bandeja vacía (0 = nunca). */
   BROWSER_RECYCLE_HOURS: z.coerce.number().min(0).default(6),
+  /**
+   * Horario de los robots, hora de Colombia (p. ej. `07:00-22:00`; vacío = siempre). Fuera de él
+   * el robot no abre Abaya; al terminar pasa a una pausa, cierra sus chats y hace «Salir».
+   */
+  ROBOT_WORK_HOURS: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/, 'use HH:MM-HH:MM, por ejemplo 07:00-22:00')
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   /** Cierre por inactividad del cliente (sección 6.6). */
   INACTIVITY_MINUTES: z.coerce.number().int().positive().default(120),
   /**

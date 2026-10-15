@@ -53,6 +53,10 @@ export const sel = {
      * está en el menú (al entrar es «Login»). Razones auxiliares 0 y 7 del mapa de pantallas.
      */
     pauses: ['Login', 'FinTurno'],
+    /** Pausa del fin del turno (horario del robot, 15/10/2026); si no está, `pauses`. */
+    shiftEnd: 'FinTurno',
+    /** Con chats abiertos ySocial deja la pausa pendiente: «Trabajando (Pend. Aux.)». */
+    pendingPause: /Pend\. ?Aux/i,
   },
 
   chatList: {

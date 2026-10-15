@@ -76,7 +76,11 @@ test('login inicial y storageState cifrado en disco', async () => {
 });
 
 test('detener hace «Salir» en Abaya y el siguiente arranque vuelve a entrar', async () => {
-  // ySocial real (15/10/2026): sin «Salir» el login dice «ya se encuentra conectado».
+  // ySocial real (15/10/2026): sin «Salir» el login dice «ya se encuentra conectado». Con la
+  // bandeja vacía: ySocial no deja salir con casos asignados.
+  await mock.stop();
+  mock = new MockAbayaServer({ chats: [] });
+  await mock.start();
   const a = await makeManager(mock);
   await a.mgr.start();
   await a.mgr.stop();

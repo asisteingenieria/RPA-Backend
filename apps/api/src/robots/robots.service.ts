@@ -34,6 +34,8 @@ export interface ChildSettings {
   nodeEnv: string;
   abayaBaseUrl?: string;
   heartbeatMs: number;
+  /** Horario de los robots (`ROBOT_WORK_HOURS`, hora de Colombia); sin él trabajan siempre. */
+  workHours?: string;
 }
 
 /**
@@ -462,6 +464,7 @@ export class RobotsService {
       mfaMode: robot.mfaMode as 'none' | 'totp',
       ...(robot.totpSecretEncrypted ? { totpSecret: decrypt(robot.totpSecretEncrypted) } : {}),
       heartbeatMs: this.child.heartbeatMs,
+      workHours: this.child.workHours ?? null,
     };
   }
 

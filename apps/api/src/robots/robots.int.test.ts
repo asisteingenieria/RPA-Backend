@@ -194,6 +194,8 @@ describe('alta e instalación de robots hijos', () => {
       password: 'Clave-Abaya-1',
       mfaMode: 'none',
       heartbeatMs: 30_000,
+      // Sin ROBOT_WORK_HOURS el robot trabaja siempre.
+      workHours: null,
     });
     expect(body).not.toMatch(/postgres|redis|DATABASE|ENCRYPTION/i);
     expect(body).not.toContain(KEY);

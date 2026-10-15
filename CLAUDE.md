@@ -245,6 +245,11 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
   Robot: `apps/rpa/src/update/updater.ts`; lanzador `apps/rpa/installer/iniciar.ps1` (versiones
   lado a lado y reversión automática); servidor: `ReleaseService` y botones en el panel.
 - Colas de acciones por robot: `abaya.outbound|transfer|close.<robotUser>`.
+- Horario y «Salir» (D-026): `ROBOT_WORK_HOURS` (servidor, hora de Colombia) llega al robot por
+  la pasarela; fuera de horario `main.ts` espera sin abrir Abaya y sale con `EXIT.SHIFT` (5, el
+  lanzador lo rearranca); al fin del turno `ShiftEnd` pasa a FinTurno, vacía la bandeja y apaga.
+  ySocial no cierra la sesión al cerrar el navegador (`ALREADY_CONNECTED`) y esconde «Salir» con
+  casos asignados: el robot hace `logout()` al detenerse y el diagnóstico no cierra la ventana con casos.
 - Trazas solo en error, cifradas, en `TRACE_DIR` (7 días); `decryptTrace` para verlas.
 - Alertas: logs + `ALERT_WEBHOOK_URL` (Slack/Teams), sin datos personales.
 - Capacidad (v1.5, sección 2.7 del plan): 3 chats por robot (`MAX_CHATS_PER_ROBOT`), fila del

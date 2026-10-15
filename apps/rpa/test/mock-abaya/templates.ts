@@ -148,7 +148,7 @@ export function inboxHtml(
   <div class="profile-menu" hidden>
     <!-- Como en ySocial real: el panel del perfil repite el avatar (dos img.user-image). -->
     <img class="user-image" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
-    <a class="button-profile col-xs-3" ng-click="navigation.signOut()">Salir</a>
+    <a class="button-profile col-xs-3" ng-hide="navigation.removeLogoutButton()" ng-click="navigation.signOut()">Salir</a>
   </div>
 </nav>
 <main id="main"></main>
@@ -426,7 +426,12 @@ function consoleScript(data: string): string {
     if (!t) return;
     const toggle = t.getAttribute('data-toggle');
     if (toggle === 'state') { $('.state-menu').hidden = !$('.state-menu').hidden; return; }
-    if (toggle === 'profile') { $('.profile-menu').hidden = !$('.profile-menu').hidden; return; }
+    if (toggle === 'profile') {
+      // ng-hide="navigation.removeLogoutButton()": sin «Salir» mientras hay casos asignados.
+      $('[ng-click="navigation.signOut()"]').hidden = !!document.querySelector('button.navigation-whatsapp');
+      $('.profile-menu').hidden = !$('.profile-menu').hidden;
+      return;
+    }
     if (toggle === 'finish') { t.parentElement.querySelector('.dropdown-menu').hidden = false; return; }
     const ng = t.getAttribute('ng-click') || '';
     if (ng === 'navigation.switchStates(state)') {
@@ -438,6 +443,8 @@ function consoleScript(data: string): string {
       return;
     }
     if (ng === 'navigation.signOut()') {
+      // Como ySocial real: con casos asignados no deja salir (ng-hide="removeLogoutButton()").
+      if (document.querySelector('button.navigation-whatsapp')) return;
       $('.profile-menu').hidden = true;
       $('[data-modal="signout"]').hidden = false;
       return;

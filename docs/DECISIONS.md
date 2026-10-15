@@ -1,5 +1,29 @@
 # Decisiones de diseño
 
+## D-026 · Horario de los robots y «Salir» de ySocial · APROBADA — implementada
+
+**Contexto (15/10/2026, primera instalación en el PC del robot).** En ySocial real: (1) cerrar el
+navegador no cierra la sesión del asesor: el siguiente login responde «El agente ya se encuentra
+conectado, no puede ingresar nuevamente»; (2) ySocial esconde «Salir» mientras el asesor tiene casos
+asignados (`ng-hide="navigation.removeLogoutButton()"`); (3) el paso `disponible` del diagnóstico
+recibió 2 casos reales y el diagnóstico cerró el navegador igual. El usuario pidió que los robots
+trabajen todos los días de 7 a. m. a 10 p. m.
+
+**Decisión.**
+
+1. «Salir» (iniciales → ícono de apagado → «Cierre de sesión» → ACEPTAR) al detener el robot, al
+   reciclar el navegador (con login nuevo: la sesión guardada no sirve) y al terminar `probar.cmd`.
+   Login rechazado por sesión abierta = `ALREADY_CONNECTED`, con mensaje claro.
+2. Nunca se cierra el navegador con casos asignados en el diagnóstico: queda abierto para atenderlos
+   (y `--dejar-abierto` lo pide a propósito).
+3. Horario `ROBOT_WORK_HOURS` en el servidor (hora de Colombia, p. ej. `07:00-22:00`; vacío =
+   siempre), entregado a cada robot por la pasarela. Fuera de horario el robot no abre Abaya y
+   espera. A la hora de fin pasa a **FinTurno** (con chats, ySocial lo deja «Trabajando (Pend.
+   Aux.)»), sigue atendiendo hasta vaciar la bandeja (a los 30 min con chats, alerta
+   `SHIFT_END_PENDING`; nunca abandona un chat por la hora), hace «Salir» y sale con el código 5;
+   el lanzador lo vuelve a arrancar y espera el día siguiente. El proceso queda siempre encendido:
+   no se usa el Programador de tareas de Windows.
+
 ## D-025 · Tipificación del cierre sin venta según la conversación · APROBADA — implementada
 
 **Contexto (15/10/2026).** En la grabación de la asesora (09/10/2026, pasos 120–137) un chat que no
