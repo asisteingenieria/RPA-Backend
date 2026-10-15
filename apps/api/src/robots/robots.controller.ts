@@ -53,6 +53,18 @@ export class RobotsController {
     return new StreamableFile(createReadStream(this.packageFile));
   }
 
+  /** D-026: horario de los robots (consulta: ambos roles). */
+  @Get('work-hours')
+  workHours() {
+    return this.robots.workHours();
+  }
+
+  @Patch('work-hours')
+  @Roles(['ADMIN'])
+  setWorkHours(@Body() body: { hours?: unknown }, @Req() req: AdminRequest) {
+    return toHttp(this.robots.setWorkHours(req.adminUser, body?.hours ?? null));
+  }
+
   @Get(':robotUser')
   detail(@Param('robotUser') robotUser: string, @Query('rango') rango?: string) {
     return toHttp(this.robots.detail(robotUser, parseRange(rango)));

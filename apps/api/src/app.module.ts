@@ -80,6 +80,7 @@ const gateway = new RobotGateway({
   redisUrl: cfg.REDIS_URL,
   alerts,
   traceDir: cfg.TRACE_DIR,
+  workHoursDefault: cfg.ROBOT_WORK_HOURS,
 });
 /** Lo que necesita el WebSocket de la pasarela (lo monta main.ts sobre el servidor HTTP). */
 export const hubDeps: HubDeps = {

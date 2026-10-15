@@ -17,6 +17,7 @@ import {
   PrismaSessionRepository,
   PrismaSweepRepository,
   RobotQueueConsumers,
+  readWorkHours,
   type ActionLog,
   type HandoffRepository,
   type InboundSink,
@@ -43,8 +44,11 @@ export interface RobotBackend {
   readonly abaya: AbayaConfig;
   readonly robotHost?: string;
   readonly browserRecycleHours: number;
-  /** Horario de trabajo (`07:00-22:00`, hora de Colombia); null = siempre. */
-  readonly workHours: string | null;
+  /**
+   * Horario vigente (`07:00-22:00`, hora de Colombia; null = siempre), D-026. Se cambia en el
+   * panel: el robot lo vuelve a consultar cada minuto.
+   */
+  workHours(): Promise<string | null>;
   /** Cifra lo que queda en el disco del equipo (sesión guardada de Abaya, trazas). */
   readonly localCipher: FieldCipher;
   readonly alerts: AlertPort;
@@ -91,7 +95,7 @@ export function createDirectBackend(env: NodeJS.ProcessEnv = process.env): Robot
     abaya,
     robotHost: cfg.ROBOT_HOST,
     browserRecycleHours: cfg.BROWSER_RECYCLE_HOURS,
-    workHours: cfg.ROBOT_WORK_HOURS ?? null,
+    workHours: async () => (await readWorkHours(prisma, cfg.ROBOT_WORK_HOURS)).hours,
     localCipher: cipher,
     alerts: alertsFromConfig(cfg, createLogger('rpa.alerts')),
     killSwitch,

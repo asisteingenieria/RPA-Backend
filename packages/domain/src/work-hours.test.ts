@@ -5,6 +5,7 @@ import {
   isWorkTime,
   msUntilEnd,
   msUntilStart,
+  normalizeWorkHours,
   parseWorkHours,
 } from './work-hours.js';
 
@@ -21,6 +22,11 @@ describe('horario del robot', () => {
     expect(() => parseWorkHours('7-22')).toThrow('HH:MM-HH:MM');
     expect(() => parseWorkHours('22:00-07:00')).toThrow('posterior');
     expect(() => parseWorkHours('07:00-24:00')).toThrow('inválido');
+  });
+
+  it('formato canónico para guardar', () => {
+    expect(normalizeWorkHours(' 7:30 - 21:45 ')).toBe('07:30-21:45');
+    expect(normalizeWorkHours('')).toBeNull();
   });
 
   it('usa la hora de Colombia, no la del equipo', () => {

@@ -8,7 +8,7 @@ import { createDirectBackend, getRobotBackend, setRobotBackend } from './backend
 import { AgentFile } from './child/agent-file.js';
 import { GatewayClient } from './child/gateway-client.js';
 import { EXIT, RobotRefusedError, onShutdownRequest, requestShutdown } from './lifecycle.js';
-import { formatMinute, msUntilStart, parseWorkHours } from './schedule/work-hours.js';
+import { msUntilStart, parseWorkHours } from './schedule/work-hours.js';
 
 const logger = createLogger('rpa');
 
@@ -46,27 +46,30 @@ try {
 }
 
 /**
- * Horario (15/10/2026): fuera del turno no se abre Abaya. Se espera a la hora de inicio y se sale
- * con EXIT.SHIFT: el lanzador vuelve a arrancar el robot enseguida, con conexión nueva.
+ * Horario (D-026): fuera del turno no se abre Abaya. Se vuelve a consultar cada minuto (se cambia
+ * en el panel) y, al llegar la hora de inicio, el robot sigue arrancando.
  */
 async function waitForShift() {
   const backend = getRobotBackend();
-  let wait: number;
-  let detail: Record<string, string>;
-  try {
-    const hours = parseWorkHours(backend?.workHours);
-    if (!hours) return;
-    wait = msUntilStart(hours, new Date());
-    detail = { inicio: formatMinute(hours.start), fin: formatMinute(hours.end) };
-  } catch (err) {
-    // Horario mal escrito en el servidor: no trabaja a ciegas; vuelve a mirar en 10 minutos.
-    logger.error({ err: err instanceof Error ? err.message : 'error' }, 'horario inválido');
-    wait = 10 * 60_000;
-    detail = {};
+  if (!backend) return;
+  let announced: string | null | undefined;
+  for (;;) {
+    let raw: string | null = null;
+    let wait: number;
+    try {
+      raw = await backend.workHours();
+      const hours = parseWorkHours(raw);
+      wait = hours ? msUntilStart(hours, new Date()) : 0;
+    } catch (err) {
+      // Sin respuesta del servidor (o un horario ilegible): no trabaja a ciegas; reintenta.
+      logger.warn({ err: err instanceof Error ? err.message : 'error' }, 'no se leyó el horario');
+      wait = 60_000;
+    }
+    if (wait <= 0) return;
+    if (raw !== announced) {
+      logger.info({ horario: raw }, 'fuera del horario: el robot espera sin abrir Abaya');
+      announced = raw;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(wait, 60_000)));
   }
-  if (wait <= 0) return;
-  logger.info(detail, 'fuera del horario: el robot espera la hora de inicio sin abrir Abaya');
-  await backend?.close().catch(() => undefined);
-  await new Promise((r) => setTimeout(r, wait));
-  process.exit(EXIT.SHIFT);
 }

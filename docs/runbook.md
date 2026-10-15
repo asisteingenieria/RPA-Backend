@@ -396,10 +396,10 @@ En el PC del robot, con el usuario de Windows que lo va a correr:
 
 ### 12.6 Horario de los robots y cómo detenerlos (D-026)
 
-- **Horario:** en el servidor, `ROBOT_WORK_HOURS=07:00-22:00` en `~/rpa/backend/.env` (hora de
-  Colombia; vacío = siempre) y `pm2 restart rpa-api --update-env`. Cada robot lo toma al arrancar
-  (para que uno en marcha lo tome: Ctrl+C en su ventana y `iniciar.cmd`, o esperar al fin del
-  turno). Fuera de horario la ventana «Robot Abaya» queda abierta esperando, sin navegador; en el
+- **Horario:** panel → **Robots** → «Horario de los robots» → **Cambiar horario** (solo ADMIN;
+  hora de Colombia, todos los días; «Siempre» = sin horario). Los robots lo toman en menos de un
+  minuto, sin reiniciar. `ROBOT_WORK_HOURS` en el `.env` del servidor es solo el valor inicial
+  mientras nadie lo haya guardado en el panel. Fuera de horario la ventana «Robot Abaya» queda abierta esperando, sin navegador; en el
   panel el robot aparece Apagado. A la hora de fin pasa a FinTurno, termina sus chats, hace «Salir»
   y espera al día siguiente. Si a los 30 min sigue con chats, alerta `SHIFT_END_PENDING`.
 - **Para que funcione solo todos los días:** instalar **sin** `-SinArranqueAutomatico` (arranca al

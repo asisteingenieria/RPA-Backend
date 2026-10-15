@@ -10,6 +10,7 @@ export * from './inbound.js';
 export * from './outbound.js';
 export * from './queues.js';
 export * from './speech.js';
+export * from './work-hours.js';
 export * from './usage.js';
 
 export const CONVERSATION_STATUSES = [

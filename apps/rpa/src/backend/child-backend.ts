@@ -188,7 +188,10 @@ export async function createChildBackend(
     abaya,
     robotHost: local.ROBOT_HOST,
     browserRecycleHours: local.BROWSER_RECYCLE_HOURS,
-    workHours: remote.workHours ?? null,
+    // Servidor anterior (sin «settings.workHours»): el horario que traía la configuración.
+    workHours: async () =>
+      ((await call('settings.workHours', {}).catch(() => remote.workHours ?? null)) as
+        string | null) ?? null,
     // Clave propia del equipo (DPAPI): la sesión de Abaya y las trazas pendientes no se abren
     // en otro equipo ni con la clave del servidor.
     localCipher: new FieldCipher((await agent.localKey()).toString('base64')),

@@ -17,7 +17,7 @@ import { robotHost, robotVersion } from './presence/instance.js';
 import { RobotPresence } from './presence/robot-presence.js';
 import { RecoveryService } from './recovery/recovery.service.js';
 import { ShiftEnd } from './schedule/shift-end.js';
-import { msUntilEnd, parseWorkHours } from './schedule/work-hours.js';
+import { isWorkTime, parseWorkHours } from './schedule/work-hours.js';
 import { InstallLayout, RobotUpdater } from './update/updater.js';
 import { EXIT_UPDATE, verifyRelease } from '@abaya/robot-store';
 import { existsSync, readFileSync } from 'node:fs';
@@ -230,7 +230,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       .then(async (status) => {
         if (status !== 'ACTIVE') return;
         await this.reconcile();
-        this.scheduleShiftEnd(backend, actor, driver);
+        this.watchShift(backend, actor, driver);
         // Versión nueva a prueba: se confirma tras 2 minutos en línea.
         const updater = this.updater;
         if (updater) {
@@ -251,35 +251,33 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Horario (15/10/2026): a la hora de fin, pausa de fin de turno, termina los chats y apagado
-   * ordenado («Salir»); el lanzador lo vuelve a arrancar y main.ts espera la hora de inicio.
+   * Horario (D-026): cada minuto mira el horario vigente (se cambia en el panel). Fuera de él:
+   * pausa de fin de turno, termina los chats y apagado ordenado («Salir»); el lanzador lo vuelve
+   * a arrancar y main.ts espera la hora de inicio.
    */
-  private scheduleShiftEnd(
-    backend: RobotBackend,
-    actor: BrowserActor,
-    driver: PlaywrightSessionDriver,
-  ) {
-    let hours;
-    try {
-      hours = parseWorkHours(backend.workHours);
-    } catch {
-      return; // main.ts ya no deja arrancar con un horario inválido
-    }
-    if (!hours) return;
-    const ms = msUntilEnd(hours, new Date());
-    this.timers.push(
-      setTimeout(() => {
-        driver.setGoAvailable(false); // un relogin durante el cierre no vuelve a «Disponible»
-        void new ShiftEnd({
-          robotUser: backend.abaya.robotUser,
-          actor,
-          alerts: backend.alerts,
-          logger: this.logger,
-        })
-          .run()
-          .then(() => requestShutdown(EXIT.SHIFT));
-      }, ms),
-    );
+  private watchShift(backend: RobotBackend, actor: BrowserActor, driver: PlaywrightSessionDriver) {
+    let ending = false;
+    const tick = async () => {
+      if (ending) return;
+      let hours;
+      try {
+        hours = parseWorkHours(await backend.workHours());
+      } catch {
+        return; // sin respuesta del servidor: sigue como estaba y vuelve a mirar en un minuto
+      }
+      if (!hours || isWorkTime(hours, new Date())) return;
+      ending = true;
+      driver.setGoAvailable(false); // un relogin durante el cierre no vuelve a «Disponible»
+      await new ShiftEnd({
+        robotUser: backend.abaya.robotUser,
+        actor,
+        alerts: backend.alerts,
+        logger: this.logger,
+      }).run();
+      requestShutdown(EXIT.SHIFT);
+    };
+    this.timers.push(setInterval(() => void tick(), 60_000));
+    void tick();
   }
 
   private startUpdater(updates: NonNullable<RobotBackend['updates']>, actor: BrowserActor) {

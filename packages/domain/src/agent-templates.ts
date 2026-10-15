@@ -613,8 +613,8 @@ export const DEFAULT_TEMPLATES: AgentTemplate[] = [
     'Sistema',
     'Nota de voz ilegible',
     'NOTA_DE_VOZ_ILEGIBLE',
-    'La envía el sistema si no pudo transcribir una nota de voz.',
-    'No pude escuchar bien tu nota de voz 🙏 ¿Me la escribes, por favor?',
+    'La envía el sistema cuando el cliente manda una nota de voz que no se puede escuchar o transcribir (con STT_PROVIDER=ninguno, todas): le pide con respeto escribir su solicitud.',
+    'Gracias por tu mensaje 🙏 Por este medio no podemos escuchar notas de voz. ¿Me escribes tu solicitud en texto, por favor?',
   ),
 ];
 

@@ -331,6 +331,62 @@ describe('permisos y pausa por robot', () => {
   });
 });
 
+describe('horario de los robots (D-026)', () => {
+  it('ADMIN lo cambia en el panel (validado y auditado), OPERADOR solo lo ve y llega al robot', async () => {
+    const admin = await session('admin.uno', 'ADMIN');
+    const op = await session('ana.ops', 'OPERADOR');
+    const patch = (body: unknown, cookie: string) =>
+      call('/admin/robots/work-hours', { method: 'PATCH', body: JSON.stringify(body) }, cookie);
+
+    let r = await call('/admin/robots/work-hours', {}, op);
+    expect(await r.json()).toMatchObject({ hours: null, source: 'SERVIDOR' });
+    expect((await patch({ hours: '07:00-22:00' }, op)).status).toBe(403);
+    expect((await patch({ hours: '22:00-07:00' }, admin)).status).toBe(400);
+    expect((await patch({ hours: 7 }, admin)).status).toBe(400);
+    r = await patch({ hours: ' 7:00 - 22:00 ' }, admin);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({
+      hours: '07:00-22:00',
+      source: 'PANEL',
+      updatedBy: 'admin.uno',
+    });
+
+    // El robot lo recibe al arrancar (configuración) y cada minuto por la pasarela.
+    const { enrollmentCode } = await createRobot(admin);
+    const { token } = (await (await enroll(enrollmentCode)).json()) as { token: string };
+    expect(((await (await config(token)).json()) as { workHours: string }).workHours).toBe(
+      '07:00-22:00',
+    );
+    const t = await post('/robot-api/v1/token', { refreshToken: token });
+    const { accessToken } = (await t.json()) as { accessToken: string };
+    const rpc = async () =>
+      (
+        (await (
+          await fetch(base + '/robot-api/v1/rpc', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ method: 'settings.workHours', params: {} }),
+          })
+        ).json()) as { result: string | null }
+      ).result;
+    expect(await rpc()).toBe('07:00-22:00');
+
+    // «Siempre» (null) también se guarda: no vuelve al valor del servidor.
+    expect(((await (await patch({ hours: null }, admin)).json()) as { hours: null }).hours).toBe(
+      null,
+    );
+    expect(await rpc()).toBeNull();
+    const audit = await db.prisma.adminAuditLog.findMany({
+      where: { action: 'ROBOT_WORK_HOURS_CHANGED' },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(audit.map((a) => [a.actor, a.target])).toEqual([
+      ['admin.uno', '07:00-22:00'],
+      ['admin.uno', 'siempre'],
+    ]);
+  });
+});
+
 describe('estado y rendimiento por equipo', () => {
   it('estado: en línea, sin señal, apagado y caído', async () => {
     const admin = await session('admin.uno', 'ADMIN');
