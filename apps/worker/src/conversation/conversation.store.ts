@@ -56,6 +56,8 @@ export interface TurnCommit {
   sale?: { process: string; planCode: string; summary: string; catalogVersionId?: string };
   /** 13/10/2026: datos del cliente tras el «SÍ»: se agregan al resumen de la venta al transferir. */
   saleDataNote?: string;
+  /** D-023: caso de servicio para el backoffice (no es una venta), con su resumen. */
+  serviceCase?: { kind: 'VALIDACION_PORTABILIDAD'; summary: string };
   /** v1.9: qué Brains, versiones y registros usó el turno (KnowledgeUsage, D-001 D7). */
   knowledge?: KnowledgeUsageRecord[];
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */

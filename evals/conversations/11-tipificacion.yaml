@@ -1,0 +1,38 @@
+# D-025 (15/10/2026): tipificación del cierre en ySocial cuando el chat no se transfiere.
+# Datos de clientes 100 % sintéticos.
+group: tipificacion
+cases:
+  - id: tip-sac-factura
+    # Opción C, pregunta por su factura: soporte y, si no quiere nada más, cierre como SAC Facturación.
+    turns: ['Hola', 'C', 'tengo una duda con mi factura de este mes', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_FACTURACION }
+  - id: tip-sac-cancelar-movil
+    # Opción D: cancelar su plan pospago móvil.
+    turns: ['Hola', 'D', 'quiero cancelar mi plan', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_CANCELACION_MOVIL }
+  - id: tip-sac-senal
+    turns: ['Hola', 'C', 'no tengo señal desde ayer', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_SOPORTE }
+  - id: tip-sac-roaming
+    # Como en la grabación: roaming internacional → Detalle plan móvil.
+    turns: ['Hola', 'C', 'necesito información de roaming para un viaje', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_DETALLE_MOVIL }
+  - id: tip-sac-linea-suspendida
+    turns: ['Hola', 'C', 'mi línea está suspendida', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_SOPORTE }
+  - id: tip-sac-datos-personales
+    turns: ['Hola', 'C', 'quiero actualizar mis datos personales', 'no gracias']
+    expect: { finalStage: SOPORTE, sale: false, closeTag: SAC_PQR }
+  - id: tip-no-venta-prepago
+    # Migración: prefiere seguir con recargas y no quiere el plan.
+    turns:
+      [
+        'Hola',
+        'B',
+        'redes sociales',
+        'WhatsApp',
+        'prefiero seguir en prepago',
+        'no, por ahora no me interesa, gracias',
+        'en serio no quiero nada',
+      ]
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false, closeTag: NO_VENTA_PREFIERE_PREPAGO }

@@ -7,6 +7,7 @@ import {
   outboundAad,
   profileAad,
   saleAad,
+  serviceCaseAad,
   type Stage,
 } from '@abaya/domain';
 import type { ChatTurnMessage, Profile } from '../engine/types.js';
@@ -123,6 +124,9 @@ export class PrismaConversationStore implements ConversationStore {
             data: {
               stage: t.stage,
               status: t.status,
+              // D-025: en claro (es una categoría, no un dato del cliente) para el cierre por
+              // inactividad, que no descifra el perfil.
+              closeTag: t.profile.closeTag ?? null,
               profileEncrypted: new Uint8Array(
                 this.cipher.encrypt(JSON.stringify(t.profile), profileAad(id)),
               ),
@@ -183,6 +187,17 @@ export class PrismaConversationStore implements ConversationStore {
                 planCode: t.sale.planCode,
                 catalogVersionId: t.sale.catalogVersionId ?? null,
                 summaryEncrypted: new Uint8Array(this.cipher.encrypt(t.sale.summary, saleAad(id))),
+              },
+            });
+          }
+          if (t.serviceCase) {
+            await tx.serviceCase.create({
+              data: {
+                conversationId: id,
+                kind: t.serviceCase.kind,
+                summaryEncrypted: new Uint8Array(
+                  this.cipher.encrypt(t.serviceCase.summary, serviceCaseAad(id)),
+                ),
               },
             });
           }

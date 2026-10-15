@@ -1,0 +1,12 @@
+# D-023 (14/10/2026): el cliente ya solicitó una portabilidad y pregunta si quedó.
+# Datos de clientes 100 % sintéticos.
+group: consulta_portabilidad
+cases:
+  - id: porta-consulta-sin-confirmacion
+    # No recibió la confirmación: datos y pasa al backoffice como caso de servicio (no es venta).
+    turns: ['Hola', 'Hola, solicité una portabilidad y no sé si ya quedó', 'No']
+    expect: { finalStage: TRANSFERENCIA, sale: false }
+  - id: porta-consulta-con-confirmacion
+    # Sí la recibió: no se puede verificar; canales de servicio al cliente y despedida.
+    turns: ['Hola', 'pedí una portabilidad la semana pasada, ¿ya quedó?', 'Sí, me llegó', 'no']
+    expect: { finalStage: SOPORTE, sale: false }

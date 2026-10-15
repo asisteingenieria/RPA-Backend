@@ -7,10 +7,15 @@ import {
 } from './agent-config.js';
 import {
   DEFAULT_FLOW,
+  isOtherOperator,
+  isOwnOperator,
+  isWorkUsage,
   menuForModel,
+  needsLineType,
   menuOptionsText,
   processForOption,
   reviewFlow,
+  routeByOperator,
   storedFlow,
   type AgentFlow,
 } from './agent-flow.js';
@@ -68,7 +73,7 @@ describe('D-015: flujo de la conversación en el panel', () => {
       asks: ['usage'],
       firstTemplate: null,
       imageOrder: 'CARGA',
-      sharedImages: 'SI_PIDE_PLATAFORMA',
+      sharedImages: 'SI_USO_LABORAL',
     });
     expect(f.processes.PORTABILIDAD).toEqual({
       ...DEFAULT_FLOW.processes.PORTABILIDAD,
@@ -81,15 +86,35 @@ describe('D-015: flujo de la conversación en el panel', () => {
     expect(DEFAULT_FLOW.processes.PORTABILIDAD.imageOrder).toBe('PROPIAS_PRIMERO');
     expect(DEFAULT_FLOW.processes.MIGRACION.imageOrder).toBe('PROPIAS_PRIMERO');
     expect(DEFAULT_FLOW.processes.LINEA_NUEVA.imageOrder).toBe('PRECIO');
-    // Compartidas: en Portabilidad y Migración solo si el cliente nombra lo que incluyen.
-    expect(DEFAULT_FLOW.processes.PORTABILIDAD.sharedImages).toBe('SI_PIDE_PLATAFORMA');
-    expect(DEFAULT_FLOW.processes.MIGRACION.sharedImages).toBe('SI_PIDE_PLATAFORMA');
+    // D-024: compartidas en Portabilidad y Migración solo con uso laboral.
+    expect(DEFAULT_FLOW.processes.PORTABILIDAD.sharedImages).toBe('SI_USO_LABORAL');
+    expect(DEFAULT_FLOW.processes.MIGRACION.sharedImages).toBe('SI_USO_LABORAL');
     expect(DEFAULT_FLOW.processes.LINEA_NUEVA.sharedImages).toBe('CON_LAS_DEMAS');
     const f = storedFlow({
       processes: { LINEA_NUEVA: { imageOrder: 'CARGA' }, MIGRACION: { imageOrder: 'X' } },
     });
     expect(f.processes.LINEA_NUEVA.imageOrder).toBe('CARGA');
     expect(f.processes.MIGRACION.imageOrder).toBe('PROPIAS_PRIMERO');
+  });
+
+  it('D-024: uso laboral reconocido por las palabras del flujo (no si va negado)', () => {
+    expect(isWorkUsage('trabajo', DEFAULT_FLOW)).toBe(true);
+    expect(isWorkUsage('Más que todo para cosas LABORALES', DEFAULT_FLOW)).toBe(true);
+    expect(isWorkUsage('para mi negocio y redes', DEFAULT_FLOW)).toBe(true);
+    expect(isWorkUsage('redes sociales', DEFAULT_FLOW)).toBe(false);
+    expect(isWorkUsage('no es para trabajo, es para redes', DEFAULT_FLOW)).toBe(false);
+    expect(isWorkUsage(undefined, DEFAULT_FLOW)).toBe(false);
+    expect(isWorkUsage('trabajo', { ...DEFAULT_FLOW, workUsageWords: [] })).toBe(false);
+    // Versiones anteriores sin la lista: la de la campaña; la lista guardada se respeta.
+    expect(storedFlow({}).workUsageWords).toEqual(DEFAULT_FLOW.workUsageWords);
+    expect(storedFlow({ workUsageWords: [' chamba ', 3, ''] }).workUsageWords).toEqual(['chamba']);
+    expect(reviewFlow({ ...DEFAULT_FLOW, workUsageWords: [] }, [])).toContainEqual({
+      message:
+        'uso laboral: sin palabras, las imágenes compartidas «solo si el uso es laboral» nunca se ofrecen',
+    });
+    expect(
+      reviewFlow({ ...DEFAULT_FLOW, workUsageWords: ['$99.900'] }, []).map((i) => i.message),
+    ).toContainEqual(expect.stringContaining('no es una palabra válida'));
   });
 
   it('revisión: menú sin texto, con cifras o sin venta; primera pregunta inexistente', () => {
@@ -176,5 +201,117 @@ describe('D-015: plantillas del sistema', () => {
       '¡Gracias, Ana! Te transfiero.',
     );
     expect(renderTemplate(tx, { agentName: 'Sofía', now })).toBe('¡Gracias! Te transfiero.');
+  });
+});
+
+describe('D-021: proceso según el operador del cliente', () => {
+  const flow = DEFAULT_FLOW;
+
+  it('reconoce el operador propio sin importar mayúsculas, tildes ni palabras de más', () => {
+    for (const s of ['Claro', 'claro', 'CLARO', 'de Claro', 'claro colombia', 'Claro!'])
+      expect(isOwnOperator(s, flow)).toBe(true);
+    for (const s of ['Movistar', 'Tigo', 'aclaro', undefined])
+      expect(isOwnOperator(s, flow)).toBe(false);
+    expect(isOtherOperator('Tigo', flow)).toBe(true);
+    expect(isOtherOperator('Claro', flow)).toBe(false);
+    expect(isOtherOperator('no sé', flow)).toBe(false);
+    expect(isOtherOperator('recargas', flow)).toBe(false);
+  });
+
+  it('A + Claro: falta el tipo de línea; prepago → migración, pospago → YA_POSPAGO', () => {
+    const p = { process: 'PORTABILIDAD' as const, currentOperator: 'Claro' };
+    expect(needsLineType(p, flow)).toBe(true);
+    expect(routeByOperator(p, flow)).toBeNull();
+    expect(routeByOperator({ ...p, lineType: 'PREPAGO' }, flow)).toEqual({ to: 'MIGRACION' });
+    expect(routeByOperator({ ...p, lineType: 'POSPAGO' }, flow)).toEqual({ postpaid: true });
+    expect(needsLineType({ ...p, currentOperator: 'Tigo' }, flow)).toBe(false);
+    expect(
+      routeByOperator({ ...p, currentOperator: 'Tigo', lineType: 'PREPAGO' }, flow),
+    ).toBeNull();
+  });
+
+  it('B + otro operador → portabilidad; B + Claro sigue en migración', () => {
+    expect(routeByOperator({ process: 'MIGRACION', currentOperator: 'Movistar' }, flow)).toEqual({
+      to: 'PORTABILIDAD',
+    });
+    expect(routeByOperator({ process: 'MIGRACION', currentOperator: 'Claro' }, flow)).toBeNull();
+    expect(routeByOperator({ process: 'LINEA_NUEVA', currentOperator: 'Tigo' }, flow)).toBeNull();
+  });
+
+  it('se apaga por partes desde el flujo', () => {
+    const off: AgentFlow = {
+      ...flow,
+      operatorRouting: {
+        ownNames: ['Claro'],
+        ownPrepaidTo: null,
+        ownPostpaid: 'SEGUIR',
+        otherOperatorTo: null,
+      },
+    };
+    const p = { process: 'PORTABILIDAD' as const, currentOperator: 'Claro' };
+    expect(needsLineType(p, off)).toBe(false);
+    expect(routeByOperator({ ...p, lineType: 'PREPAGO' }, off)).toBeNull();
+    expect(routeByOperator({ process: 'MIGRACION', currentOperator: 'Tigo' }, off)).toBeNull();
+  });
+
+  it('versiones guardadas sin la opción toman la de la campaña; null se respeta', () => {
+    expect(storedFlow({}).operatorRouting).toEqual(DEFAULT_FLOW.operatorRouting);
+    const s = storedFlow({
+      operatorRouting: { ownNames: [' Claro ', 7, ''], ownPrepaidTo: null, ownPostpaid: 'X' },
+    });
+    expect(s.operatorRouting).toEqual({
+      ownNames: ['Claro'],
+      ownPrepaidTo: null,
+      ownPostpaid: 'YA_POSPAGO',
+      otherOperatorTo: 'PORTABILIDAD',
+    });
+  });
+
+  it('la revisión rechaza caminos sin sentido y nombres inválidos', () => {
+    const bad: AgentFlow = {
+      ...flow,
+      operatorRouting: {
+        ownNames: ['Claro 20%'],
+        ownPrepaidTo: 'PORTABILIDAD',
+        ownPostpaid: 'YA_POSPAGO',
+        otherOperatorTo: 'MIGRACION',
+      },
+    };
+    const msgs = reviewFlow(bad, ['perfil-operador', 'perfil-uso', 'perfil-uso-directo']).map(
+      (i) => i.message,
+    );
+    expect(msgs.some((m) => m.includes('no es un nombre válido'))).toBe(true);
+    expect(msgs.some((m) => m.includes('no puede seguir en portabilidad'))).toBe(true);
+    expect(msgs.some((m) => m.includes('no puede seguir en migración'))).toBe(true);
+  });
+
+  it('D-022: plataforma pedida → ofrecer directo por defecto; se guarda PERFILAR', () => {
+    expect(DEFAULT_FLOW.platformRequest).toBe('OFRECER_DIRECTO');
+    expect(storedFlow({}).platformRequest).toBe('OFRECER_DIRECTO');
+    expect(storedFlow({ platformRequest: 'PERFILAR' }).platformRequest).toBe('PERFILAR');
+    expect(storedFlow({ platformRequest: 'OTRA' }).platformRequest).toBe('OFRECER_DIRECTO');
+  });
+
+  it('D-023: consulta de portabilidad → validar por defecto, con sus 4 plantillas del sistema', () => {
+    expect(DEFAULT_FLOW.portabilityInquiry).toBe('VALIDAR');
+    expect(storedFlow({}).portabilityInquiry).toBe('VALIDAR');
+    expect(storedFlow({ portabilityInquiry: 'SOPORTE' }).portabilityInquiry).toBe('SOPORTE');
+    expect(storedFlow({ portabilityInquiry: 'X' }).portabilityInquiry).toBe('VALIDAR');
+    for (const role of [
+      'PORTABILIDAD_CONFIRMACION',
+      'PORTABILIDAD_CONFIRMADA',
+      'PORTABILIDAD_VALIDAR',
+      'PORTABILIDAD_TRANSFERENCIA',
+    ] as const)
+      expect(systemTemplates(DEFAULT_TEMPLATES, role)).toHaveLength(1);
+    expect(systemTemplates(DEFAULT_TEMPLATES, 'PORTABILIDAD_VALIDAR')[0]!.text).toContain(
+      '{datos_faltantes}',
+    );
+  });
+
+  it('la plantilla del sistema YA_POSPAGO existe por defecto y ofrece la opción C', () => {
+    const t = DEFAULT_TEMPLATES.find((x) => x.role === 'YA_POSPAGO');
+    expect(t?.text).toContain('🅒 Ya tengo plan');
+    expect(systemTemplates(DEFAULT_TEMPLATES, 'YA_POSPAGO')).toHaveLength(1);
   });
 });

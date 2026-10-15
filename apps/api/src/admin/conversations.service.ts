@@ -1,12 +1,15 @@
 import { chainHash, sha256, type FieldCipher } from '@abaya/crypto';
 import { Prisma, utcParam, type ConversationStatus, type PrismaClient } from '@abaya/db';
 import {
+  CLOSE_TAG_INFO,
   DEFAULT_AGENT_CONFIG,
+  isCloseTag,
   consentAad,
   inboundAad,
   outboundAad,
   profileAad,
   saleAad,
+  serviceCaseAad,
   CONVERSATION_STATUSES,
   STAGES,
 } from '@abaya/domain';
@@ -485,11 +488,11 @@ export class ConversationsService {
     const c =
       (await this.prisma.conversation.findUnique({
         where: { id: ref },
-        include: { sale: true },
+        include: { sale: true, serviceCase: true },
       })) ??
       (await this.prisma.conversation.findUnique({
         where: { abayaChatId: ref },
-        include: { sale: true },
+        include: { sale: true, serviceCase: true },
       }));
     if (!c) throw new ConversationsError(404, 'Conversación no encontrada');
     const id = c.id;
@@ -660,7 +663,9 @@ export class ConversationsService {
             : e.payload.reason === 'SUPPORT'
               ? 'CLOSED_SUPPORT'
               : 'CLOSED_NO_SALE';
-        events.push({ at, kind });
+        // D-025: con qué tipificación se cerró en ySocial.
+        const tag = isCloseTag(e.payload.tag) ? CLOSE_TAG_INFO[e.payload.tag].name : undefined;
+        events.push({ at, kind, ...(tag ? { detail: tag } : {}) });
       }
     }
     if (c.sale?.transferredAt) {
@@ -749,6 +754,14 @@ export class ConversationsService {
             backofficeSummary: this.decrypt(c.sale.summaryEncrypted, saleAad(id)),
             transferredAt: iso(c.sale.transferredAt),
             internalNoteOk: c.sale.backofficeNoteOk,
+          }
+        : null,
+      // D-023: caso que pasó al backoffice sin ser una venta (validación de portabilidad).
+      serviceCase: c.serviceCase
+        ? {
+            kind: c.serviceCase.kind,
+            backofficeSummary: this.decrypt(c.serviceCase.summaryEncrypted, serviceCaseAad(id)),
+            transferredAt: iso(c.serviceCase.transferredAt),
           }
         : null,
       consent: consentOut,

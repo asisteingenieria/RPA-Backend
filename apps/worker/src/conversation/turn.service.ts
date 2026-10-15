@@ -210,7 +210,13 @@ export class TurnService {
         case 'TRANSFER_BACKOFFICE':
           commit.events.push(transferEvent(conversationId, input.abayaChatId, 'BACKOFFICE'));
           // 13/10/2026: los datos que dio el cliente tras el «SÍ» quedan en el resumen de la venta.
-          if (a.saleDataNote) commit.saleDataNote = a.saleDataNote;
+          if (a.serviceCase) {
+            // D-023: no hay venta: el resumen va en un caso de servicio que el backoffice recibe.
+            commit.serviceCase = {
+              kind: a.serviceCase,
+              summary: serviceCaseSummary(a.serviceCase, a.saleDataNote),
+            };
+          } else if (a.saleDataNote) commit.saleDataNote = a.saleDataNote;
           break;
         case 'ESCALATE':
           commit.events.push(transferEvent(conversationId, input.abayaChatId, 'HUMAN'));
@@ -222,6 +228,8 @@ export class TurnService {
               conversationId,
               abayaChatId: input.abayaChatId,
               reason: a.reason,
+              // D-025: la tipificación que eligió el modelo según la conversación (si hay).
+              ...(result.profile.closeTag ? { tag: result.profile.closeTag } : {}),
               afterMessageIds: OUTBOUND_IDS_PLACEHOLDER,
             },
           });
@@ -429,6 +437,18 @@ async function transcribeOne(
     );
     return failed;
   }
+}
+
+/** D-023: resumen del caso de servicio para el backoffice (sin datos en logs: va cifrado). */
+function serviceCaseSummary(kind: 'VALIDACION_PORTABILIDAD', data?: string): string {
+  const head =
+    kind === 'VALIDACION_PORTABILIDAD'
+      ? 'Validación de portabilidad: el cliente ya solicitó una portabilidad y no recibió la confirmación de su solicitud.'
+      : kind;
+  return data
+    ? `${head}
+${data}`
+    : head;
 }
 
 function transferEvent(

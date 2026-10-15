@@ -118,7 +118,8 @@ const out = (o: Partial<TurnOutput>): TurnOutput => ({
   reply: 'Claro, con gusto.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'ALTA',
   ...o,
 });
@@ -175,7 +176,7 @@ describe('documentos de los Brains en el turno', () => {
     const obeys = out({
       intent: 'DA_DATO',
       reply: 'Este plan cuesta $1.000 y es gratis.',
-      extracted: { name: null, currentOperator: null, usage: 'redes' },
+      extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
     });
     const llm = new ScriptedLlmAdapter([obeys, obeys]);
     const engine = new ConversationEngine({ llm, catalog: new MemoryCatalog(plans), knowledge });

@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AgentConfig, LlmPort } from '@abaya/domain';
-import { DEFAULT_AGENT_CONFIG, STAGES, renderTemplate } from '@abaya/domain';
+import { CLOSE_TAGS, DEFAULT_AGENT_CONFIG, STAGES, renderTemplate } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
@@ -46,6 +46,8 @@ const caseSchema = z.object({
       required: z.array(z.string()).optional(),
       /** v1.9: el bot mostró al menos una ficha con precio (y todos los precios son del catálogo). */
       pricesShown: z.boolean().optional(),
+      /** D-025: el chat se cerró sin transferir con esta tipificación. */
+      closeTag: z.enum(CLOSE_TAGS).optional(),
     })
     .strict(),
 });
@@ -254,7 +256,10 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
   for (const turn of c.turns) await say(turn);
   // D-013: tras el «SÍ» el robot pide los datos; el cliente de la prueba los manda (sintéticos)
   // para que el caso termine como en la vida real: finalizado y pasado al backoffice.
-  if (store.get(c.id).profile.dataRequested) await say(SYNTHETIC_CUSTOMER_DATA);
+  // D-023: igual con los datos para validar una portabilidad que el cliente ya solicitó.
+  const pending = store.get(c.id).profile;
+  if (pending.dataRequested || pending.portabilityCheck === 'DATA')
+    await say(SYNTHETIC_CUSTOMER_DATA);
 
   const conv = store.get(c.id);
   const sale = store.sales.length > 0;
@@ -281,6 +286,11 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     ) {
       failures.push(`falta la frase: "${r}"`);
     }
+  }
+  if (e.closeTag) {
+    const closed = store.events.filter((x) => x.type === 'ConversationClosed').at(-1);
+    const tag = closed?.payload.tag ?? (closed ? 'por defecto' : 'sin cierre');
+    if (tag !== e.closeTag) failures.push(`tipificación ${String(tag)} ≠ ${e.closeTag}`);
   }
   if (e.pricesShown && !transcript.some((m) => m.role === 'bot' && pricesIn(m.text).length)) {
     failures.push('no se mostró ninguna ficha con precio');

@@ -7,6 +7,7 @@ import { MemoryCatalog, readCatalogFile, SYNTHETIC_CATALOG } from '../catalog/ca
 import { ConversationEngine } from '../engine/conversation-engine.js';
 import type { TurnOutput } from '../engine/output-schema.js';
 import * as T from '../engine/templates/templates.js';
+import { heuristicBrain } from '../llm/adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from '../llm/adapters/scripted.adapter.js';
 import { ScriptedSpeechAdapter } from '../speech/from-config.js';
 import { VOICE_PREFIX } from '../engine/voice.js';
@@ -29,7 +30,8 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
   reply: 'Claro.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'ALTA',
   ...over,
 });
@@ -46,18 +48,18 @@ function fakeBrain(req: LlmRequest): TurnOutput {
       return base({
         intent: 'DA_DATO',
         reply: '¡Gracias! ¿Qué operador tienes hoy?',
-        extracted: { name: last.slice(4), currentOperator: null, usage: null },
+        extracted: { name: last.slice(4), currentOperator: null, lineType: null, usage: null },
       });
     if (last.startsWith('tengo '))
       return base({
         intent: 'DA_DATO',
         reply: '¿Y cómo usas más tu celular?',
-        extracted: { name: null, currentOperator: last.slice(6), usage: null },
+        extracted: { name: null, currentOperator: last.slice(6), lineType: null, usage: null },
       });
     return base({
       intent: 'DA_DATO',
       reply: 'Te recomiendo:\n{{OFERTA:P2}}\n¿Lo tomamos?',
-      extracted: { name: null, currentOperator: null, usage: last },
+      extracted: { name: null, currentOperator: null, lineType: null, usage: last },
     });
   }
   if (stage === 'OFERTA' && last.includes('quiero')) {
@@ -291,6 +293,23 @@ describe('TurnService: camino de venta completo (Abaya y LLM simulados)', () => 
     expect(store.events.at(-1)).toMatchObject({
       type: 'ConversationClosed',
       payload: { reason: 'SUPPORT' },
+    });
+  });
+
+  it('D-025: el cierre lleva la tipificación que eligió el modelo según la conversación', async () => {
+    // El cerebro de línea base tipifica por palabras clave (el modelo real lee la conversación).
+    const store = new MemoryConversationStore();
+    const engine = new ConversationEngine({ llm: new ScriptedLlmAdapter(heuristicBrain), catalog });
+    const svc = new TurnService({ store, engine, catalog, alerts, logger: silent });
+    store.create('c-tip');
+    await say(store, svc, 'c-tip', 'Hola');
+    await say(store, svc, 'c-tip', 'C');
+    await say(store, svc, 'c-tip', 'tengo una duda con mi factura');
+    await say(store, svc, 'c-tip', 'no gracias');
+    expect(store.get('c-tip').status).toBe('CLOSED_SUPPORT');
+    expect(store.events.at(-1)).toMatchObject({
+      type: 'ConversationClosed',
+      payload: { reason: 'SUPPORT', tag: 'SAC_FACTURACION' },
     });
   });
 
@@ -619,7 +638,7 @@ describe('D-014 fase 2: oferta con imágenes en conversaciones reales', () => {
         base({
           intent: 'DA_DATO',
           reply: 'Por el proceso de cambio de operador te puedo otorgar esta opción: {{IMAGENES}}',
-          extracted: { name: null, currentOperator: null, usage: 'redes' },
+          extracted: { name: null, currentOperator: null, lineType: null, usage: 'redes' },
         }),
       ]),
       catalog: fromImages,

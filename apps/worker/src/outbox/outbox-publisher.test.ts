@@ -47,6 +47,20 @@ describe('routeEvent', () => {
     ).toBe('abaya.close.robot-ventas-01');
   });
 
+  it('D-025: la tipificación viaja en el trabajo de cierre (una desconocida no)', () => {
+    const route = (tag: unknown) =>
+      routeEvent('ConversationClosed', {
+        conversationId: 'c',
+        abayaChatId: 'CH-1',
+        robotUser: 'r',
+        reason: 'NO_SALE',
+        tag,
+      })?.data as { tag?: string };
+    expect(route('NO_VENTA_MEJOR_OFERTA').tag).toBe('NO_VENTA_MEJOR_OFERTA');
+    expect(route('INVENTADA').tag).toBeUndefined();
+    expect(route(undefined).tag).toBeUndefined();
+  });
+
   it('un evento de acción sin robotUser es un error (no se adivina la cola)', () => {
     expect(() => routeEvent('ReplyReady', { messageId: 'm1', abayaChatId: 'CH-1' })).toThrow(
       /robotUser/,

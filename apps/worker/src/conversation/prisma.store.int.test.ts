@@ -53,7 +53,8 @@ const out = (over: Partial<TurnOutput>): TurnOutput => ({
   reply: 'Claro.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'ALTA',
   ...over,
 });
@@ -65,11 +66,14 @@ function brain(req: LlmRequest): TurnOutput {
     return out({
       intent: 'DA_DATO',
       reply: 'Te recomiendo:\n{{OFERTA:M1}}',
-      extracted: { name: 'Ana', currentOperator: null, usage: last },
+      extracted: { name: 'Ana', currentOperator: null, lineType: null, usage: last },
     });
   }
   if (stage === 'OFERTA')
     return out({ intent: 'ACEPTA_PLAN', planCode: 'M1', reply: '¡Excelente!' });
+  // D-023: en el menú, pregunta por una portabilidad que ya solicitó.
+  if (stage === 'MENU' && /portabilidad/i.test(last))
+    return out({ intent: 'CONSULTA_PORTABILIDAD', reply: 'Entiendo.' });
   return out({});
 }
 
@@ -313,6 +317,30 @@ describe('PrismaConversationStore + TurnService', () => {
       mediaEncrypted: null,
       transcriptStatus: 'FAILED',
     });
+  });
+
+  it('D-023: validación de portabilidad: caso de servicio cifrado al backoffice, sin venta', async () => {
+    const { conv, say } = await setup('CH-PORTA');
+    await say('Hola');
+    await say('Hola, solicité una portabilidad y no sé si ya quedó');
+    await say('No');
+    await say('1020304050 Ana María Pérez ana@correo.com');
+    const c = await db.prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+    expect(c.stage).toBe('TRANSFERENCIA');
+    expect(await db.prisma.sale.count()).toBe(0);
+    expect(await db.prisma.consentEvidence.count()).toBe(0);
+    const sc = await db.prisma.serviceCase.findUniqueOrThrow({
+      where: { conversationId: conv.id },
+    });
+    expect(sc).toMatchObject({ kind: 'VALIDACION_PORTABILIDAD', transferredAt: null });
+    const summary = cipher.decryptString(sc.summaryEncrypted, `service-case:${conv.id}`);
+    expect(summary).toContain('Validación de portabilidad');
+    expect(summary).toContain('Documento: 1020304050');
+    expect(summary).toContain('Correo: ana@correo.com');
+    const transfer = await db.prisma.outboxEvent.findFirstOrThrow({
+      where: { type: 'TransferRequested' },
+    });
+    expect(transfer.payload).toMatchObject({ target: 'BACKOFFICE' });
   });
 
   it('la cadena de consentimientos enlaza conversaciones distintas', async () => {

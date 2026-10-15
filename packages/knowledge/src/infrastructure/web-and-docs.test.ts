@@ -245,7 +245,9 @@ describe('TextExtractor', () => {
     );
   });
 
-  it('DOCX dañado → mensaje claro', async () => {
+  // La primera extracción de DOCX carga el lector de Word: con toda la suite en paralelo pasaba de
+  // los 5 s por defecto (falso rojo, no un error).
+  it('DOCX dañado → mensaje claro', { timeout: 20_000 }, async () => {
     await expect(x.extractText(new Uint8Array([0x50, 0x4b, 3, 4, 1]), 'docx')).rejects.toThrow(
       'documento de Word',
     );

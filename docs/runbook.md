@@ -278,3 +278,132 @@ antivirus). Resolver los avisos con TI antes de poner el equipo en producción.
 - **Si el servidor cae:** los robots dejan de actuar solos (falla cerrado) y nada se escribe en
   Abaya. Restaurar el último respaldo, levantar `postgres`, `redis`, `worker` y `api`; los robots
   se reconectan solos y reconcilian sus chats.
+
+## 12. Producción (servidor actual, desde el 14/10/2026)
+
+### 12.1 Cómo está montado
+
+- **Servidor** Linux en la red interna, `https://10.255.255.194` (el panel; los robots usan la
+  misma dirección). Usuario de sistema `tecnologia`.
+- **Código:** `~/rpa/backend` es un clon de `main` de `asisteingenieria/RPA-Backend` con una llave
+  de despliegue (`~/.ssh/rpa_deploy`, alias `github-rpa` en `~/.ssh/config`). Hoy la llave quedó
+  con permiso de **escritura**: pasarla a solo lectura en GitHub (Settings → Deploy keys: borrarla y
+  agregarla otra vez sin «Allow write access»; en el servidor no cambia nada).
+- **Procesos:** pm2 con `~/rpa/ecosystem.config.cjs`: `rpa-api` y `rpa-worker` (cada uno corre
+  `apps/<proceso>/dist/main.js` con `--env-file-if-exists=../../.env`). El `rpa` no corre en el
+  servidor: va en el PC del robot.
+- **Configuración:** `~/rpa/backend/.env` (permisos 600; nunca copiarlo ni pegarlo). Lleva
+  `ABAYA_BASE_URL=https://claro-co.ysocial.net/agent/`. `.secrets` está vacía en el servidor: la
+  clave privada de firma de paquetes **no** va ahí (queda en el equipo que arma los paquetes).
+- **nginx:** HTTPS con certificado autofirmado para la IP (`/etc/nginx/ssl/rpa.crt`, SAN
+  `IP:10.255.255.194`, vence el 15/01/2029). `/admin`, `/robot-api`, `/health` y `/panel` van a la
+  API (`127.0.0.1:3000`) con `Upgrade`/`Connection` para el WebSocket y `proxy_read_timeout 300s`
+  (el robot manda un latido cada 30 s). El resto es el panel `interfazRPA` (`~/rpa/frontend/dist`).
+- **Paquete del robot:** `~/rpa/backend/dist/robot-package/abaya-robot-windows.zip` y su
+  `.manifest.json` (versión `1.0.0+16b02c7.202610141527`). El panel → Robots debe decir «Firma
+  válida».
+- **Respaldos del 14/10/2026:** `~/rpa/backend-respaldo-2026-10-14.tar.gz` (el código antes de
+  pasarlo a clon) y `~/rpa/backend/.env.respaldo-2026-10-14`.
+
+### 12.2 Actualizar el servidor con lo último de `main`
+
+```bash
+cd ~/rpa/backend
+git pull
+pnpm install --frozen-lockfile
+pnpm db:generate
+pnpm build
+pnpm --filter @abaya/db run migrate:deploy
+pm2 restart rpa-api rpa-worker
+pm2 ls
+```
+
+- En el servidor **nunca** `pnpm db:migrate` (es `prisma migrate dev`, de desarrollo: puede
+  ofrecer borrar la base). En producción siempre `migrate:deploy`.
+- Ambos procesos deben quedar `online`. Si uno se reinicia en bucle: `pm2 logs rpa-api --lines 50
+--nostream --err`.
+- Cambiar el `.env`: respaldarlo (`cp .env .env.respaldo-$(date +%F)`), editar y
+  `pm2 restart rpa-api rpa-worker --update-env`.
+
+### 12.3 Pendiente de subir a producción (cambios del 14/10/2026)
+
+D-021 (proceso según el operador), D-022 (plataforma de video pedida), D-023 (consulta de
+portabilidad y tabla `ServiceCase`), D-024 (planes compartidos solo con uso laboral), D-025 (tipificación del cierre sin venta) y la corrección
+de «Probar agente» están en el repositorio local sin commit (y el panel `interfazRPA`, con el modo
+nuevo del flujo, también). Para llevarlos:
+
+1. Commit en una rama, push, PR hacia `main` con el CI en verde y merge.
+2. En el servidor, §12.2. Trae la migración `20261026000000_caso_servicio` (`migrate:deploy` debe
+   decir que la aplicó).
+3. Trae también la migración `20261027000000_tipificacion` (D-025). El paquete del robot **sí**
+   cambia con D-025 (el robot marca la etiqueta que eligió el modelo): `pnpm robot:package` en el
+   equipo que firma y publicarlo (§8). Un robot anterior sigue funcionando: ignora la
+   tipificación y cierra con la etiqueta por motivo.
+4. Agente: en el panel **local** exportar la v23 (Configuración → versiones → Exportar) e
+   importarla en producción (§8.c, D-019): queda como borrador → revisarla en «Probar agente» →
+   **Evaluar** (regla 13) → publicar. La v22 es el guion de la v21 más la regla de D-022 en OFERTA;
+   la v23 suma D-024 (guion y flujo: compartidas «Solo si el uso es laboral» en Portabilidad y
+   Migración). El flujo nuevo (D-021 a D-023) y sus plantillas del sistema toman lo de la campaña si
+   faltan.
+5. Probar en producción con «Probar agente»: `A` → `Claro` → `No` (debe ofrecer migración);
+   `hola quiero un plan con WIN` → `B` (la circular de WIN); `solicité una portabilidad y no sé si
+quedó` → `no` (pide los datos y transfiere como validación); `B` → `para el trabajo` → `WhatsApp`
+   (primero la imagen de 99.900, 75.900 y 65.900; «más barato» → las de migración) y `B` → `redes` →
+   `TikTok` (no aparecen los planes compartidos).
+
+### 12.4 Instalar el robot en el PC dedicado (pendiente)
+
+En el PC del robot, con el usuario de Windows que lo va a correr:
+
+1. **Confiar en el certificado del servidor** (autofirmado; Node.js no usa el almacén de Windows).
+   En una consola `cmd`:
+   ```
+   mkdir "%LOCALAPPDATA%\AbayaRobotCA"
+   scp tecnologia@10.255.255.194:/etc/nginx/ssl/rpa.crt "%LOCALAPPDATA%\AbayaRobotCA\servidor-rpa.crt"
+   setx NODE_EXTRA_CA_CERTS "%LOCALAPPDATA%\AbayaRobotCA\servidor-rpa.crt"
+   ```
+   Es el certificado **público**; la llave (`rpa.key`) nunca sale del servidor. Cerrar la consola y
+   abrir otra (la variable solo vale en consolas nuevas). Si se renueva el certificado del servidor,
+   repetir el `scp`.
+2. Panel de producción → Robots: el robot ya existe (usuario de Abaya, «Sin MFA»). Si el código de
+   instalación venció (24 h), **Reinstalar** para uno nuevo.
+3. Panel → **Descargar instalador**, descomprimir y, en una consola en esa carpeta:
+   ```
+   instalar.cmd -NoIniciar -SinArranqueAutomatico
+   ```
+   Servidor: `https://10.255.255.194` (sin `/robots` ni otra ruta). Código: el del panel.
+   `-NoIniciar` es obligatorio en la primera vez: sin él el robot entra a Abaya y se pone
+   Disponible (recibiría casos reales).
+4. Probar por pasos (§8.e), con el kill switch y la pausa del robot apagados en el panel:
+   ```
+   %LOCALAPPDATA%\AbayaRobot\probar.cmd url --ver
+   %LOCALAPPDATA%\AbayaRobot\probar.cmd login --ver
+   %LOCALAPPDATA%\AbayaRobot\probar.cmd estado --ver
+   %LOCALAPPDATA%\AbayaRobot\probar.cmd disponible --ver
+   %LOCALAPPDATA%\AbayaRobot\probar.cmd bandeja --ver
+   ```
+   `disponible` puede recibir un caso real: correrlo con poco tráfico. Una línea `[FALLA]` dice qué
+   selector no encontró (se ajusta en `selectors.ts`).
+5. Con todo en `[OK]` y en el horario de piloto acordado con Claro: `%LOCALAPPDATA%\AbayaRobot\iniciar.cmd`.
+   Para que arranque con Windows, **Reinstalar** en el panel e instalar sin `-SinArranqueAutomatico`.
+
+### 12.5 Publicar un paquete nuevo del robot
+
+Solo cuando cambia el código del robot (`apps/rpa`). En el equipo de desarrollo (el que tiene
+`.secrets/release-signing.key`), desde `main` actualizado:
+
+```
+pnpm install
+pnpm build
+pnpm robot:package -- --con-navegador
+```
+
+Si el equipo tiene poca memoria libre (el paso falla con exit 134), cerrar el `pnpm dev` o correr
+`$env:TURBO_CONCURRENCY=1` antes. Copiar los dos archivos al servidor:
+
+```powershell
+scp dist\robot-package\abaya-robot-windows.zip dist\robot-package\abaya-robot-windows.zip.manifest.json tecnologia@10.255.255.194:~/rpa/backend/dist/robot-package/
+```
+
+El panel → Robots debe mostrar la versión nueva con «Firma válida»; los robots se actualizan solos
+cuando no tienen chats (§10).

@@ -125,3 +125,21 @@ test('cierre sin venta: «Finalizar y cerrar el caso» con la etiqueta del motiv
   ]);
   await t.mgr.stop();
 });
+
+test('D-025: cierre sin venta con la tipificación que eligió el modelo', async () => {
+  const t = await boot(mock);
+  expect(
+    await t.processor.close({
+      conversationId: 'conv-4',
+      abayaChatId: '1002',
+      reason: 'NO_SALE',
+      tag: 'NO_VENTA_HOGAR_TYT',
+      afterMessageIds: [],
+    }),
+  ).toBe('DONE');
+  // La etiqueta lleva «&»: se marca por su nombre exacto en el árbol.
+  expect(mock.tags).toEqual([
+    { chatId: '1002', tags: ['No venta - Ecommerce Movil - Cliente interesado hogar -T&T'] },
+  ]);
+  await t.mgr.stop();
+});

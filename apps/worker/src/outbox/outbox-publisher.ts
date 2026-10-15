@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@abaya/db';
 import {
   QUEUES,
+  isCloseTag,
   robotQueue,
   type CloseJob,
   type OutboundJob,
@@ -72,6 +73,7 @@ export function routeEvent(
           conversationId: String(payload.conversationId),
           abayaChatId: String(payload.abayaChatId),
           reason: payload.reason as CloseJob['reason'],
+          ...(isCloseTag(payload.tag) ? { tag: payload.tag } : {}),
           afterMessageIds: (payload.afterMessageIds as string[] | undefined) ?? [],
         },
       };

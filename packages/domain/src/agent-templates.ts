@@ -42,6 +42,12 @@ export const TEMPLATE_ROLES = [
   'AUTORIZACION_POR_ESCRITO',
   'NOTA_DE_VOZ_ILEGIBLE',
   'DATOS_FALTANTES',
+  'YA_POSPAGO',
+  // D-023: consulta de una portabilidad ya solicitada.
+  'PORTABILIDAD_CONFIRMACION',
+  'PORTABILIDAD_CONFIRMADA',
+  'PORTABILIDAD_VALIDAR',
+  'PORTABILIDAD_TRANSFERENCIA',
 ] as const;
 export type TemplateRole = (typeof TEMPLATE_ROLES)[number];
 
@@ -63,6 +69,12 @@ export const SYSTEM_TEMPLATE_ROLES = [
   'AUTORIZACION_POR_ESCRITO',
   'NOTA_DE_VOZ_ILEGIBLE',
   'DATOS_FALTANTES',
+  'YA_POSPAGO',
+  // D-023: consulta de una portabilidad ya solicitada.
+  'PORTABILIDAD_CONFIRMACION',
+  'PORTABILIDAD_CONFIRMADA',
+  'PORTABILIDAD_VALIDAR',
+  'PORTABILIDAD_TRANSFERENCIA',
 ] as const satisfies readonly TemplateRole[];
 export type SystemTemplateRole = (typeof SYSTEM_TEMPLATE_ROLES)[number];
 
@@ -554,6 +566,47 @@ export const DEFAULT_TEMPLATES: AgentTemplate[] = [
     'DATOS_FALTANTES',
     'La envía el sistema después del «SÍ» si aún faltan datos del cliente para pasar la venta (lo que falta va en {datos_faltantes}).',
     '¡Gracias! Para finalizar tu solicitud me falta {datos_faltantes}. ¿Me lo compartes, por favor?',
+  ),
+  t(
+    'sistema-ya-pospago',
+    'Sistema',
+    'Ya es pospago',
+    'YA_POSPAGO',
+    'La envía el sistema si el cliente eligió cambiarse de operador pero ya tiene plan pospago con Claro (D-021). La conversación vuelve al menú: si elige una opción sigue el flujo; si no, despedida.',
+    'Veo que ya tienes un plan pospago con Claro 😊 Por eso no puedo ayudarte con un cambio de operador, ya que es solo para líneas de otros operadores. Si necesitas algo de tu plan, elige esta opción:\n🅒 Ya tengo plan: soporte, factura o cambio',
+  ),
+  // D-023: el cliente ya solicitó una portabilidad y pregunta si quedó.
+  t(
+    'portabilidad-confirmacion',
+    'Sistema',
+    '¿Recibiste la confirmación?',
+    'PORTABILIDAD_CONFIRMACION',
+    'La envía el sistema cuando el cliente pregunta por una portabilidad que ya solicitó (D-023). Su respuesta (sí o no) decide qué sigue.',
+    'Claro que sí, te ayudo a revisarlo 😊 ¿Ya recibiste la confirmación de tu solicitud de portabilidad?',
+  ),
+  t(
+    'portabilidad-confirmada',
+    'Sistema',
+    'Ya recibió la confirmación',
+    'PORTABILIDAD_CONFIRMADA',
+    'La envía el sistema si el cliente sí recibió la confirmación; después va la plantilla de soporte con los canales de atención.',
+    'Entiendo. Por este chat no puedo ayudarte a verificar el estado de tu portabilidad.',
+  ),
+  t(
+    'portabilidad-validar',
+    'Sistema',
+    'Validar la portabilidad',
+    'PORTABILIDAD_VALIDAR',
+    'La envía el sistema si el cliente no recibió la confirmación: le pide los datos (los que se eligen en «Flujo → Datos para pasar la venta») para validarla. Lo que se pide va en {datos_faltantes}.',
+    'No te preocupes, podemos validarlo 🙌 Para revisar tu solicitud compárteme {datos_faltantes}, por favor.',
+  ),
+  t(
+    'portabilidad-transferencia',
+    'Sistema',
+    'Transferir la validación',
+    'PORTABILIDAD_TRANSFERENCIA',
+    'La envía el sistema al pasar la validación de la portabilidad al backoffice, con los datos del cliente.',
+    '¡Gracias, {nombre_cliente}! Te transfiero con uno de nuestros asesores para validar tu solicitud de portabilidad. 🚀',
   ),
   t(
     'nota-de-voz-ilegible',

@@ -1,4 +1,5 @@
 import {
+  CLOSE_TAG_INFO,
   LlmProviderError,
   type AgentTestJob,
   type AgentTestResult,
@@ -172,9 +173,17 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
       });
     else if (a.type === 'CLOSE')
       events.push(
-        a.reason === 'SUPPORT' ? 'Chat cerrado (soporte *611)' : 'Chat cerrado sin venta',
+        (a.reason === 'SUPPORT' ? 'Chat cerrado (soporte *611)' : 'Chat cerrado sin venta') +
+          // D-025: la tipificación que pondría en ySocial (sin ella, la de siempre por motivo).
+          (r.profile.closeTag
+            ? ` · tipificación: ${CLOSE_TAG_INFO[r.profile.closeTag].name}`
+            : ' · tipificación por defecto'),
       );
     else if (a.type === 'NEEDS_REVIEW') events.push(`Pasaría a revisión humana: ${a.reason}`);
+    else if (a.type === 'TRANSFER_BACKOFFICE' && a.serviceCase)
+      events.push(
+        'Finalizar en Abaya: la validación de la portabilidad pasa al backoffice (no es una venta)',
+      );
     else if (a.type === 'ALERT')
       events.push('Alerta a supervisores: el cliente escribió una amenaza (la conversación sigue)');
     else if (a.type === 'LLM_OUTAGE')

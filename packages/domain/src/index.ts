@@ -4,6 +4,7 @@ export * from './agent-config.js';
 export * from './agent-export.js';
 export * from './agent-flow.js';
 export * from './agent-templates.js';
+export * from './close-tags.js';
 export * from './fingerprint.js';
 export * from './inbound.js';
 export * from './outbound.js';

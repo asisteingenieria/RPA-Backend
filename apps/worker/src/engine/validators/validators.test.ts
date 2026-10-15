@@ -31,7 +31,8 @@ const base = (over: Partial<TurnOutput> = {}): TurnOutput => ({
   reply: 'Claro, te cuento con gusto.',
   option: null,
   planCode: null,
-  extracted: { name: null, currentOperator: null, usage: null },
+  extracted: { name: null, currentOperator: null, lineType: null, usage: null },
+  tipificacion: null,
   confidence: 'ALTA',
   ...over,
 });

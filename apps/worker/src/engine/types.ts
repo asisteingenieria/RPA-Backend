@@ -1,4 +1,4 @@
-import type { Stage } from '@abaya/domain';
+import type { LineType, ModelCloseTag, Stage } from '@abaya/domain';
 import type { KnowledgeUsageRecord, PlanImageRef } from '@abaya/knowledge';
 
 export type SaleProcess = 'PORTABILIDAD' | 'MIGRACION' | 'LINEA_NUEVA';
@@ -13,6 +13,8 @@ export const INTENTS = [
   'NO_AUTORIZA',
   'NO_INTERESADO',
   'FUERA_DE_ALCANCE',
+  // D-023: en el menú, pregunta por una portabilidad que ya solicitó.
+  'CONSULTA_PORTABILIDAD',
 ] as const;
 export type Intent = (typeof INTENTS)[number];
 
@@ -24,7 +26,23 @@ export interface Profile {
   process?: SaleProcess;
   name?: string;
   currentOperator?: string;
+  /** D-021: su línea con el operador actual es prepago o pospago (lo dice el cliente). */
+  lineType?: LineType;
+  /** D-021: proceso que eligió en el menú, si el código lo corrigió por su operador. */
+  processChangedFrom?: SaleProcess;
   usage?: string;
+  /**
+   * D-023: preguntó por una portabilidad que ya solicitó. ASKED = se le preguntó si recibió la
+   * confirmación; DATA = no la recibió y se le pidieron los datos para validarla.
+   */
+  portabilityCheck?: 'ASKED' | 'DATA';
+  /** D-022: plataformas de video que pidió el cliente (ids separados por coma: «win,netflix»). */
+  platformRequested?: string;
+  /**
+   * D-022: se le ofrece directo lo que incluye la plataforma que pidió (sin perfilar): hay planes
+   * con ella en su proceso y el flujo lo pide.
+   */
+  platformOffer?: boolean;
   /** Plan aceptado (código validado contra el catálogo). */
   planCode?: string;
   /** Último plan ofrecido (para entender "ese", "el primero"). */
@@ -58,6 +76,13 @@ export interface Profile {
   /** v1.9: versión del catálogo (Brain) y hash del registro del plan aceptado (trazabilidad). */
   planCatalogVersionId?: string;
   planRecordHash?: string;
+  /** D-025: motivo para tipificar el cierre en ySocial si el chat no termina en venta. */
+  closeTag?: ModelCloseTag;
+  /**
+   * D-024: dijo que usará el plan para el trabajo (lo reconoce el código en el uso). Queda fijo:
+   * lo que conteste después (la red social) no lo cambia.
+   */
+  workUsage?: boolean;
   /** D-011: ya se le enviaron las imágenes de los planes de su proceso (una vez por conversación). */
   planImagesSent?: boolean;
   /** D-011: no aceptó el primero y ya recibió las imágenes de los demás planes. */
@@ -92,7 +117,12 @@ export type TurnAction =
   /** D-011: imagen de planes del catálogo publicado (caption solo en la primera). */
   | { type: 'SEND_IMAGE'; image: PlanImageRef; caption: string | null }
   /** 13/10/2026: con los datos del cliente tras el «SÍ» para el resumen de la venta. */
-  | { type: 'TRANSFER_BACKOFFICE'; saleDataNote?: string }
+  | {
+      type: 'TRANSFER_BACKOFFICE';
+      saleDataNote?: string;
+      /** D-023: no es una venta: caso de servicio para el backoffice (validar una portabilidad). */
+      serviceCase?: 'VALIDACION_PORTABILIDAD';
+    }
   | { type: 'CLOSE'; reason: 'SUPPORT' | 'NO_SALE' }
   | { type: 'ESCALATE' }
   | { type: 'NEEDS_REVIEW'; reason: string }

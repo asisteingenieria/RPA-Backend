@@ -1,3 +1,4 @@
+import type { CloseTag } from '@abaya/domain';
 import type { Locator, Page } from 'playwright';
 
 /**
@@ -108,6 +109,26 @@ export const sel = {
       NO_SALE: 'No venta -Ecommerce Movil Reglas de Negocio - Politicas',
       INACTIVE: 'No venta - Ecommerce Movil -Cliente abandona conversación',
     },
+    /**
+     * D-025: etiqueta de cada tipificación, tal como la muestra ySocial (grabación del 09/10/2026,
+     * árbol E-COMMERCE MOVIL). Si el modelo no tipificó, se usa la de `tags` por motivo.
+     */
+    closeTags: {
+      NO_VENTA_HOGAR_TYT: 'No venta - Ecommerce Movil - Cliente interesado hogar -T&T',
+      NO_VENTA_PREFIERE_PREPAGO: 'No venta - Ecommerce Movil - Cliente prefiere Prepago',
+      NO_VENTA_MEJOR_OFERTA: 'No venta - Ecommerce Movil - Mejor oferta otros operadores',
+      NO_VENTA_ABANDONA: 'No venta - Ecommerce Movil -Cliente abandona conversación',
+      SAC_CAMBIO_PLAN: 'SAC - Ecommerce Movil - Cambio de plan',
+      SAC_CANCELACION_HOGAR: 'SAC - Ecommerce Movil - Cancelacion Hogar',
+      SAC_CANCELACION_MOVIL: 'SAC - Ecommerce Movil - Cancelacion Movil',
+      SAC_PQR: 'SAC - Ecommerce Movil - Consulta - Radicacion PQR',
+      SAC_DEMORA_SIM: 'SAC - Ecommerce Movil - Demora entrega SIM CARD',
+      SAC_DETALLE_HOGAR: 'SAC - Ecommerce Movil - Detalle plan hogar',
+      SAC_DETALLE_MOVIL: 'SAC - Ecommerce Movil - Detalle plan movil',
+      SAC_FACTURACION: 'SAC - Ecommerce Movil - Facturacion',
+      SAC_PAGOS_RECARGAS: 'SAC - Ecommerce Movil - Pagos y recargas',
+      SAC_SOPORTE: 'SAC - Ecommerce Movil - Soporte',
+    } satisfies Record<CloseTag, string>,
   },
 
   session: {

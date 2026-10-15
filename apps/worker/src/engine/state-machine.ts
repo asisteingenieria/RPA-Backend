@@ -1,5 +1,6 @@
 import {
   DEFAULT_FLOW,
+  needsLineType,
   processForOption,
   type AgentFlow,
   type OutOfScopeStage,
@@ -21,7 +22,7 @@ export const TERMINAL_STAGES: ReadonlySet<Stage> = new Set([
 
 /** Intenciones aceptables en cada estado. Cualquier otra se rechaza (validador 5). */
 export const ALLOWED_INTENTS: Record<Stage, readonly Intent[]> = {
-  MENU: ['ELIGE_OPCION', 'PREGUNTA', 'NO_INTERESADO', 'FUERA_DE_ALCANCE'],
+  MENU: ['ELIGE_OPCION', 'PREGUNTA', 'NO_INTERESADO', 'FUERA_DE_ALCANCE', 'CONSULTA_PORTABILIDAD'],
   PERFIL: ['DA_DATO', 'PREGUNTA', 'OBJECION', 'NO_INTERESADO', 'FUERA_DE_ALCANCE'],
   OFERTA: ['PREGUNTA', 'OBJECION', 'ACEPTA_PLAN', 'NO_INTERESADO', 'DA_DATO', 'FUERA_DE_ALCANCE'],
   OBJECIONES: [
@@ -65,7 +66,13 @@ export function missingProfileFields(
   flow: AgentFlow = DEFAULT_FLOW,
 ): (keyof Profile)[] {
   if (!p.process) return ['process'];
-  return flow.processes[p.process].asks.filter((k) => !p[k]);
+  // D-022: pidió una plataforma de video que tienen los planes de su proceso: se le ofrece directo.
+  if (p.platformOffer) return [];
+  const missing: (keyof Profile)[] = flow.processes[p.process].asks.filter((k) => !p[k]);
+  // D-021: eligió cambiarse de operador y su operador es el propio: antes de ofrecer hay que saber
+  // si su línea es prepago (migración) o pospago (no aplica). Va primero: justo tras el operador.
+  if (needsLineType(p, flow)) missing.unshift('lineType');
+  return missing;
 }
 
 export interface TransitionInput {
