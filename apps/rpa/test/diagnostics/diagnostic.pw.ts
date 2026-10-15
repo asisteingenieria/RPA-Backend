@@ -27,7 +27,7 @@ test.afterEach(async () => {
   await mock.stop();
 });
 
-function diagnostic(opts: { password?: string } = {}) {
+function diagnostic(opts: { password?: string; keepOpen?: boolean } = {}) {
   const driver = new PlaywrightSessionDriver({
     baseUrl: mock.url,
     headless: true,
@@ -55,8 +55,9 @@ function diagnostic(opts: { password?: string } = {}) {
     actionLog,
     credentials: () => ({ username: mock.username, password: opts.password ?? mock.password }),
     onLogout: (ok) => logouts.push(ok),
+    keepOpen: opts.keepOpen,
   });
-  return { run: (s: Step) => diag.run(s), actionLog, killSwitch, logouts };
+  return { run: (s: Step) => diag.run(s), actionLog, killSwitch, logouts, driver };
 }
 
 test('todos los pasos: Disponible ida y vuelta, sin quedar recibiendo casos', async () => {
@@ -96,6 +97,21 @@ test('al terminar hace «Salir» en Abaya: se puede volver a probar enseguida', 
   const again = diagnostic();
   expect((await again.run('estado')).every((x) => x.ok)).toBe(true);
   expect(again.logouts).toEqual([true]);
+});
+
+test('--dejar-abierto: no hace «Salir» ni cierra; termina cuando la persona cierra la ventana', async () => {
+  const t = diagnostic({ keepOpen: true });
+  expect((await t.run('login')).every((x) => x.ok)).toBe(true);
+  expect(t.logouts).toEqual([]);
+  expect(mock.sessions.size).toBe(1);
+  expect(t.driver.page.isClosed()).toBe(false);
+  // La persona sale de Abaya a mano y cierra la ventana.
+  const closed = t.driver.waitUntilClosed();
+  expect(await t.driver.logout()).toBe(true);
+  expect(mock.sessions.size).toBe(0);
+  await t.driver.page.close();
+  await closed;
+  await t.driver.close();
 });
 
 test('sesión del asesor abierta en otro lado: ALREADY_CONNECTED con mensaje claro', async () => {

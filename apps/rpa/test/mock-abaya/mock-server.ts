@@ -197,7 +197,8 @@ export class MockAbayaServer {
       const body = JSON.parse((await readBody(req)) || '{}') as Record<string, string>;
       const otpOk = !this.opts.totpSecret || body.otp === totp(this.opts.totpSecret, new Date());
       if (body.username === this.username && body.password === this.password && otpOk) {
-        if (this.opts.singleSession && this.sessions.size > 0) return json(res, { Success: false }, 409);
+        if (this.opts.singleSession && this.sessions.size > 0)
+          return json(res, { Success: false }, 409);
         const sid = randomUUID();
         this.sessions.add(sid);
         this.agentState = 'Login';

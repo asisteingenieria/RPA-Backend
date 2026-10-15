@@ -91,6 +91,16 @@ export class PlaywrightSessionDriver implements SessionDriver {
     return available ? r : 'TIMEOUT';
   }
 
+  /** Resuelve cuando la persona cierra la ventana del navegador (`probar --dejar-abierto`). */
+  async waitUntilClosed(): Promise<void> {
+    const page = this._page;
+    if (!page || page.isClosed()) return;
+    await new Promise<void>((done) => {
+      page.once('close', () => done());
+      this.browser?.once('disconnected', () => done());
+    });
+  }
+
   async logout(): Promise<boolean> {
     const page = this._page;
     if (!page || page.isClosed()) return false;

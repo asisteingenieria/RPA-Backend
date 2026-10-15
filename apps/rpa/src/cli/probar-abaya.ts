@@ -2,11 +2,13 @@
 /**
  * Diagnóstico de Abaya por pasos (D-020, docs/runbook.md 8.e).
  *
- *   probar-abaya <paso> [--ver]
+ *   probar-abaya <paso> [--ver] [--dejar-abierto]
  *
  * Pasos: url · login · estado · disponible · bandeja (cada uno corre los anteriores).
  * `--ver` abre el navegador visible. Con robot.json (equipo robot) las credenciales llegan de
  * la pasarela del servidor, como al robot; sin él, del .env (modo directo, desarrollo).
+ * `--dejar-abierto` (implica `--ver`): al terminar no hace «Salir» ni cierra el navegador; el
+ * diagnóstico termina cuando la persona cierra la ventana (antes debe salir de Abaya a mano).
  * El robot no puede estar en línea al mismo tiempo: el diagnóstico lo reclama como el robot.
  */
 import 'reflect-metadata';
@@ -39,11 +41,15 @@ process.env.LOG_LEVEL = 'warn';
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const step = args.find((a) => !a.startsWith('--')) as Step | undefined;
-const visible = args.includes('--ver');
+const keepOpen = args.includes('--dejar-abierto');
+const visible = keepOpen || args.includes('--ver');
 if (!step || !STEPS.includes(step)) {
-  console.error('Uso: probar-abaya <paso> [--ver]\n');
+  console.error('Uso: probar-abaya <paso> [--ver] [--dejar-abierto]\n');
   for (const s of STEPS) console.error(`  ${s.padEnd(11)} ${STEP_HELP[s]}`);
   console.error('\nCada paso corre los anteriores. --ver muestra el navegador.');
+  console.error(
+    '--dejar-abierto deja la ventana abierta al terminar (usted cierra sesión y la cierra).',
+  );
   process.exit(2);
 }
 
@@ -147,6 +153,7 @@ try {
           ? '\nSesión cerrada en Abaya (Salir).'
           : '\nATENCIÓN: no se pudo cerrar la sesión en Abaya. Ciérrela a mano (avatar → Salir) antes de volver a probar.',
       ),
+    keepOpen,
   }).run(step);
 
   const failed = results.find((r) => !r.ok);
@@ -156,6 +163,17 @@ try {
       : `\nTodo bien hasta «${step}».`,
   );
   exitCode = failed ? 1 : 0;
+  if (keepOpen) {
+    console.log(
+      '\nLa ventana del navegador queda abierta. Para terminar:\n' +
+        '  1. En Abaya cierre sesión: iniciales arriba a la derecha → ícono de apagado → ACEPTAR.\n' +
+        '  2. Cierre la ventana del navegador.\n' +
+        'Si la cierra sin cerrar sesión, Abaya no dejará volver a entrar («ya se encuentra conectado»).',
+    );
+    await driver.waitUntilClosed();
+    await driver.close();
+    console.log('Ventana cerrada. Fin del diagnóstico.');
+  }
 } catch (err) {
   console.error(
     `\nNo se pudo correr el diagnóstico: ${err instanceof Error ? err.message : 'error'}`,

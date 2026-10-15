@@ -54,6 +54,11 @@ export interface DiagnosticDeps {
   onStep?: (r: StepResult) => void;
   /** Al final, si entró: true si cerró la sesión en Abaya («Salir»), false si no pudo. */
   onLogout?: (ok: boolean) => void;
+  /**
+   * `--dejar-abierto`: no hace «Salir» ni cierra el navegador; la persona mira la ventana, sale
+   * de Abaya a mano y la cierra (quien llama espera ese cierre).
+   */
+  keepOpen?: boolean;
 }
 
 const LOGIN_FAIL: Record<Exclude<LoginResult, 'OK'>, string> = {
@@ -85,11 +90,13 @@ export class AbayaDiagnostic {
         if (!r.ok) break;
       }
     } finally {
-      // Si entró, «Salir» antes de cerrar: si no, el siguiente login no entra (ya conectado).
-      if (results.some((r) => r.step === 'login' && r.ok)) {
-        this.d.onLogout?.(await this.d.driver.logout().catch(() => false));
+      if (!this.d.keepOpen) {
+        // Si entró, «Salir» antes de cerrar: si no, el siguiente login no entra (ya conectado).
+        if (results.some((r) => r.step === 'login' && r.ok)) {
+          this.d.onLogout?.(await this.d.driver.logout().catch(() => false));
+        }
+        await this.d.driver.close();
       }
-      await this.d.driver.close();
     }
     return results;
   }
