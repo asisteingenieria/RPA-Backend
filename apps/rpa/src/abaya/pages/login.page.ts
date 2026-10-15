@@ -38,8 +38,9 @@ export class LoginPage {
   /**
    * @mutating Solo desde SessionManager / BrowserActor.
    * Las credenciales nunca se registran ni se incluyen en errores (regla 7).
+   * Espera hasta 45 s: ySocial real muestra una barra de carga tras «Ingresar» (15/10/2026).
    */
-  async login(creds: LoginCredentials, timeoutMs = 15_000): Promise<LoginResult> {
+  async login(creds: LoginCredentials, timeoutMs = 45_000): Promise<LoginResult> {
     const p = this.page;
     await sel.login.username(p).fill(creds.username);
     await sel.login.password(p).fill(creds.password);

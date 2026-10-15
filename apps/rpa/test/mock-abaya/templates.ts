@@ -80,8 +80,11 @@ export function loginHtml(opts: { error?: string; mfa?: boolean; server?: boolea
 <body>
 <main class="login">
   <form name="login.form" novalidate autocomplete="off">
-    <div class="form-group"><input name="username" class="form-control loginFormInput" placeholder="Usuario"></div>
-    <div class="form-group"><input type="password" name="password" class="form-control loginFormInput" placeholder="Contraseña"></div>
+    <!-- Como en ySocial real: usuario y contraseña dentro del bloque «sin doble factor». -->
+    <div ng-if="!login.showTwoFactor">
+      <div class="form-group"><input name="username" class="form-control loginFormInput" placeholder="Usuario"></div>
+      <div class="form-group"><input type="password" name="password" class="form-control loginFormInput" placeholder="Contraseña"></div>
+    </div>
     ${opts.mfa ? '<div ng-if="login.showTwoFactor"><input name="otp" placeholder="Código" inputmode="numeric"></div>' : ''}
     <button class="btn btn-flat" type="submit">Ingresar</button>
   </form>

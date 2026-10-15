@@ -22,6 +22,14 @@ test.describe('LoginPage', () => {
     expect(r).toBe('INVALID_CREDENTIALS');
   });
 
+  test('sin doble factor: el bloque de usuario y contraseña (`!login.showTwoFactor`) no es MFA', async ({
+    page,
+  }) => {
+    // 15/10/2026, ySocial real: con `[ng-if*="showTwoFactor"]` este bloque daba «2 elements».
+    await page.setContent(loginHtml());
+    expect(await new LoginPage(page).requiresOtp()).toBe(false);
+  });
+
   test('pide MFA si hay campo de código y no se entregó', async ({ page }) => {
     await page.setContent(loginHtml({ mfa: true }));
     expect(await new LoginPage(page).login({ username: 'u', password: 'p' })).toBe('MFA_REQUIRED');
