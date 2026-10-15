@@ -904,10 +904,13 @@ export class ConversationEngine {
       merged.authorizationTextHash = sha256(legal);
       reply = [reply, auth.intro, legal].filter(Boolean).join('\n\n');
     }
+    // D-029: ySocial no envía un mensaje sin texto y cada mensaje lleva una sola imagen: las que
+    // siguen a la primera van con la plantilla PIE_IMAGEN.
+    const moreCaption = images.length > 1 ? T.systemText(agent, 'PIE_IMAGEN', merged.name) : null;
     const imageActions: TurnAction[] = images.map((image, i) => ({
       type: 'SEND_IMAGE',
       image,
-      caption: i === 0 ? caption : null,
+      caption: i === 0 ? caption : moreCaption,
     }));
     return {
       stage: to,

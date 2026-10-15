@@ -43,6 +43,8 @@ export const TEMPLATE_ROLES = [
   'NOTA_DE_VOZ_ILEGIBLE',
   'DATOS_FALTANTES',
   'YA_POSPAGO',
+  // D-029: ySocial exige texto en cada mensaje; pie de las imágenes que siguen a la primera.
+  'PIE_IMAGEN',
   // D-023: consulta de una portabilidad ya solicitada.
   'PORTABILIDAD_CONFIRMACION',
   'PORTABILIDAD_CONFIRMADA',
@@ -70,6 +72,8 @@ export const SYSTEM_TEMPLATE_ROLES = [
   'NOTA_DE_VOZ_ILEGIBLE',
   'DATOS_FALTANTES',
   'YA_POSPAGO',
+  // D-029: ySocial exige texto en cada mensaje; pie de las imágenes que siguen a la primera.
+  'PIE_IMAGEN',
   // D-023: consulta de una portabilidad ya solicitada.
   'PORTABILIDAD_CONFIRMACION',
   'PORTABILIDAD_CONFIRMADA',
@@ -615,6 +619,14 @@ export const DEFAULT_TEMPLATES: AgentTemplate[] = [
     'NOTA_DE_VOZ_ILEGIBLE',
     'La envía el sistema cuando el cliente manda una nota de voz que no se puede escuchar o transcribir (con STT_PROVIDER=ninguno, todas): le pide con respeto escribir su solicitud.',
     'Gracias por tu mensaje 🙏 Por este medio no podemos escuchar notas de voz. ¿Me escribes tu solicitud en texto, por favor?',
+  ),
+  t(
+    'pie-imagen-adicional',
+    'Sistema',
+    'Pie de imagen adicional',
+    'PIE_IMAGEN',
+    'La envía el sistema como texto de cada imagen de planes después de la primera del mismo turno: ySocial no deja enviar una imagen sin texto y cada mensaje lleva una sola imagen.',
+    'Te comparto también esta opción de planes 👇',
   ),
 ];
 

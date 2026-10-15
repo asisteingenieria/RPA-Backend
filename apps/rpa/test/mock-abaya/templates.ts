@@ -373,7 +373,8 @@ function consoleScript(data: string): string {
   async function send() {
     const ta = $('#textareaActAsChat');
     const text = ta.value;
-    if ((!text.trim() && !queue.length) || !shownCase) return;
+    // Como ySocial (actAsChatAddMessageToCase): sin texto no envía, aunque haya adjuntos (TEXT_REQUIRED).
+    if (!text.length || !shownCase) return;
     const files = queue;
     const spinner = $('.social-case-reply-as-chat-send-loading');
     spinner.hidden = false;

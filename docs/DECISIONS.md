@@ -1,6 +1,17 @@
 # Decisiones de diseño
 
-## D-028 · Enviar según el modo del asesor en ySocial y no enviar respuestas vencidas · APROBADA — implementada
+## D-029 · Cada imagen de planes con su propio texto · APROBADA — implementada
+
+**Contexto (15/10/2026).** En ySocial cada mensaje lleva una sola imagen y no se envía sin texto
+(`actAsChatAddMessageToCase`: `TEXT_REQUIRED`). Con {{IMAGENES}} ante una objeción el motor
+mandaba varias imágenes y solo la primera llevaba el texto del modelo: las demás no habrían salido.
+
+**Decisión.** La primera imagen sigue con el texto del turno; cada una de las siguientes lleva la
+plantilla del sistema **PIE_IMAGEN** («Te comparto también esta opción de planes 👇», editable en el
+panel, D-015; sin cifras). El robot no toca Abaya con una imagen sin texto: `FAILED` + alerta
+`SEND_IMAGE_NO_TEXT`. El Abaya simulado rechaza, como ySocial, los mensajes sin texto.
+
+Enviar según el modo del asesor en ySocial y no enviar respuestas vencidas · APROBADA — implementada
 
 **Contexto (15/10/2026, primera prueba con tráfico real, robot 46325302).** (1) El robot escribía
 la respuesta pero no salía: quedaba en la caja hasta que una persona pulsaba Enter (5 alertas

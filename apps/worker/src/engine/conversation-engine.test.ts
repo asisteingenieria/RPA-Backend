@@ -1131,6 +1131,48 @@ describe('D-014: catálogo desde imágenes, oferta solo con imágenes', () => {
     expect(dynamic).not.toContain('o en {{OFERTA:CODIGO}}');
   });
 
+  it('D-029: con varias imágenes en el turno, cada una lleva texto (ySocial no envía sin texto)', async () => {
+    const more = [...imgs, img('medio', ['PORTABILIDAD'], [card('38100', '60 GB', 65_900)])];
+    const { r } = await run(
+      'OFERTA',
+      { ...full, usage: 'redes', planImagesSent: true },
+      [out({ intent: 'OBJECION', reply: 'Entiendo, mira estas otras opciones {{IMAGENES}}' })],
+      { agent: conLasDemas, catalog: new MemoryCatalog(recordsFromImages(more), SOURCE, more) },
+    );
+    const sentImages = images(r);
+    expect(sentImages.length).toBeGreaterThan(1);
+    expect(sentImages[0]!.caption).toBe('Entiendo, mira estas otras opciones');
+    for (const a of sentImages.slice(1)) {
+      expect(a.caption).toBe('Te comparto también esta opción de planes 👇');
+    }
+    // Plantilla del panel (D-015): manda sobre la de la campaña.
+    const own: AgentConfig = {
+      ...conLasDemas,
+      templates: [
+        ...conLasDemas.templates.filter((t) => t.role !== 'PIE_IMAGEN'),
+        {
+          id: 'pie-propio',
+          group: 'Sistema',
+          title: 'Pie',
+          role: 'PIE_IMAGEN',
+          when: '',
+          text: 'Y esta otra 👇',
+        },
+      ],
+    };
+    const custom = await run(
+      'OFERTA',
+      { ...full, usage: 'redes', planImagesSent: true },
+      [out({ intent: 'OBJECION', reply: 'Mira {{IMAGENES}}' })],
+      { agent: own, catalog: new MemoryCatalog(recordsFromImages(more), SOURCE, more) },
+    );
+    expect(
+      images(custom.r)
+        .slice(1)
+        .every((a) => a.caption === 'Y esta otra 👇'),
+    ).toBe(true);
+  });
+
   it('una ficha de texto se regenera explicando que se ofrece con imágenes', async () => {
     const { r, llm } = await run('PERFIL', full, [
       out({

@@ -97,11 +97,24 @@ test('pega la imagen y sale con su pie de foto en un solo mensaje, en el caso co
       },
     ]);
 
-    // Las demás imágenes van sin texto: también se verifican (fila con adjunto y cuerpo vacío).
-    const rest = queue('3002', '');
+    // D-029: las demás imágenes llevan su propio texto (PIE_IMAGEN): una imagen por mensaje.
+    const rest = queue('3002', 'Te comparto también esta opción de planes 👇');
     expect(await actor.sendMessage(rest)).toBe('SENT_VERIFIED');
     expect(mock.agentPosts.at(-1)?.attachments).toHaveLength(1);
     expect(mock.chat('3002')!.messages.filter((m) => m.attachment)).toHaveLength(2);
+  } finally {
+    await mgr.stop();
+  }
+});
+
+test('D-029: imagen sin texto: no toca Abaya (ySocial la rechaza), FAILED con alerta', async () => {
+  const { mgr, actor, outbound, alerts, queue } = await boot();
+  try {
+    const id = queue('3002', '');
+    expect(await actor.sendMessage(id)).toBe('FAILED');
+    expect(outbound.messages.get(id)!.status).toBe('FAILED');
+    expect(mock.agentPosts).toHaveLength(0);
+    expect(alerts.raised.map((a) => a.code)).toContain('SEND_IMAGE_NO_TEXT');
   } finally {
     await mgr.stop();
   }
