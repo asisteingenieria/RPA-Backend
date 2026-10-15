@@ -141,6 +141,12 @@ try {
       ...(abaya.mfaMode === 'totp' && abaya.totpSecret ? { otp: totp(abaya.totpSecret) } : {}),
     }),
     onStep: print,
+    onLogout: (ok) =>
+      console.log(
+        ok
+          ? '\nSesión cerrada en Abaya (Salir).'
+          : '\nATENCIÓN: no se pudo cerrar la sesión en Abaya. Ciérrela a mano (avatar → Salir) antes de volver a probar.',
+      ),
   }).run(step);
 
   const failed = results.find((r) => !r.ok);

@@ -37,6 +37,7 @@ function run(actor: DiagnosticActor) {
       open: async () => undefined,
       page: {} as Page,
       login: async () => 'OK',
+      logout: async () => true,
       close: async () => undefined,
     },
     actor,

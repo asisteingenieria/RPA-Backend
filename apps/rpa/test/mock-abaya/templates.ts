@@ -105,7 +105,9 @@ export function loginHtml(opts: { error?: string; mfa?: boolean; server?: boolea
     });
     if (r.ok) { location.reload(); return; }
     const err = document.querySelector('.toast-error');
-    err.textContent = 'Usuario o contraseña incorrectos';
+    err.textContent = r.status === 409
+      ? 'El agente ya se encuentra conectado, no puede ingresar nuevamente.'
+      : 'Usuario o contraseña incorrectos';
     err.hidden = false;
   });
 })();
@@ -153,6 +155,11 @@ export function inboxHtml(
   <p>SMCC Web Agent</p>
   <div class="alert-info">TiendaOnLine - Usuario desbordado por opción de venta</div>
   <button class="btn btn-flat btn-action" type="button">ACEPTAR (<span class="button-progress-remaining">7</span>)</button>
+</div></div>
+
+<div class="modal" data-modal="signout" hidden><div class="modal-dialog">
+  <p>¿Desea salir de la aplicación?</p>
+  <button class="btn btn-flat btn-action" type="button" ng-click="signOutConfirm()">Aceptar</button>
 </div></div>
 
 <div class="modal" data-modal="confirm" hidden><div class="modal-dialog">
@@ -427,6 +434,12 @@ function consoleScript(data: string): string {
       return;
     }
     if (ng === 'navigation.signOut()') {
+      $('.profile-menu').hidden = true;
+      $('[data-modal="signout"]').hidden = false;
+      return;
+    }
+    if (ng === 'signOutConfirm()') {
+      $('[data-modal="signout"]').hidden = true;
       if (SERVER) void api('/services/agents/disconnect?id=1', {}).then(() => location.reload());
       return;
     }

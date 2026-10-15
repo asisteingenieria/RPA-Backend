@@ -28,6 +28,12 @@ export const sel = {
     submit: (p: Page) => p.getByRole('button', { name: /^ingresar$/i }),
     /** ❓ No se vio un error de login: ySocial avisa con toasts. */
     error: (p: Page) => p.locator('.toast-error, .alert-danger').first(),
+    /**
+     * ySocial no deja entrar si el asesor ya tiene una sesión abierta (15/10/2026, PC del robot:
+     * «El agente ya se encuentra conectado, no puede ingresar nuevamente»). Por texto: no se vio
+     * en qué elemento aparece.
+     */
+    alreadyConnected: (p: Page) => p.getByText(/ya se encuentra conectado/i).first(),
   },
 
   /** Estado del asesor (arriba a la derecha): «Login» al entrar, «Disponible», pausas… */
@@ -138,7 +144,10 @@ export const sel = {
   session: {
     /** Señal de sesión viva: el avatar del asesor en la barra superior. */
     inboxMarker: (p: Page) => p.locator('img.user-image'),
+    /** «Salir»: se abre con clic en el avatar (`inboxMarker`). */
     logout: (p: Page) => p.locator('a[ng-click="navigation.signOut()"]'),
+    /** Confirmación de «Salir» (ACEPTAR, sin la cuenta regresiva del aviso de caso nuevo). */
+    logoutConfirm: (p: Page) => p.getByRole('button', { name: /^aceptar$/i }),
   },
 
   /**

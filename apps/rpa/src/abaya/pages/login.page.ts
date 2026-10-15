@@ -8,7 +8,13 @@ export interface LoginCredentials {
   otp?: string;
 }
 
-export type LoginResult = 'OK' | 'INVALID_CREDENTIALS' | 'MFA_REQUIRED' | 'TIMEOUT';
+export type LoginResult =
+  | 'OK'
+  | 'INVALID_CREDENTIALS'
+  | 'MFA_REQUIRED'
+  /** El asesor ya tiene una sesión abierta en ySocial (otra ventana o un cierre sin «Salir»). */
+  | 'ALREADY_CONNECTED'
+  | 'TIMEOUT';
 
 export class LoginPage {
   constructor(private readonly page: Page) {}
@@ -52,12 +58,14 @@ export class LoginPage {
 
     const inbox = sel.session.inboxMarker(p);
     const error = sel.login.error(p);
+    const already = sel.login.alreadyConnected(p);
     try {
-      await inbox.or(error).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      await inbox.or(error).or(already).first().waitFor({ state: 'visible', timeout: timeoutMs });
     } catch {
       return 'TIMEOUT';
     }
     if (await inbox.isVisible()) return 'OK';
+    if (await already.isVisible()) return 'ALREADY_CONNECTED';
     if (await this.requiresOtp()) return 'MFA_REQUIRED';
     return 'INVALID_CREDENTIALS';
   }

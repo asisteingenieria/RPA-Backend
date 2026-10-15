@@ -101,26 +101,26 @@ export class SessionManager {
     this.stopped = true;
     clearInterval(this.timer);
     this.timer = undefined;
+    // Como un asesor al terminar el turno: sin «Salir», ySocial no deja volver a entrar.
+    if (this.record.status === 'ACTIVE') await this.d.driver.logout().catch(() => false);
     await this.d.driver.close();
   }
 
   /**
-   * Reciclaje del navegador (v1.5): guarda la sesión, cierra el proceso de Chromium y lo
-   * vuelve a abrir con la sesión guardada; si Abaya pide login, relogin normal. Debe llamarse
-   * como acción exclusiva del BrowserActor (`recycleIfIdle`), nunca en paralelo con otra.
+   * Reciclaje del navegador (v1.5): «Salir» en ySocial, cierra el proceso de Chromium y vuelve a
+   * entrar con un login nuevo. En ySocial real la sesión guardada no sirve al reabrir y, sin
+   * «Salir», el login responde «ya se encuentra conectado» (15/10/2026). Debe llamarse como
+   * acción exclusiva del BrowserActor (`recycleIfIdle`), nunca en paralelo con otra.
    */
   async recycle(): Promise<SessionStatus> {
     if (this.busy || this.stopped || this.record.status !== 'ACTIVE') return this.record.status;
     this.busy = true;
     this.d.gate.pause(RECYCLE_REASON);
     try {
-      const state = await this.d.driver.exportState();
-      await this.d.store.save(state);
+      await this.d.driver.logout().catch(() => false);
       await this.d.driver.close();
-      await this.d.driver.open(state);
-      if (await this.d.driver.isInboxVisible().catch(() => false)) {
-        this.record.lastHeartbeat = this.now();
-        await this.persist();
+      if ((await this.tryLogin()) === 'OK') {
+        await this.markActive(true);
         this.d.logger.info({ robotUser: this.d.robotUser }, 'navegador reciclado');
       } else {
         this.d.logger.warn({ robotUser: this.d.robotUser }, 'reciclado sin sesión; relogin');

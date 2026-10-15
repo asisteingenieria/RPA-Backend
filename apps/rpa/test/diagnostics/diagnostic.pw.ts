@@ -17,8 +17,9 @@ const silent = createLogger('e2e', { level: 'silent' });
 let mock: MockAbayaServer;
 
 test.beforeEach(async () => {
-  // Bandeja vacía (el simulador trae 2 casos de ejemplo por defecto).
-  mock = new MockAbayaServer({ chats: [] });
+  // Bandeja vacía (el simulador trae 2 casos de ejemplo por defecto) y, como ySocial real, una
+  // sola sesión del asesor a la vez.
+  mock = new MockAbayaServer({ chats: [], singleSession: true });
   await mock.start();
 });
 
@@ -45,6 +46,7 @@ function diagnostic(opts: { password?: string } = {}) {
     alerts: new MemoryAlertAdapter(),
     logger: silent,
   });
+  const logouts: boolean[] = [];
   const diag = new AbayaDiagnostic({
     robotUser: mock.username,
     driver,
@@ -52,8 +54,9 @@ function diagnostic(opts: { password?: string } = {}) {
     killSwitch,
     actionLog,
     credentials: () => ({ username: mock.username, password: opts.password ?? mock.password }),
+    onLogout: (ok) => logouts.push(ok),
   });
-  return { run: (s: Step) => diag.run(s), actionLog, killSwitch };
+  return { run: (s: Step) => diag.run(s), actionLog, killSwitch, logouts };
 }
 
 test('todos los pasos: Disponible ida y vuelta, sin quedar recibiendo casos', async () => {
@@ -82,6 +85,29 @@ test('el paso login no se pone Disponible', async () => {
   const r = await diagnostic().run('login');
   expect(r.every((x) => x.ok)).toBe(true);
   expect(mock.agentState).toBe('Login');
+});
+
+test('al terminar hace «Salir» en Abaya: se puede volver a probar enseguida', async () => {
+  // 15/10/2026, ySocial real: sin «Salir», el segundo probar.cmd decía «ya se encuentra conectado».
+  const t = diagnostic();
+  expect((await t.run('login')).every((x) => x.ok)).toBe(true);
+  expect(t.logouts).toEqual([true]);
+  expect(mock.sessions.size).toBe(0);
+  const again = diagnostic();
+  expect((await again.run('estado')).every((x) => x.ok)).toBe(true);
+  expect(again.logouts).toEqual([true]);
+});
+
+test('sesión del asesor abierta en otro lado: ALREADY_CONNECTED con mensaje claro', async () => {
+  mock.sessions.add('sesion-abierta-en-otro-equipo');
+  const t = diagnostic();
+  const r = await t.run('estado');
+  expect(r.map((x) => [x.step, x.ok])).toEqual([
+    ['url', true],
+    ['login', false],
+  ]);
+  expect(r[1]!.detail).toMatch(/^ALREADY_CONNECTED: .*Salir/);
+  expect(t.logouts).toEqual([]);
 });
 
 test('contraseña rechazada: se detiene en login y no sigue', async () => {
