@@ -5,6 +5,7 @@ import {
   ChatPage,
   FinishPage,
   LoginPage,
+  sameText,
 } from '../../src/abaya/pages/index.js';
 import { inboxHtml, loginHtml, sampleChats } from '../mock-abaya/templates.js';
 
@@ -98,7 +99,8 @@ test.describe('ChatPage', () => {
     await chat.typeMessage(text);
     await chat.clickSend();
     expect(await chat.waitForAgentMessage(text, 3_000)).toBe(true);
-    expect((await chat.lastAgentTexts(1))[0]).toBe(text);
+    // ySocial muestra la *negrita* sin asteriscos: se compara como la pantalla.
+    expect(sameText((await chat.lastAgentTexts(1))[0]!, text)).toBe(true);
   });
 
   test('waitForAgentMessage devuelve false si el mensaje no aparece', async ({ page }) => {

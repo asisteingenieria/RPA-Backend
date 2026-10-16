@@ -2,8 +2,20 @@ import type { InboundMessage, SenderType } from '@abaya/domain';
 import type { Page } from 'playwright';
 import { sel } from '../selectors.js';
 
-/** Espacios y saltos de línea no cuentan al comparar textos (la interfaz los puede reflujar). */
-const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
+/**
+ * Para comparar lo enviado con lo publicado: ySocial pinta los emojis como imágenes y el formato de
+ * WhatsApp (*negrita*, _cursiva_, ~tachado~) como etiquetas, y puede reflujar los espacios. No
+ * cuentan los espacios, las marcas de formato ni el selector de variante de los emojis.
+ */
+const normalize = (s: string) =>
+  s
+    .normalize('NFC')
+    .replace(/[\uFE0E\uFE0F]/g, '')
+    .replace(/[*_~]/g, '')
+    .replace(/\s+/g, '');
+
+/** ¿Es el mismo texto, tal como lo muestra ySocial? */
+export const sameText = (a: string, b: string) => normalize(a) === normalize(b);
 
 /** Cómo envía el asesor en ySocial (ver `sel.chat.sendModeService`). */
 export type SendMode = 'click' | 'enter' | 'both';
@@ -37,13 +49,25 @@ export class ChatPage {
           return {
             id: el.id.slice(cfg.prefix.length),
             sender: cls ? cfg.senders[cls as keyof typeof cfg.senders] : 'SYSTEM',
-            text: (el.querySelector(cfg.body) as HTMLElement | null)?.innerText ?? '',
+            text: (() => {
+              // Emojis: ySocial los pinta como <img class="emoji" alt="😀">; el texto es el alt.
+              const body = el.querySelector(cfg.body);
+              if (!body) return '';
+              const copy = body.cloneNode(true) as HTMLElement;
+              copy
+                .querySelectorAll(cfg.emoji)
+                .forEach((i) => i.replaceWith(i.getAttribute('alt') ?? ''));
+              copy.querySelectorAll(cfg.br).forEach((b) => b.replaceWith('\n'));
+              return copy.textContent ?? '';
+            })(),
           };
         }),
       {
         prefix: sel.chat.messageIdPrefix,
         senders: sel.chat.senderClasses,
         body: sel.chat.bodyCss,
+        emoji: sel.chat.emojiCss,
+        br: sel.chat.lineBreakCss,
       },
     );
     const now = new Date();
@@ -186,12 +210,23 @@ export class ChatPage {
             id: el.id.slice(cfg.prefix.length),
             agent: el.classList.contains('agent'),
             attach: el.classList.contains(cfg.attach),
-            text: (el.querySelector(cfg.body) as HTMLElement | null)?.innerText ?? '',
+            text: (() => {
+              const body = el.querySelector(cfg.body);
+              if (!body) return '';
+              const copy = body.cloneNode(true) as HTMLElement;
+              copy
+                .querySelectorAll(cfg.emoji)
+                .forEach((i) => i.replaceWith(i.getAttribute('alt') ?? ''));
+              copy.querySelectorAll(cfg.br).forEach((b) => b.replaceWith('\n'));
+              return copy.textContent ?? '';
+            })(),
           })),
         {
           prefix: sel.chat.messageIdPrefix,
           attach: sel.chat.attachRowClass,
           body: sel.chat.bodyCss,
+          emoji: sel.chat.emojiCss,
+          br: sel.chat.lineBreakCss,
         },
       )
       .catch(() => []);

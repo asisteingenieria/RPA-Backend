@@ -64,7 +64,7 @@ async function boot(mock: MockAbayaServer) {
     });
     return id;
   };
-  return { mgr, actor, outbound, actionLog, alerts, killSwitch, queue, gate };
+  return { mgr, actor, outbound, actionLog, alerts, killSwitch, queue, gate, driver };
 }
 
 let mock: MockAbayaServer;
@@ -261,4 +261,24 @@ test('modo de envío ilegible y usuario en «enter»: sale con Enter, sin segund
   } finally {
     await m.stop();
   }
+});
+
+// 15/10/2026: ySocial pinta los emojis como <img class="emoji" alt> y el *formato* como etiquetas;
+// el saludo salía pero quedaba UNCERTAIN y no corría la reactivación.
+test('mensaje con emojis, letras del menú y *negrita*: se verifica (SENT_VERIFIED)', async () => {
+  const t = await boot(mock);
+  const saludo =
+    '¡Hola! Con Claro lo puedes todo.\n💪📱Mi nombre es Sofía.\n\n🎄✨ ¡En esta Navidad! 🎅\n\n' +
+    '📲 Elige una de nuestras opciones:\n🅐 Cambiarme de operador\n🅑 Pasarme a pospago\n*Importante:* responde con la letra';
+  const id = t.queue('1001', saludo);
+  expect(await t.actor.sendMessage(id)).toBe('SENT_VERIFIED');
+  // El simulador sí pinta los emojis como imágenes (como ySocial).
+  const page = t.driver.page;
+  expect(await page.locator('span.body-text img.emoji').count()).toBeGreaterThan(5);
+  expect(await page.locator('span.body-text strong').count()).toBeGreaterThan(0);
+  // Un reintento (SENDING interrumpido) lo reconoce como ya enviado: no duplica.
+  t.outbound.messages.get(id)!.status = 'SENDING';
+  expect(await t.actor.sendMessage(id)).toBe('ALREADY_SENT');
+  expect(mock.agentPosts).toHaveLength(1);
+  await t.mgr.stop();
 });

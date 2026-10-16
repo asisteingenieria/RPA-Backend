@@ -2,7 +2,7 @@ import type { AlertPort, RpaAction, RpaActionResult } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 import type { Page } from 'playwright';
 import { ChatListPage } from '../abaya/pages/chat-list.page.js';
-import { ChatPage } from '../abaya/pages/chat.page.js';
+import { ChatPage, sameText } from '../abaya/pages/chat.page.js';
 import { FinishPage } from '../abaya/pages/finish.page.js';
 import { AgentStatePage } from '../abaya/pages/state.page.js';
 import type { ActionLog } from '../audit/action-log.js';
@@ -332,7 +332,7 @@ export class BrowserActor {
     // mismo texto antes (plantillas, respuestas cortas), es una respuesta nueva y se envía.
     if (msg.status === 'SENDING') {
       const recent = await chat.lastAgentTexts(this.d.idempotencyWindow ?? 3);
-      if (recent.includes(text.trim())) {
+      if (recent.some((r) => sameText(r, text))) {
         await this.d.outbound.setStatus(messageId, 'SENT_VERIFIED');
         await this.log('SEND', chatId, 'OK', start);
         return 'ALREADY_SENT';
