@@ -413,6 +413,10 @@ En el PC del robot, con el usuario de Windows que lo va a correr:
   siguiente arranque diría `ALREADY_CONNECTED`) y los clientes asignados sin atender.
 - **Emergencia:** kill switch o **Pausar** en el panel (el robot deja de actuar al instante); el
   supervisor reasigna los chats y desconecta al agente.
+- **Pausar para que un asesor termine un chat (D-031):** **Pausar** en el panel → Break en el
+  Chromium → el asesor termina los chats y, si quiere, hace «Salir». Mientras siga pausado el robot
+  no vuelve a entrar ni se pone Disponible (en su ventana: «robot en pausa»). **Reanudar** → entra
+  solo y se pone Disponible en menos de un minuto. No hace falta Ctrl+C ni reiniciar.
 
 ### 12.4.b Actualizar el panel (`interfazRPA`)
 

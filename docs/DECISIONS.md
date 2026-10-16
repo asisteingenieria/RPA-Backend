@@ -1,5 +1,17 @@
 # Decisiones de diseño
 
+## D-031 · Con el robot en pausa no vuelve a entrar a Abaya · APROBADA — implementada
+
+**Contexto (16/10/2026, pruebas con tráfico real).** Con el robot en pausa en el panel, el asesor
+terminaba la venta en el Chromium del robot y hacía «Salir»; el latido de la sesión veía la sesión
+cerrada y el robot volvía a entrar y se ponía Disponible solo (recibía casos nuevos) hasta Ctrl+C.
+Entrar a Abaya no revisaba el kill switch ni la pausa (regla 5).
+
+**Decisión.** `SessionManager` recibe `halted` (kill switch o pausa del robot) y, antes de cada
+intento de entrar, si está pausado espera (`HALT_POLL_MS`, 5 s) sin contar fallos; ante la duda,
+pausado. Al **Reanudar** en el panel vuelve a entrar, se pone Disponible y reconcilia los chats.
+También vale al arrancar: un robot que arranca pausado no entra a Abaya hasta que lo reanuden.
+
 ## D-030 · Verificar lo publicado como lo muestra ySocial (emojis y formato) · APROBADA — implementada
 
 **Contexto (15/10/2026, segunda prueba con tráfico real).** El saludo con el menú salió, pero quedó

@@ -8,6 +8,8 @@ import type { StorageStateStore } from './storage-state.store.js';
 
 export const DEFAULT_BACKOFF_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 export const MAX_CONSECUTIVE_FAILS = 3;
+/** Cada cuánto se revisa si el panel quitó la pausa o el kill switch antes de volver a entrar. */
+export const HALT_POLL_MS = 5_000;
 const GATE_REASON = 'session';
 const RECYCLE_REASON = 'browser-recycle';
 
@@ -28,6 +30,11 @@ export interface SessionManagerDeps {
   now?: () => Date;
   /** Reconciliación de chats tras recuperar la sesión (sección 6.1, paso 7; F7). */
   onRecovered?: () => Promise<void>;
+  /**
+   * Kill switch o pausa del robot en el panel (regla 5). Entrar a Abaya también es una acción: el
+   * robot entra y se pone Disponible solo, así que con la pausa puesta no vuelve a entrar.
+   */
+  halted?: () => Promise<boolean>;
 }
 
 /**
@@ -178,7 +185,19 @@ export class SessionManager {
     this.record.status = 'RELOGGING';
     await this.persist();
 
+    let noticed = false;
     while (!this.stopped) {
+      // Pausado (p. ej. el asesor terminó los chats e hizo «Salir»): espera a que lo reanuden.
+      if (await this.isHalted()) {
+        if (!noticed)
+          this.d.logger.info(
+            { robotUser: this.d.robotUser },
+            'robot en pausa: no entra a Abaya hasta que lo reanuden en el panel',
+          );
+        noticed = true;
+        await this.sleep(HALT_POLL_MS);
+        continue;
+      }
       // Al arrancar, el primer intento va sin espera; tras una caída, también el primero espera.
       const waitIdx = this.record.consecutiveFails - (reason === 'startup' ? 1 : 0);
       if (waitIdx >= 0) {
@@ -203,6 +222,12 @@ export class SessionManager {
       }
       await this.persist();
     }
+  }
+
+  /** Ante la duda, pausado (falla cerrado, como el kill switch). */
+  private async isHalted(): Promise<boolean> {
+    if (!this.d.halted) return false;
+    return this.d.halted().catch(() => true);
   }
 
   private async tryLogin(): Promise<LoginResult | 'ERROR'> {
