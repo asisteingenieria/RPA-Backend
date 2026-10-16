@@ -303,12 +303,22 @@ function consoleScript(data: string): string {
       '</ul></div></div>';
   }
 
+  // Como ySocial (grabación del 09/10/2026): cada emoji se pinta como <img class="emoji" alt="😀">
+  // y el formato de WhatsApp (*negrita*, _cursiva_) como etiquetas; el texto plano no lo trae.
+  function richText(s) {
+    return esc(s)
+      .replace(/\\*([^*\\n]+)\\*/g, '<strong>$1</strong>')
+      .replace(/(^|\\s)_([^_\\n]+)_(?=\\s|$)/g, '$1<em>$2</em>')
+      .replace(/(\\p{Extended_Pictographic}|[\\u{1F150}-\\u{1F169}])\\uFE0F?/gu, (e) =>
+        '<img class="emoji" draggable="false" alt="' + e + '" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">');
+  }
+
   function messagesHtml() {
     return messages.map((m) =>
       '<div id="divCaseConversationItem' + esc(m.id) + '" class="case-conversation-item msg-row ' + (m.sender === 'customer' ? 'client' : m.sender) + (m.attachment ? ' has-attach' : '') + '">' +
       '<div class="conversation-message">' +
       // Como ySocial: sin texto no se pinta el cuerpo (emptyBody).
-      (m.text || !m.attachment ? '<div class="contents"><div class="body"><span class="body-text">' + esc(m.text) + '</span></div></div>' : '') +
+      (m.text || !m.attachment ? '<div class="contents"><div class="body"><span class="body-text">' + richText(m.text) + '</span></div></div>' : '') +
       (m.attachment ? '<div class="attachments-preview"><div class="attachment-image"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div></div>' : '') +
       '<a class="date-case">' + hhmm(m.sentAt) + '</a></div></div>'
     ).join('');

@@ -82,6 +82,9 @@ export const sel = {
     /** Clase de la fila → remitente. */
     senderClasses: { client: 'CUSTOMER', agent: 'AGENT', system: 'SYSTEM' },
     bodyCss: 'span.body-text',
+    /** ySocial pinta cada emoji como imagen; el carácter va en `alt` (grabación del 09/10/2026). */
+    emojiCss: 'img.emoji',
+    lineBreakCss: 'br',
     input: (p: Page) => p.locator('#textareaActAsChat'),
     send: (p: Page) => p.locator('a.social-case-reply-as-chat-send'),
     /**

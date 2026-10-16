@@ -1,5 +1,17 @@
 # Decisiones de diseño
 
+## D-030 · Verificar lo publicado como lo muestra ySocial (emojis y formato) · APROBADA — implementada
+
+**Contexto (15/10/2026, segunda prueba con tráfico real).** El saludo con el menú salió, pero quedó
+`SEND_UNCERTAIN` («mensaje no apareció tras enviar») y por eso no corrió la reactivación (solo
+cuenta desde un mensaje verificado). ySocial pinta cada emoji como `<img class="emoji" alt="…">` y
+el formato de WhatsApp (`*negrita*`, `_cursiva_`) como etiquetas: el texto leído no traía los
+emojis ni los asteriscos y no coincidía con lo enviado.
+
+**Decisión.** `ChatPage` lee el cuerpo con el `alt` de cada emoji (`sel.chat.emojiCss`) y los saltos
+`<br>`; la comparación (`sameText`) ignora espacios, marcas de formato (`* _ ~`) y el selector de
+variante de los emojis. El Abaya simulado pinta emojis y formato como ySocial.
+
 ## D-029 · Cada imagen de planes con su propio texto · APROBADA — implementada
 
 **Contexto (15/10/2026).** En ySocial cada mensaje lleva una sola imagen y no se envía sin texto
