@@ -23,7 +23,12 @@ const cipher = new FieldCipher(randomBytes(32).toString('base64'));
 
 async function makeManager(
   mock: MockAbayaServer,
-  opts: { password?: string; dir?: string; totpSecret?: string } = {},
+  opts: {
+    password?: string;
+    dir?: string;
+    totpSecret?: string;
+    halted?: () => Promise<boolean>;
+  } = {},
 ) {
   const dir = opts.dir ?? (await mkdtemp(join(tmpdir(), 'abaya-e2e-')));
   const store = new EncryptedFileStorageStateStore(dir, mock.username, cipher);
@@ -49,6 +54,7 @@ async function makeManager(
     onRecovered: async () => {
       recovered++;
     },
+    ...(opts.halted ? { halted: opts.halted } : {}),
   });
   return { mgr, store, repo, alerts, gate, dir, recovered: () => recovered };
 }
@@ -103,6 +109,25 @@ test('si se cierra la sesión a mano, vuelve a entrar solo (< 1 min)', async () 
   await expect.poll(() => t.mgr.status, { timeout: 60_000 }).toBe('ACTIVE');
   expect(Date.now() - lostAt).toBeLessThan(60_000);
   await expect.poll(() => t.recovered(), { timeout: 10_000 }).toBe(1);
+  expect(t.gate.isOpen()).toBe(true);
+  await t.mgr.stop();
+});
+
+test('pausado en el panel: tras «Salir» no vuelve a entrar ni se pone Disponible hasta reanudar', async () => {
+  let paused = false;
+  const t = await makeManager(mock, { halted: async () => paused });
+  await t.mgr.start();
+  paused = true;
+  mock.expireAllSessions(); // el asesor terminó los chats e hizo «Salir»
+
+  // Varios latidos (500 ms) con la pausa puesta: no intenta entrar.
+  await new Promise((r) => setTimeout(r, 3_000));
+  expect(mock.loginAttempts).toBe(1);
+  expect(t.gate.isOpen()).toBe(false);
+
+  paused = false; // «Reanudar» en el panel
+  await expect.poll(() => mock.loginAttempts, { timeout: 30_000, intervals: [250] }).toBe(2);
+  await expect.poll(() => t.mgr.status, { timeout: 30_000 }).toBe('ACTIVE');
   expect(t.gate.isOpen()).toBe(true);
   await t.mgr.stop();
 });

@@ -5,7 +5,7 @@ import type { LoginCredentials, LoginResult } from '../abaya/pages/login.page.js
 import { ActorGate } from '../actor/actor-gate.js';
 import { MemoryAlertAdapter } from '@abaya/alerts';
 import type { SessionDriver } from './session-driver.js';
-import { SessionManager } from './session-manager.js';
+import { HALT_POLL_MS, SessionManager } from './session-manager.js';
 import { MemorySessionRepository } from './session.repository.js';
 import { MemoryStorageStateStore, type StorageState } from './storage-state.store.js';
 
@@ -49,7 +49,13 @@ class FakeDriver implements SessionDriver {
   }
 }
 
-function setup(over: Partial<{ driver: FakeDriver; store: MemoryStorageStateStore }> = {}) {
+function setup(
+  over: Partial<{
+    driver: FakeDriver;
+    store: MemoryStorageStateStore;
+    halted: (sleeps: number[]) => Promise<boolean>;
+  }> = {},
+) {
   const driver = over.driver ?? new FakeDriver();
   const store = over.store ?? new MemoryStorageStateStore();
   const repo = new MemorySessionRepository();
@@ -84,6 +90,7 @@ function setup(over: Partial<{ driver: FakeDriver; store: MemoryStorageStateStor
     onRecovered: async () => {
       recovered++;
     },
+    ...(over.halted ? { halted: () => over.halted!(sleeps) } : {}),
   });
   return { mgr, driver, store, repo, alerts, gate, sleeps, logs, recovered: () => recovered };
 }
@@ -147,6 +154,54 @@ describe('SessionManager', () => {
     expect(t.mgr.status).toBe('ACTIVE');
     expect(t.gate.isOpen()).toBe(true);
     expect(t.recovered()).toBe(1);
+    await t.mgr.stop();
+  });
+
+  it('pausado en el panel: si el asesor hace «Salir», no vuelve a entrar hasta reanudar', async () => {
+    // Pausado durante dos revisiones; a la tercera el panel ya lo reanudó.
+    const polls = (sleeps: number[]) => sleeps.filter((ms) => ms === HALT_POLL_MS).length;
+    let paused = false;
+    const t = setup({ halted: async (sleeps) => paused && polls(sleeps) < 2 });
+    await t.mgr.start();
+    paused = true;
+    t.driver.loggedIn = false; // el asesor terminó los chats e hizo «Salir»
+
+    let loginsWhilePaused = 0;
+    const origLogin = t.driver.login.bind(t.driver);
+    t.driver.login = async (c) => {
+      if (polls(t.sleeps) < 2) loginsWhilePaused++;
+      return origLogin(c);
+    };
+
+    await t.mgr.heartbeat();
+    expect(loginsWhilePaused).toBe(0);
+    expect(t.driver.loginCalls).toBe(2); // el del arranque y el de después de reanudar
+    expect(t.sleeps).toEqual([HALT_POLL_MS, HALT_POLL_MS, 5_000]);
+    expect(t.mgr.status).toBe('ACTIVE');
+    expect(t.recovered()).toBe(1);
+    expect(t.logs.join('')).toContain('robot en pausa');
+    await t.mgr.stop();
+  });
+
+  it('arranca pausado: no entra a Abaya (ni se pone Disponible) hasta reanudar', async () => {
+    const t = setup({ halted: async (sleeps) => sleeps.length < 3 });
+    expect(await t.mgr.start()).toBe('ACTIVE');
+    expect(t.sleeps).toEqual([HALT_POLL_MS, HALT_POLL_MS, HALT_POLL_MS]);
+    expect(t.driver.loginCalls).toBe(1);
+    await t.mgr.stop();
+  });
+
+  it('si no se puede saber si está pausado, no entra (falla cerrado)', async () => {
+    let calls = 0;
+    const t = setup({
+      halted: async () => {
+        if (calls++ < 2) throw new Error('sin servidor');
+        return false;
+      },
+    });
+    expect(await t.mgr.start()).toBe('ACTIVE');
+    expect(t.sleeps).toEqual([HALT_POLL_MS, HALT_POLL_MS]);
+    expect(t.driver.loginCalls).toBe(1);
     await t.mgr.stop();
   });
 

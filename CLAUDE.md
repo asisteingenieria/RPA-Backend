@@ -253,6 +253,8 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
   que pide escribir; `STT_PROVIDER=ninguno` para no transcribir nunca.
   ySocial no cierra la sesión al cerrar el navegador (`ALREADY_CONNECTED`) y esconde «Salir» con
   casos asignados: el robot hace `logout()` al detenerse y el diagnóstico no cierra la ventana con casos.
+- Pausa (D-031): con kill switch o pausa el robot no vuelve a entrar a Abaya (ni se pone Disponible)
+  aunque el asesor haga «Salir»; al reanudar entra solo (`SessionManager.halted`).
 - Verificación (D-030): ySocial pinta emojis como `img.emoji` (texto en `alt`) y el formato como
   etiquetas; se compara con `sameText` (sin espacios ni `* _ ~`).
 - Imágenes (D-029): una imagen por mensaje y siempre con texto (ySocial `TEXT_REQUIRED`); las que

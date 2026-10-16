@@ -102,6 +102,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       }),
       heartbeatMs: abaya.heartbeatMs,
       onRecovered: () => this.reconcile(),
+      halted: () => backend.killSwitch.isActive(),
     });
     const manager = this.manager;
 
