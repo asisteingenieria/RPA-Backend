@@ -18,6 +18,20 @@ describe('logger', () => {
     expect(scrubText('llamar al 3001234567 cc 1020304050')).toBe('llamar al [TEL] cc [NUM]');
   });
 
+  it('enmascara correos, también con dígitos y subdominios', () => {
+    expect(scrubText('mi correo es juan.perez+claro@mail.empresa.com.co gracias')).toBe(
+      'mi correo es [CORREO] gracias',
+    );
+    expect(scrubText('ana1020304050@gmail.com y 3001234567')).toBe('[CORREO] y [TEL]');
+    expect(scrubText('el plan de 52.900 sin @ no cambia')).toBe('el plan de 52.900 sin @ no cambia');
+  });
+
+  it('no deja correos en el mensaje del log', () => {
+    const { lines, stream } = capture();
+    createLogger('test', { level: 'info' }, stream).info('cliente ana@correo.com');
+    expect(lines.join('')).not.toContain('ana@correo.com');
+  });
+
   it('redacta campos sensibles y enmascara el mensaje', () => {
     const { lines, stream } = capture();
     const log = createLogger('test', { level: 'info' }, stream);

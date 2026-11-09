@@ -55,7 +55,7 @@ async function hear(
 }
 
 const EVENT_LABEL: Record<string, string> = {
-  TRANSFER_BACKOFFICE: 'Finalizar en Abaya: la venta pasa a la cola de backoffice',
+  TRANSFER_BACKOFFICE: 'Finalizar en Avaya: la venta pasa a la cola de backoffice',
   ESCALATE: 'Escalado a un asesor humano',
   RECORD_CONSENT: 'Consentimiento registrado (evidencia con cadena de hashes)',
 };
@@ -139,7 +139,7 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
     history: job.state.history.slice(-20),
   };
   // 13/10/2026: tras el «SÍ», mientras el cliente va mandando sus datos el robot no responde
-  // (en Abaya, si deja de escribir, revisa y le recuerda solo lo que falta).
+  // (en Avaya, si deja de escribir, revisa y le recuerda solo lo que falta).
   const now = new Date();
   if ((await engine.dataWaitMs(turnState, [message], now, now)) > 0) {
     const waitSeconds = job.agent.flow.saleDataWaitSeconds;
@@ -148,7 +148,7 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
       profile: engine.absorbSaleData(turnState, [message]) as AgentTestResult['profile'],
       replies: [],
       events: [
-        `El robot espera el resto de los datos (en Abaya, si el cliente no escribe en ${waitSeconds} s, le recuerda solo lo que falta)`,
+        `El robot espera el resto de los datos (en Avaya, si el cliente no escribe en ${waitSeconds} s, le recuerda solo lo que falta)`,
       ],
       validation: 'NO_LLM',
       llm: [],
@@ -182,7 +182,7 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
     else if (a.type === 'NEEDS_REVIEW') events.push(`Pasaría a revisión humana: ${a.reason}`);
     else if (a.type === 'TRANSFER_BACKOFFICE' && a.serviceCase)
       events.push(
-        'Finalizar en Abaya: la validación de la portabilidad pasa al backoffice (no es una venta)',
+        'Finalizar en Avaya: la validación de la portabilidad pasa al backoffice (no es una venta)',
       );
     else if (a.type === 'ALERT')
       events.push('Alerta a supervisores: el cliente escribió una amenaza (la conversación sigue)');

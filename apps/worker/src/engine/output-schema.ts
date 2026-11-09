@@ -1,4 +1,4 @@
-import { MODEL_CLOSE_TAGS } from '@abaya/domain';
+import { MODEL_CLOSE_TAGS, SENTIMENTS } from '@abaya/domain';
 import { z } from 'zod';
 import { INTENTS } from './types.js';
 
@@ -25,6 +25,8 @@ export const turnOutputSchema = z
       .strict(),
     /** D-025: motivo para tipificar el cierre si el chat no termina en venta (lo elige el modelo). */
     tipificacion: z.enum(MODEL_CLOSE_TAGS).nullable(),
+    /** D-035: sentimiento del cliente en su último mensaje (solo medición). */
+    sentimiento: z.enum(SENTIMENTS).nullable(),
     confidence: z.enum(['ALTA', 'MEDIA', 'BAJA']),
   })
   .strict();

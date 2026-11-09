@@ -24,6 +24,7 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
   planCode: null,
   extracted: { name: null, currentOperator: null, lineType: null, usage: null },
   tipificacion: null,
+  sentimiento: null,
   confidence: 'MEDIA',
   ...over,
 });
@@ -59,7 +60,15 @@ export function heuristicBrain(req: LlmRequest): TurnOutput {
   const out = turn(req);
   const lower = req.messages.at(-1)!.content.toLowerCase();
   const tag = TIPIFICACION.find(([re]) => re.test(lower))?.[1] ?? null;
-  return tag ? { ...out, tipificacion: tag } : out;
+  // D-035: sentimiento por palabras clave (línea base; solo medición).
+  const sentimiento = RUDE.test(lower)
+    ? 'MOLESTO'
+    : NOT_INTERESTED.test(lower) || OBJECTION.test(lower)
+      ? 'NEGATIVO'
+      : ACCEPT.test(lower) || /gracias|genial|excelente|perfecto/.test(lower)
+        ? 'POSITIVO'
+        : 'NEUTRO';
+  return { ...out, sentimiento, ...(tag ? { tipificacion: tag } : {}) };
 }
 
 function turn(req: LlmRequest): TurnOutput {
@@ -87,18 +96,30 @@ function turn(req: LlmRequest): TurnOutput {
         )
       )
         return base({ intent: 'CONSULTA_PORTABILIDAD', reply: 'Entiendo.' });
+      // D-033: el cliente también escribe libre (sin menú): la ruta sale de lo que cuenta.
+      const op = OPERATORS.exec(text)?.[0];
+      const otherOperator = !!op && !/claro/i.test(op);
       const option = /n[uú]mero nuevo|l[ií]nea nueva|otra l[ií]nea/.test(lower)
         ? 'E'
-        : /prepago|pospago/.test(lower)
+        : /prepago|pospago|recarga/.test(lower)
           ? 'B'
-          : /portar|traer|cambiarme/.test(lower)
+          : /portar|traer|cambiarme|pasarme a claro|cambiar de operador/.test(lower) ||
+              (otherOperator && /pas|cambi/.test(lower))
             ? 'A'
             : /factura|soporte|cancelar|cambio de plan/.test(lower)
               ? 'C'
               : null;
-      return option
-        ? base({ intent: 'ELIGE_OPCION', option, reply: '¡Perfecto! ¿Cuál es tu nombre?' })
-        : base({ reply: 'Con gusto te ayudo. Por favor elige una letra del menú.' });
+      const name = /(?:me llamo|soy|mi nombre es)\s+([a-záéíóúñ]+)/i.exec(text)?.[1] ?? null;
+      const extracted = {
+        name,
+        currentOperator: otherOperator ? op! : null,
+        lineType: null,
+        usage: null,
+      };
+      if (option) return base({ intent: 'ELIGE_OPCION', option, extracted, reply: '¡Perfecto!' });
+      if (name)
+        return base({ extracted, reply: `Mucho gusto, ${name}. ¿Cómo podemos ayudarte hoy?` });
+      return base({ reply: 'Con gusto te ayudo. ¿Qué necesitas hoy?' });
     }
     case 'PERFIL': {
       const needs = missing.split(', ').filter(Boolean);

@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "Base de datos (1/3): conversaciones, ventas y robots",
+    "locale": "es",
+    "output": ".archify/erd-conversaciones-20261027-094500/conversaciones.html",
+    "quality_profile": "standard",
+    "repository": {
+      "url": "https://github.com/asisteingenieria/RPA-Backend.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 56,
+    "gapY": 36
+  },
+  "entities": [
+    {
+      "id": "Conversation",
+      "label": "Conversation",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "abayaChatId",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "stage",
+          "type": "text"
+        },
+        {
+          "name": "profileEncrypted",
+          "type": "bytea?"
+        },
+        {
+          "name": "robotUser",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "ConversationStatus"
+        },
+        {
+          "name": "customerRefHash",
+          "type": "text?"
+        },
+        {
+          "name": "lastInboundAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "lastOutboundAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "contentPurgedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "agentVersionId",
+          "type": "text?"
+        },
+        {
+          "name": "closeTag",
+          "type": "text?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 26,
+          "end_line": 52,
+          "label": "model Conversation"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 0,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "Message",
+      "label": "Message",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text",
+          "key": "fk",
+          "references": "Conversation.id"
+        },
+        {
+          "name": "direction",
+          "type": "Direction"
+        },
+        {
+          "name": "fingerprint",
+          "type": "text?",
+          "key": "uk"
+        },
+        {
+          "name": "idempotencyKey",
+          "type": "text?",
+          "key": "uk"
+        },
+        {
+          "name": "bodyEncrypted",
+          "type": "bytea"
+        },
+        {
+          "name": "status",
+          "type": "OutboundStatus?"
+        },
+        {
+          "name": "detectedVia",
+          "type": "text?"
+        },
+        {
+          "name": "attempts",
+          "type": "integer"
+        },
+        {
+          "name": "processedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "respondsToAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "sentAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "occurredAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "mediaKind",
+          "type": "MediaKind?"
+        },
+        {
+          "name": "mediaMimeType",
+          "type": "text?"
+        },
+        {
+          "name": "mediaDurationSec",
+          "type": "integer?"
+        },
+        {
+          "name": "mediaEncrypted",
+          "type": "bytea?"
+        },
+        {
+          "name": "transcriptStatus",
+          "type": "TranscriptStatus?"
+        },
+        {
+          "name": "transcriptModel",
+          "type": "text?"
+        },
+        {
+          "name": "transcriptMs",
+          "type": "integer?"
+        },
+        {
+          "name": "imageId",
+          "type": "text?"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 67,
+          "end_line": 100,
+          "label": "model Message"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 0,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "Sale",
+      "label": "Sale",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text",
+          "key": [
+            "fk",
+            "uk"
+          ],
+          "references": "Conversation.id"
+        },
+        {
+          "name": "process",
+          "type": "text"
+        },
+        {
+          "name": "planCode",
+          "type": "text"
+        },
+        {
+          "name": "summaryEncrypted",
+          "type": "bytea"
+        },
+        {
+          "name": "transferredAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "backofficeNoteOk",
+          "type": "boolean"
+        },
+        {
+          "name": "catalogVersionId",
+          "type": "text?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 114,
+          "end_line": 126,
+          "label": "model Sale"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 0,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "ServiceCase",
+      "label": "ServiceCase",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text",
+          "key": [
+            "fk",
+            "uk"
+          ],
+          "references": "Conversation.id"
+        },
+        {
+          "name": "kind",
+          "type": "text"
+        },
+        {
+          "name": "summaryEncrypted",
+          "type": "bytea"
+        },
+        {
+          "name": "transferredAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 130,
+          "end_line": 138,
+          "label": "model ServiceCase"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 0,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "ConsentEvidence",
+      "label": "ConsentEvidence",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "seq",
+          "type": "integer",
+          "key": "uk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text"
+        },
+        {
+          "name": "textShownHash",
+          "type": "text"
+        },
+        {
+          "name": "templateVersion",
+          "type": "text"
+        },
+        {
+          "name": "customerReplyEncrypted",
+          "type": "bytea"
+        },
+        {
+          "name": "acceptedAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "prevHash",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "hash",
+          "type": "text",
+          "key": "uk"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 140,
+          "end_line": 156,
+          "label": "model ConsentEvidence"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 0,
+      "col": 4,
+      "width": 285
+    },
+    {
+      "id": "Robot",
+      "label": "Robot",
+      "attributes": [
+        {
+          "name": "robotUser",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "paused",
+          "type": "boolean"
+        },
+        {
+          "name": "abayaPasswordEncrypted",
+          "type": "bytea?"
+        },
+        {
+          "name": "mfaMode",
+          "type": "text"
+        },
+        {
+          "name": "totpSecretEncrypted",
+          "type": "bytea?"
+        },
+        {
+          "name": "enrollmentCodeHash",
+          "type": "text?",
+          "key": "uk"
+        },
+        {
+          "name": "enrollmentExpiresAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "agentTokenHash",
+          "type": "text?",
+          "key": "uk"
+        },
+        {
+          "name": "previousTokenHash",
+          "type": "text?",
+          "key": "uk"
+        },
+        {
+          "name": "tokenRotatedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "tokenVersion",
+          "type": "integer"
+        },
+        {
+          "name": "enrolledAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "host",
+          "type": "text?"
+        },
+        {
+          "name": "instanceId",
+          "type": "text?"
+        },
+        {
+          "name": "version",
+          "type": "text?"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "startedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "lastSeenAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "stoppedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "lastRejectedHost",
+          "type": "text?"
+        },
+        {
+          "name": "lastRejectedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "updateRequested",
+          "type": "boolean"
+        },
+        {
+          "name": "updateStatus",
+          "type": "text?"
+        },
+        {
+          "name": "updateVersion",
+          "type": "text?"
+        },
+        {
+          "name": "updateMessage",
+          "type": "text?"
+        },
+        {
+          "name": "updateAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdBy",
+          "type": "text?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 371,
+          "end_line": 406,
+          "label": "model Robot"
+        }
+      ],
+      "tag": "Robots y operación",
+      "row": 1,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "RpaSession",
+      "label": "RpaSession",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "robotUser",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "lastHeartbeat",
+          "type": "timestamp"
+        },
+        {
+          "name": "lastLoginAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "consecutiveFails",
+          "type": "integer"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 158,
+          "end_line": 165,
+          "label": "model RpaSession"
+        }
+      ],
+      "tag": "Robots y operación",
+      "row": 1,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "RpaActionLog",
+      "label": "RpaActionLog",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "seq",
+          "type": "integer",
+          "key": "uk"
+        },
+        {
+          "name": "robotUser",
+          "type": "text"
+        },
+        {
+          "name": "action",
+          "type": "text"
+        },
+        {
+          "name": "abayaChatId",
+          "type": "text?"
+        },
+        {
+          "name": "result",
+          "type": "text"
+        },
+        {
+          "name": "durationMs",
+          "type": "integer"
+        },
+        {
+          "name": "traceRef",
+          "type": "text?"
+        },
+        {
+          "name": "prevHash",
+          "type": "text"
+        },
+        {
+          "name": "hash",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 167,
+          "end_line": 184,
+          "label": "model RpaActionLog"
+        }
+      ],
+      "tag": "Robots y operación",
+      "row": 1,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "OutboxEvent",
+      "label": "OutboxEvent",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "type",
+          "type": "text"
+        },
+        {
+          "name": "payload",
+          "type": "jsonb"
+        },
+        {
+          "name": "publishedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 303,
+          "end_line": 311,
+          "label": "model OutboxEvent"
+        }
+      ],
+      "tag": "Robots y operación",
+      "row": 1,
+      "col": 3,
+      "width": 285
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Conversation",
+      "to": "Message",
+      "label": "mensajes",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "Conversation",
+      "to": "Sale",
+      "label": "venta",
+      "fromCardinality": "one",
+      "toCardinality": "one",
+      "toOptional": true
+    },
+    {
+      "from": "Conversation",
+      "to": "ServiceCase",
+      "label": "caso de servicio",
+      "fromCardinality": "one",
+      "toCardinality": "one",
+      "toOptional": true
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Datos cifrados",
+      "items": [
+        "Columnas *Encrypted (bytea): texto del cliente, perfil, resúmenes, audio, contraseña de Abaya y secreto MFA",
+        "Se cifran en la aplicación (FieldCipher) antes de guardarse"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Cadenas de hashes",
+      "items": [
+        "ConsentEvidence: cada «SÍ AUTORIZO» enlaza con el anterior (prevHash → hash)",
+        "RpaActionLog: cada acción del robot, encadenada por robot"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Referencias sin llave foránea",
+      "items": [
+        "robotUser enlaza Conversation, RpaSession y RpaActionLog con Robot",
+        "ConsentEvidence.conversationId → Conversation",
+        "Conversation.agentVersionId → AgentConfigVersion (diagrama 2)",
+        "Message.imageId → VersionImage (diagrama 3)"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Cómo leer las tablas",
+      "items": [
+        "PK llave primaria · FK llave foránea · UK valor único",
+        "Tipo con «?»: admite nulo; «[]»: lista",
+        "Tipos con mayúscula inicial son enumeraciones"
+      ]
+    }
+  ]
+}

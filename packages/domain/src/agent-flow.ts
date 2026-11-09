@@ -57,7 +57,7 @@ export type SharedImageMode = (typeof SHARED_IMAGE_MODES)[number];
  * Datos del cliente que se piden tras el «SÍ» (13/10/2026): la venta pasa al backoffice cuando
  * están todos (o tras varios recordatorios sin datos nuevos, para no perderla).
  */
-export const SALE_DATA_FIELDS = ['DOCUMENTO', 'NOMBRE', 'CORREO', 'CELULAR'] as const;
+export const SALE_DATA_FIELDS = ['DOCUMENTO', 'NOMBRE', 'CORREO', 'CELULAR', 'CIUDAD'] as const;
 export type SaleDataField = (typeof SALE_DATA_FIELDS)[number];
 
 /** Cómo se nombra cada dato en el mensaje que pide lo que falta. */
@@ -65,8 +65,17 @@ export const SALE_DATA_LABEL: Record<SaleDataField, string> = {
   DOCUMENTO: 'tu número de documento de identidad',
   NOMBRE: 'tu nombre completo',
   CORREO: 'tu correo electrónico',
-  CELULAR: 'tu número celular',
+  CELULAR: 'el número celular de la línea a activar',
+  CIUDAD: 'la ciudad donde te encuentras',
 };
+
+/**
+ * D-033 (blueprint RV, 09/11/2026): cómo empieza la conversación. MENU_LETRAS = saludo con las
+ * opciones A–D (D-014); SIN_MENU = solo el saludo (p. ej. pide el nombre) y el cliente escribe
+ * libre: el modelo clasifica su necesidad en las mismas opciones y el código decide el camino.
+ */
+export const OPENING_MODES = ['MENU_LETRAS', 'SIN_MENU'] as const;
+export type OpeningMode = (typeof OPENING_MODES)[number];
 
 /** Tipo de línea del cliente con su operador actual (lo extrae el modelo; decide el código). */
 export const LINE_TYPES = ['PREPAGO', 'POSPAGO'] as const;
@@ -153,6 +162,19 @@ export interface AgentFlow {
    * (en el uso que contó al perfilar). Vacío = nunca es uso laboral.
    */
   workUsageWords: string[];
+  /** D-033: saludo con el menú de letras o solo el saludo. */
+  opening: OpeningMode;
+  /**
+   * D-033: intentos de rebate por objeción antes de cerrar sin venta (blueprint: 3). 0 = sin tope
+   * (como antes: «no me interesa» en objeciones cierra). Lo cuenta el código, no el modelo.
+   */
+  objectionRebates: number;
+  /**
+   * D-034: mensaje al cliente al pasar la venta (o la validación de portabilidad) al backoffice
+   * (plantillas TRANSFERENCIA y PORTABILIDAD_TRANSFERENCIA). false = el robot finaliza el caso en
+   * Avaya sin decir nada (la acción ya lo pasa a la cola del backoffice).
+   */
+  transferMessage: boolean;
 }
 
 export const FLOW_LIMITS = {
@@ -164,6 +186,7 @@ export const FLOW_LIMITS = {
   // Por debajo del «dame un momento» de D-009 (120 s), que no debe salir mientras espera los datos.
   saleDataWaitMin: 10,
   saleDataWaitMax: 90,
+  objectionRebatesMax: 10,
 } as const;
 
 /** Letra en círculo con la que se muestra cada opción (como en la campaña). */
@@ -225,7 +248,21 @@ export const DEFAULT_FLOW: AgentFlow = {
   portabilityInquiry: 'VALIDAR',
   // 14/10/2026: «más que todo para cosas laborales» → primero los planes compartidos.
   workUsageWords: ['trabajo', 'trabajar', 'laboral', 'oficina', 'negocio', 'empresa'],
+  opening: 'MENU_LETRAS',
+  objectionRebates: 0,
+  transferMessage: true,
 };
+
+/**
+ * D-033: etiqueta de no venta de la ruta (blueprint, página 05) para cuando se agotan los rebates
+ * o el cliente abandona después de un rebate: Portabilidad = mejor oferta de otros operadores;
+ * Migración y Línea nueva = prefiere prepago.
+ */
+export function noSaleTagForProcess(
+  process: FlowProcess | undefined,
+): 'NO_VENTA_MEJOR_OFERTA' | 'NO_VENTA_PREFIERE_PREPAGO' {
+  return process === 'PORTABILIDAD' ? 'NO_VENTA_MEJOR_OFERTA' : 'NO_VENTA_PREFIERE_PREPAGO';
+}
 
 const normalizeName = (s: string) =>
   s
@@ -448,6 +485,15 @@ export function storedFlow(raw: unknown): AgentFlow {
           .map((n) => n.trim())
           .filter(Boolean)
       : DEFAULT_FLOW.workUsageWords,
+    // D-033: versiones anteriores no los tienen → como antes (menú de letras, sin tope).
+    opening: isOneOf(OPENING_MODES, r.opening) ? r.opening : DEFAULT_FLOW.opening,
+    objectionRebates:
+      typeof r.objectionRebates === 'number' && Number.isInteger(r.objectionRebates)
+        ? r.objectionRebates
+        : DEFAULT_FLOW.objectionRebates,
+    // D-034: versiones anteriores no lo tienen → como antes (con mensaje).
+    transferMessage:
+      typeof r.transferMessage === 'boolean' ? r.transferMessage : DEFAULT_FLOW.transferMessage,
   };
 }
 
@@ -523,6 +569,10 @@ export function reviewFlow(flow: AgentFlow, responseTemplateIds: readonly string
     issues.push({
       message:
         'uso laboral: sin palabras, las imágenes compartidas «solo si el uso es laboral» nunca se ofrecen',
+    });
+  if (flow.objectionRebates < 0 || flow.objectionRebates > FLOW_LIMITS.objectionRebatesMax)
+    issues.push({
+      message: `objeciones: los intentos van de 0 (sin tope) a ${FLOW_LIMITS.objectionRebatesMax}`,
     });
   if (!flow.menu.some((o) => o.action !== 'PREGUNTAR_NECESIDAD'))
     issues.push({ message: 'menú: al menos una opción debe llevar a un proceso de venta' });

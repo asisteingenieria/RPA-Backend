@@ -44,6 +44,18 @@ describe('regla 4: solo el BrowserActor modifica la interfaz', () => {
   });
 });
 
+describe('D-032: el monitor en vivo solo mira', () => {
+  it('live/ no hace clic, no escribe ni usa métodos de entrada del navegador', () => {
+    const ACTS =
+      /\.(click|fill|type|press|check|selectOption|goto|keyboard|mouse|tap)\b|['"]Input\./;
+    const offenders = sources
+      .filter((s) => s.path.startsWith('live/'))
+      .filter((s) => ACTS.test(s.code))
+      .map((s) => s.path);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('regla 3: selectores solo en selectors.ts', () => {
   it('ningún archivo fuera de selectors.ts construye selectores', () => {
     const allowed = new Set(['abaya/selectors.ts']);

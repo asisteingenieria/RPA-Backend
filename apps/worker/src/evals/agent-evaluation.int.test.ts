@@ -82,12 +82,12 @@ describe('evaluar una versión del agente (regla 13; D-004/D-005: evaluar no pub
     expect(evaluated!.evaluatedAt).not.toBeNull();
     expect(evaluated!.evalSummary).toMatchObject({
       verdict: 'OK',
-      cases: 94,
+      cases: 100,
       invented: 0,
       problems: [],
     });
     expect(
-      progress.some((p) => (p as { progress?: { total: number } }).progress?.total === 94),
+      progress.some((p) => (p as { progress?: { total: number } }).progress?.total === 100),
     ).toBe(true);
     // El guion de la versión evaluada va detrás de las reglas del sistema.
     expect(requests[0]!.systemFixed.startsWith(SYSTEM_RULES)).toBe(true);

@@ -47,6 +47,8 @@ services:
     environment:
       DATABASE_URL: postgresql://abaya:${POSTGRES_PASSWORD:-abaya_dev}@postgres:5432/abaya_rpa?schema=public
       REDIS_URL: redis://redis:6379
+      # Dentro del contenedor: el puerto publicado necesita escuchar en todas las interfaces.
+      RPA_LISTEN_HOST: 0.0.0.0
     ports:
       - '3001:3001'
     depends_on:

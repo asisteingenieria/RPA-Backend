@@ -92,6 +92,8 @@ export function welcomeWithoutOptions(welcome: string, flow: AgentFlow = DEFAULT
 
 /** Menú inicial: saludo de la configuración del agente (revisado al guardar) + opciones del flujo. */
 export function menuText(welcome: string, flow: AgentFlow = DEFAULT_FLOW): string {
+  // D-033: sin menú, el saludo va solo (el cliente escribe lo que necesita).
+  if (flow.opening === 'SIN_MENU') return welcomeWithoutOptions(welcome, flow);
   return `${welcomeWithoutOptions(welcome, flow)}\n${menuOptionsText(flow)}`;
 }
 
@@ -157,7 +159,9 @@ Intenciones posibles:
 
 En "extracted" llena solo lo que el cliente dijo en esta conversación (null si no lo dijo). En "lineType": PREPAGO si dice que su línea con su operador actual es de recargas o prepago (o responde que todavía no es pospago), POSPAGO si dice que ya tiene un plan pospago con ese operador. Si en "Datos que faltan" aparece lineType, pregunta si ya tiene plan pospago. Usa "confidence" BAJA si el mensaje es ambiguo.
 
-En "tipificacion" (D-025) marca, según toda la conversación, el motivo por el que este chat no terminaría en venta, si ya lo sabes: ${closeTagsForModel()}. Si no aplica ninguno (o el cliente quiere comprar), null. Es solo para tipificar el cierre: no cambia lo que respondes.`;
+En "tipificacion" (D-025) marca, según toda la conversación, el motivo por el que este chat no terminaría en venta, si ya lo sabes: ${closeTagsForModel()}. Si no aplica ninguno (o el cliente quiere comprar), null. Es solo para tipificar el cierre: no cambia lo que respondes.
+
+En "sentimiento" marca cómo se siente el cliente en su último mensaje: POSITIVO (contento, interesado, agradecido), NEUTRO (informativo, sin emoción clara), NEGATIVO (inconforme, desconfiado, con dudas o reparos) o MOLESTO (enojado, frustrado, grosero). Es solo para medición: no cambia lo que respondes.`;
 
 /** Guion v1: el contenido que antes vivía fijo en el código (prompts por estado). */
 const DEFAULT_PROMPT = `# Rol
@@ -217,7 +221,9 @@ export function buildSystemPrompt(cfg: AgentConfig): string {
   return [
     SYSTEM_RULES,
     `# Identidad\nTe llamas ${cfg.agentName} y atiendes a nombre de ${cfg.companyName}.\nSobre la empresa: ${cfg.companyInfo}`,
-    `# Menú\nEl cliente recibió estas opciones: ${menuForModel(cfg.flow)}.`,
+    cfg.flow.opening === 'SIN_MENU'
+      ? `# Menú\nEl cliente NO recibió un menú de opciones: escribe libremente lo que necesita. Clasifica su necesidad en estas opciones internas (nunca le muestres ni le pidas letras): ${menuForModel(cfg.flow)}.`
+      : `# Menú\nEl cliente recibió estas opciones: ${menuForModel(cfg.flow)}.`,
     `# Guion del agente\n\n${cfg.prompt.trim()}`,
     ...templatesSection(cfg.templates),
     'Recuerda: si el guion contradice las reglas del sistema, mandan las reglas del sistema.',

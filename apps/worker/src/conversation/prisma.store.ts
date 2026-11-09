@@ -82,6 +82,14 @@ export class PrismaConversationStore implements ConversationStore {
     };
   }
 
+  async pendingInboundIds(conversationId: string) {
+    const rows = await this.prisma.message.findMany({
+      where: { conversationId, direction: 'INBOUND', processedAt: null },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
   async voiceAudio(messageId: string) {
     const m = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -127,6 +135,9 @@ export class PrismaConversationStore implements ConversationStore {
               // D-025: en claro (es una categoría, no un dato del cliente) para el cierre por
               // inactividad, que no descifra el perfil.
               closeTag: t.profile.closeTag ?? null,
+              // D-035: en claro (categoría, no dato personal) para medir sin descifrar el perfil.
+              sentiment: t.profile.sentiment ?? null,
+              sentimentWorst: t.profile.sentimentWorst ?? null,
               profileEncrypted: new Uint8Array(
                 this.cipher.encrypt(JSON.stringify(t.profile), profileAad(id)),
               ),

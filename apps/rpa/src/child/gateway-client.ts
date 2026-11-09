@@ -102,6 +102,9 @@ export class GatewayClient {
   onRefused?: (reason: string) => void;
   /** v1.7: el servidor pide instalar esta versión (o null si ya no). */
   onUpdate?: (version: string | null) => void;
+  /** D-032: un ADMIN mira la pantalla de este robot (true) o ya no (false). */
+  onScreen?: (watched: boolean) => void;
+  private screen = false;
 
   constructor(
     private readonly agent: AgentFile,
@@ -188,6 +191,7 @@ export class GatewayClient {
       ws.on('error', () => undefined);
       ws.on('close', (code) => {
         this.connected = false;
+        this.setScreen(false);
         if (code === WS_CLOSE_REVOKED) return this.refuse('robot deshabilitado o revocado');
         if (code === WS_CLOSE_NOT_OWNER) return this.refuse('otra instancia tomó el robot');
         if (this.stopped) return;
@@ -199,8 +203,27 @@ export class GatewayClient {
     open();
   }
 
+  /**
+   * D-032: actividad o imagen de la pantalla. Solo con el WebSocket abierto y sin cola: si la red
+   * no da abasto, la imagen se pierde (nunca se acumula ni frena al robot).
+   */
+  sendLive(frame: Extract<RobotFrame, { t: 'activity' | 'screen' }>): boolean {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    if (frame.t === 'screen' && ws.bufferedAmount > 1024 * 1024) return false;
+    ws.send(JSON.stringify(frame));
+    return true;
+  }
+
+  private setScreen(on: boolean) {
+    if (on === this.screen) return;
+    this.screen = on;
+    this.onScreen?.(on);
+  }
+
   async close() {
     this.stopped = true;
+    this.setScreen(false);
     this.connected = false;
     clearTimeout(this.renewTimer);
     clearTimeout(this.wsTimer);
@@ -219,6 +242,7 @@ export class GatewayClient {
     if (f.t === 'flags') {
       this.flags = { killSwitch: f.killSwitch, paused: f.paused };
       this.onUpdate?.(f.update ?? null);
+      this.setScreen(f.screen === true);
       return;
     }
     if (f.t !== 'job') return;

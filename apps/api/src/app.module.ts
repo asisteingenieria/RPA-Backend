@@ -11,6 +11,8 @@ import { AgentConfigService } from './admin/agent-config.service.js';
 import { ConversationsController } from './admin/conversations.controller.js';
 import { ConversationsService } from './admin/conversations.service.js';
 import { KnowledgeController } from './admin/knowledge.controller.js';
+import { LIVE_BUS, LiveController } from './admin/live.controller.js';
+import { LiveService } from './admin/live.service.js';
 import { KnowledgeService } from './admin/knowledge.service.js';
 import {
   embeddingsFromConfig,
@@ -31,6 +33,7 @@ import { UsersService } from './admin/users.service.js';
 import { HealthController } from './health/health.controller.js';
 import { alertsFromConfig } from '@abaya/alerts';
 import { createLogger } from '@abaya/logger';
+import { RedisLiveBus } from '@abaya/robot-store';
 import { RobotGatewayController } from './robots/gateway/gateway.controller.js';
 import { RobotGateway } from './robots/gateway/robot-gateway.service.js';
 import type { HubDeps } from './robots/gateway/ws-hub.js';
@@ -45,6 +48,8 @@ const prisma = createPrismaClient(cfg.DATABASE_URL);
 const usageRecorder = new PrismaUsageRecorder(prisma);
 const apiEmbeddings = embeddingsFromConfig(cfg);
 const flags = new RedisFlagStore(cfg.REDIS_URL);
+// Monitor en vivo (D-032): actividad y pantalla de los robots (solo mirar, nada se guarda).
+const liveBus = new RedisLiveBus(cfg.REDIS_URL);
 
 // Servidor padre (v1.4) y pasarela de robots hijos (v1.6, sección 2.8).
 const cipher = cipherFromConfig(cfg);
@@ -90,6 +95,7 @@ export const hubDeps: HubDeps = {
   redisUrl: cfg.REDIS_URL,
   logger: createLogger('api.gateway'),
   release,
+  live: liveBus,
 };
 // Configuración del agente (v1.8): publicar encola la suite de evaluación en el worker.
 const evalQueue = new Queue<EvalJob>(QUEUES.evals, { connection: { url: cfg.REDIS_URL } });
@@ -175,6 +181,11 @@ const agentConfig: AgentConfigService = new AgentConfigService(
   },
   () => knowledge.agentCatalogForPanel(),
 );
+// Trazabilidad (D-002): conversaciones completas para todo ADMIN.
+const conversations = new ConversationsService(prisma, cipher, {
+  retentionDays: cfg.CONVERSATION_RETENTION_DAYS ?? null,
+});
+const live = new LiveService(prisma, conversations, liveBus);
 const traceCleanup = setInterval(() => void gateway.cleanupTraces(), 6 * 3_600_000);
 traceCleanup.unref();
 
@@ -187,6 +198,7 @@ traceCleanup.unref();
     AgentConfigController,
     KnowledgeController,
     ConversationsController,
+    LiveController,
     UsageController,
     RobotsController,
     RobotGatewayController,
@@ -197,13 +209,9 @@ traceCleanup.unref();
     { provide: UsageService, useValue: new UsageService(prisma, cfg.MODEL_PRICES_USD) },
     { provide: AgentConfigService, useValue: agentConfig },
     { provide: KnowledgeService, useValue: knowledge },
-    // Trazabilidad (D-002): conversaciones completas para todo ADMIN.
-    {
-      provide: ConversationsService,
-      useValue: new ConversationsService(prisma, cipher, {
-        retentionDays: cfg.CONVERSATION_RETENTION_DAYS ?? null,
-      }),
-    },
+    { provide: ConversationsService, useValue: conversations },
+    { provide: LiveService, useValue: live },
+    { provide: LIVE_BUS, useValue: liveBus },
     { provide: RobotsService, useValue: robots },
     { provide: RobotGateway, useValue: gateway },
     { provide: ReleaseService, useValue: release },
@@ -215,6 +223,8 @@ traceCleanup.unref();
 export class AppModule implements OnApplicationShutdown {
   async onApplicationShutdown() {
     clearInterval(traceCleanup);
+    live.close();
+    await liveBus.close();
     await gateway.close();
     await evalQueue.close();
     await testQueue.close();

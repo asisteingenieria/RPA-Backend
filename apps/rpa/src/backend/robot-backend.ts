@@ -16,6 +16,7 @@ import {
   PrismaRecoveryRepository,
   PrismaSessionRepository,
   PrismaSweepRepository,
+  RedisLiveBus,
   RobotQueueConsumers,
   readWorkHours,
   type ActionLog,
@@ -24,12 +25,25 @@ import {
   type OutboundRepository,
   type PresenceStore,
   type RecoveryRepository,
+  type RobotActivity,
   type RobotQueueHandlers,
+  type ScreenFrame,
   type SessionRepository,
   type SweepRepository,
   type UpdateStatus,
 } from '@abaya/robot-store';
 import { RedisKillSwitch, type KillSwitch } from '../safety/kill-switch.js';
+
+/**
+ * Monitor en vivo (D-032): lo que hace el robot y su pantalla, solo para mirar. Nunca frena una
+ * acción: si no hay conexión, se pierde la actualización.
+ */
+export interface RobotLive {
+  reportActivity(a: RobotActivity): void;
+  sendScreenFrame(f: ScreenFrame): void;
+  /** El servidor avisa si un ADMIN mira la pantalla (true) o ya no (false). */
+  onScreenWatch(cb: (watched: boolean) => void): void;
+}
 
 /**
  * Todo lo que el robot necesita del "mundo" (persistencia, colas, kill switch, alertas).
@@ -64,6 +78,8 @@ export interface RobotBackend {
   enqueueOutbound(messageId: string, abayaChatId: string): Promise<void>;
   /** Empieza a recibir tareas (enviar, transferir, cerrar). Tras reclamar el robot. */
   startQueues(h: RobotQueueHandlers, instanceId: string): Promise<void>;
+  /** D-032: monitor en vivo (sin él, el panel muestra «sin datos»). */
+  live?: RobotLive;
   /** Solo hijo: sube las trazas de error al servidor. */
   uploadTrace?(ref: string, zip: Buffer): Promise<void>;
   /** Solo hijo (v1.7): actualizaciones publicadas en el servidor. */
@@ -90,6 +106,9 @@ export function createDirectBackend(env: NodeJS.ProcessEnv = process.env): Robot
     connection: { url: cfg.REDIS_URL },
   });
   let consumers: RobotQueueConsumers | undefined;
+  const liveBus = new RedisLiveBus(cfg.REDIS_URL);
+  let screenTimer: NodeJS.Timeout | undefined;
+  const robotUser = abaya.robotUser;
   return {
     mode: 'direct',
     abaya,
@@ -120,6 +139,23 @@ export function createDirectBackend(env: NodeJS.ProcessEnv = process.env): Robot
         { jobId: `recover-${messageId}` },
       );
     },
+    live: {
+      reportActivity: (a) => void liveBus.setActivity(robotUser, a).catch(() => undefined),
+      sendScreenFrame: (f) => void liveBus.publishFrame(robotUser, f).catch(() => undefined),
+      // En modo directo el robot mira la marca de Redis él mismo (en el hijo la empuja la pasarela).
+      onScreenWatch: (cb) => {
+        let last = false;
+        clearInterval(screenTimer);
+        screenTimer = setInterval(() => {
+          void liveBus
+            .screenWatched(robotUser)
+            .catch(() => false)
+            .then((on) => {
+              if (on !== last) cb((last = on));
+            });
+        }, 1_000);
+      },
+    },
     startQueues: async (h) => {
       consumers = new RobotQueueConsumers(
         cfg.REDIS_URL,
@@ -129,6 +165,8 @@ export function createDirectBackend(env: NodeJS.ProcessEnv = process.env): Robot
       );
     },
     close: async () => {
+      clearInterval(screenTimer);
+      await liveBus.close();
       await consumers?.close();
       await recoveryQueue.close();
       await killSwitch.close();

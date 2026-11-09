@@ -8,6 +8,7 @@ export * from './handoff.repository.js';
 export * from './inbound-queue.js';
 export * from './inbound-sink.js';
 export * from './inbound.repository.js';
+export * from './live.js';
 export * from './outbound.repository.js';
 export * from './presence.store.js';
 export * from './recovery.repository.js';

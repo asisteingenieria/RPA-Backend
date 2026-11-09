@@ -12,6 +12,7 @@ import {
   isWorkUsage,
   menuForModel,
   needsLineType,
+  noSaleTagForProcess,
   menuOptionsText,
   processForOption,
   reviewFlow,
@@ -313,5 +314,48 @@ describe('D-021: proceso según el operador del cliente', () => {
     const t = DEFAULT_TEMPLATES.find((x) => x.role === 'YA_POSPAGO');
     expect(t?.text).toContain('🅒 Ya tengo plan');
     expect(systemTemplates(DEFAULT_TEMPLATES, 'YA_POSPAGO')).toHaveLength(1);
+  });
+});
+
+describe('D-033: apertura y rebates en el flujo', () => {
+  it('versiones anteriores: menú de letras y sin tope', () => {
+    const f = storedFlow({});
+    expect(f.opening).toBe('MENU_LETRAS');
+    expect(f.objectionRebates).toBe(0);
+    expect(storedFlow({ opening: 'SIN_MENU', objectionRebates: 3 })).toMatchObject({
+      opening: 'SIN_MENU',
+      objectionRebates: 3,
+    });
+    expect(storedFlow({ opening: 'OTRO', objectionRebates: 2.5 })).toMatchObject({
+      opening: 'MENU_LETRAS',
+      objectionRebates: 0,
+    });
+  });
+
+  it('el tope de rebates va de 0 a 10', () => {
+    const msgs = reviewFlow({ ...DEFAULT_FLOW, objectionRebates: 11 }, []).map((i) => i.message);
+    expect(msgs.some((m) => m.startsWith('objeciones:'))).toBe(true);
+  });
+
+  it('sin menú, el saludo va solo y el modelo sabe que no hubo letras', () => {
+    const flow = { ...DEFAULT_FLOW, opening: 'SIN_MENU' as const };
+    expect(menuText('¡Hola! ¿Con quién tengo el gusto de hablar?', flow)).toBe(
+      '¡Hola! ¿Con quién tengo el gusto de hablar?',
+    );
+    expect(buildSystemPrompt({ ...DEFAULT_AGENT_CONFIG, flow })).toContain('NO recibió un menú');
+  });
+
+  it('no venta de la ruta (blueprint, página 05)', () => {
+    expect(noSaleTagForProcess('PORTABILIDAD')).toBe('NO_VENTA_MEJOR_OFERTA');
+    expect(noSaleTagForProcess('MIGRACION')).toBe('NO_VENTA_PREFIERE_PREPAGO');
+    expect(noSaleTagForProcess(undefined)).toBe('NO_VENTA_PREFIERE_PREPAGO');
+  });
+});
+
+describe('D-034: mensaje al pasar al backoffice', () => {
+  it('las versiones anteriores lo envían; se puede apagar', () => {
+    expect(storedFlow({}).transferMessage).toBe(true);
+    expect(storedFlow({ transferMessage: false }).transferMessage).toBe(false);
+    expect(storedFlow({ transferMessage: 'no' }).transferMessage).toBe(true);
   });
 });

@@ -1,13 +1,14 @@
-import { STAGES, type Stage } from '@abaya/domain';
+import { DEFAULT_FLOW, STAGES, type Stage } from '@abaya/domain';
 import { describe, expect, it } from 'vitest';
 import {
   ALLOWED_INTENTS,
   TERMINAL_STAGES,
   missingProfileFields,
+  rebatesExhausted,
   parseMenuOption,
   transition,
 } from './state-machine.js';
-import { INTENTS, type Profile } from './types.js';
+import { INTENTS, type Intent, type Profile } from './types.js';
 
 const fullPorta: Profile = {
   process: 'PORTABILIDAD',
@@ -122,5 +123,32 @@ describe('parseMenuOption', () => {
 
   it.each(['Hola', 'quiero la a y la b', 'A ver', 'E', '5'])('%s → indefinido', (input) => {
     expect(parseMenuOption(input)).toBeUndefined();
+  });
+});
+
+describe('D-033: tope de rebates por objeción (blueprint RV)', () => {
+  const flow = { ...DEFAULT_FLOW, objectionRebates: 3 };
+  const at = (stage: Stage, intent: Intent, rebates: number) =>
+    transition({ stage, intent, profile: { ...fullPorta, rebates }, flow });
+
+  it('con rebates disponibles, un «no» o una objeción se trabajan en OBJECIONES', () => {
+    expect(at('OFERTA', 'NO_INTERESADO', 0)).toEqual({ ok: true, to: 'OBJECIONES' });
+    expect(at('OBJECIONES', 'NO_INTERESADO', 1)).toEqual({ ok: true, to: 'OBJECIONES' });
+    expect(at('OBJECIONES', 'OBJECION', 2)).toEqual({ ok: true, to: 'OBJECIONES' });
+  });
+
+  it('agotados los rebates, cierre sin venta (también si vuelve a objetar desde la oferta)', () => {
+    expect(at('OBJECIONES', 'OBJECION', 3)).toEqual({ ok: true, to: 'CIERRE_SIN_VENTA' });
+    expect(at('OBJECIONES', 'NO_INTERESADO', 3)).toEqual({ ok: true, to: 'CIERRE_SIN_VENTA' });
+    expect(at('OFERTA', 'OBJECION', 3)).toEqual({ ok: true, to: 'CIERRE_SIN_VENTA' });
+    expect(rebatesExhausted({ rebates: 3 }, flow)).toBe(true);
+  });
+
+  it('sin tope (0) se comporta como antes', () => {
+    const t = (stage: Stage, intent: Intent) =>
+      transition({ stage, intent, profile: { ...fullPorta, rebates: 9 }, flow: DEFAULT_FLOW });
+    expect(t('OBJECIONES', 'NO_INTERESADO')).toEqual({ ok: true, to: 'CIERRE_SIN_VENTA' });
+    expect(t('OBJECIONES', 'OBJECION')).toEqual({ ok: true, to: 'OBJECIONES' });
+    expect(t('OFERTA', 'OBJECION')).toEqual({ ok: true, to: 'OBJECIONES' });
   });
 });

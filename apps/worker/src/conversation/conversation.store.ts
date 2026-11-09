@@ -73,6 +73,11 @@ export interface TurnCommit {
  */
 export interface ConversationStore {
   loadForTurn(conversationId: string, historyLimit: number): Promise<TurnInput | null>;
+  /**
+   * D-034: ids de los mensajes del cliente aún sin atender (para saber si escribió algo más
+   * mientras se armaba la respuesta).
+   */
+  pendingInboundIds(conversationId: string): Promise<string[]>;
   commitTurn(commit: TurnCommit): Promise<{ outboundMessageIds: string[] }>;
   /** D-010: audio de una nota de voz que espera transcripción (null si ya no está). */
   voiceAudio(messageId: string): Promise<{ data: Buffer; mimeType: string } | null>;

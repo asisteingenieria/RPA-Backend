@@ -15,6 +15,8 @@ import { PlaywrightTraceRecorder, cleanupTraces } from './observability/trace-re
 import { uploadPendingTraces } from './observability/trace-uploader.js';
 import { robotHost, robotVersion } from './presence/instance.js';
 import { RobotPresence } from './presence/robot-presence.js';
+import { ActivityReporter } from './live/activity-reporter.js';
+import { ScreenStreamer } from './live/screen-streamer.js';
 import { RecoveryService } from './recovery/recovery.service.js';
 import { ShiftEnd } from './schedule/shift-end.js';
 import { isWorkTime, parseWorkHours } from './schedule/work-hours.js';
@@ -44,6 +46,8 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   private timers: NodeJS.Timeout[] = [];
   private presence?: RobotPresence;
   private updater?: RobotUpdater;
+  private activity?: ActivityReporter;
+  private screen?: ScreenStreamer;
   actor?: BrowserActor;
 
   async onModuleInit() {
@@ -106,6 +110,25 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
     });
     const manager = this.manager;
 
+    // Monitor en vivo (D-032): qué hace el robot y, si un ADMIN la mira, su pantalla.
+    const live = backend.live;
+    const activity = live
+      ? new ActivityReporter({
+          send: (a) => live.reportActivity(a),
+          queued: () => this.actor?.queued ?? 0,
+        })
+      : undefined;
+    this.activity = activity;
+    if (live) {
+      const screen = new ScreenStreamer({
+        page: () => (driver.hasPage ? driver.page : undefined),
+        emit: (f) => live.sendScreenFrame(f),
+        logger: createLogger('rpa.live'),
+      });
+      this.screen = screen;
+      live.onScreenWatch((on) => screen.setWatched(on));
+    }
+
     const actor = new BrowserActor({
       robotUser: abaya.robotUser,
       page: () => driver.page,
@@ -116,6 +139,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       outbound: backend.outbound,
       alerts,
       logger: createLogger('rpa.actor'),
+      ...(activity ? { onActivity: (a, chatId) => activity.update(a, chatId) } : {}),
       tracer: new PlaywrightTraceRecorder(
         () => driver.currentContext,
         abaya.traceDir,
@@ -128,6 +152,7 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       ),
     });
     this.actor = actor;
+    activity?.start();
     const handoff = new HandoffProcessor({
       actor,
       repo: backend.handoff,
@@ -338,6 +363,8 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown() {
     this.timers.forEach(clearInterval);
     this.updater?.stop();
+    this.activity?.stop();
+    await this.screen?.stop();
     await this.manager?.stop();
     await this.presence?.stop().catch(() => undefined);
     await this.backend?.close();

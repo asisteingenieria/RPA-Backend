@@ -39,6 +39,9 @@ model Conversation {
   agentVersionId   String?
   /// D-025: tipificación que eligió el modelo para el cierre sin venta (categoría, no dato personal).
   closeTag         String?
+  /// D-035: sentimiento del cliente (solo medición): el del último turno y el peor de la conversación.
+  sentiment        String?
+  sentimentWorst   String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   messages         Message[]

@@ -80,6 +80,13 @@ export class MemoryConversationStore implements ConversationStore {
     return id;
   }
 
+  async pendingInboundIds(conversationId: string) {
+    const c = this.conversations.get(conversationId);
+    return c
+      ? c.messages.filter((m) => m.direction === 'INBOUND' && !m.processed).map((m) => m.id)
+      : [];
+  }
+
   async voiceAudio(messageId: string) {
     const m = this.message(messageId);
     return m?.voice?.audio ? { data: m.voice.audio, mimeType: 'audio/ogg' } : null;

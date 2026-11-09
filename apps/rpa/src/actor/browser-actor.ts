@@ -1,5 +1,6 @@
 import type { AlertPort, RpaAction, RpaActionResult } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
+import type { RobotActivityKind } from '@abaya/robot-store';
 import type { Page } from 'playwright';
 import { ChatListPage } from '../abaya/pages/chat-list.page.js';
 import { ChatPage, sameText } from '../abaya/pages/chat.page.js';
@@ -82,6 +83,8 @@ export interface BrowserActorDeps {
   now?: () => Date;
   /** Trazas solo en error (sección 8). */
   tracer?: TraceRecorder;
+  /** D-032: lo que hace el actor ahora (monitor en vivo); IDLE al terminar cada acción. */
+  onActivity?: (action: RobotActivityKind, abayaChatId: string | null) => void;
 }
 
 /**
@@ -100,16 +103,46 @@ export class BrowserActor {
     this.tracer = d.tracer ?? new NoopTraceRecorder();
   }
 
-  /** Ejecuta una acción serializada con su chunk de traza (se guarda solo si algo falla). */
-  private traced<T>(priority: Priority, fn: () => Promise<T>): Promise<T> {
+  /** Ejecuta una tarea serializada e informa qué hace mientras corre (D-032). */
+  private run<T>(
+    action: RobotActivityKind,
+    chatId: string | null,
+    priority: Priority,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     return this.exec.run(async () => {
+      this.activity(action, chatId);
+      try {
+        return await fn();
+      } finally {
+        this.activity('IDLE', null);
+      }
+    }, priority);
+  }
+
+  /** Ejecuta una acción serializada con su chunk de traza (se guarda solo si algo falla). */
+  private traced<T>(
+    action: RobotActivityKind,
+    chatId: string | null,
+    priority: Priority,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return this.run(action, chatId, priority, async () => {
       await this.tracer.begin();
       try {
         return await fn();
       } finally {
         await this.tracer.discard();
       }
-    }, priority);
+    });
+  }
+
+  private activity(action: RobotActivityKind, chatId: string | null) {
+    try {
+      this.d.onActivity?.(action, chatId);
+    } catch {
+      // El monitor en vivo nunca frena una acción.
+    }
   }
 
   get queued(): number {
@@ -118,14 +151,13 @@ export class BrowserActor {
 
   /** Envía un mensaje saliente ya persistido (sección 6.4). */
   sendMessage(messageId: string): Promise<SendOutcome> {
-    return this.traced(PRIORITY.SEND, () => this.doSend(messageId));
+    return this.traced('SEND', null, PRIORITY.SEND, () => this.doSend(messageId));
   }
 
   /** Lectura de la bandeja (sin clics), serializada con las acciones para no chocar con ellas. */
   readInboxChatIds(): Promise<string[]> {
-    return this.exec.run(
-      async () => (await new ChatListPage(this.d.page()).listChats()).map((c) => c.abayaChatId),
-      PRIORITY.READ_INBOX,
+    return this.run('READ_INBOX', null, PRIORITY.READ_INBOX, async () =>
+      (await new ChatListPage(this.d.page()).listChats()).map((c) => c.abayaChatId),
     );
   }
 
@@ -137,12 +169,12 @@ export class BrowserActor {
   runIfIdle<T>(
     fn: () => Promise<T>,
   ): Promise<{ ran: true; value: T } | { ran: false; reason: 'BUSY' | 'CHATS' }> {
-    return this.exec.run(async () => {
+    return this.run('MAINTENANCE', null, PRIORITY.MAINTENANCE, async () => {
       if (this.exec.size > 1) return { ran: false as const, reason: 'BUSY' as const };
       const chats = await new ChatListPage(this.d.page()).listChats();
       if (chats.length) return { ran: false as const, reason: 'CHATS' as const };
       return { ran: true as const, value: await fn() };
-    }, PRIORITY.MAINTENANCE);
+    });
   }
 
   /** Reciclaje del navegador (v1.5): solo con la fila y la bandeja vacías. */
@@ -153,22 +185,20 @@ export class BrowserActor {
 
   /** Bandeja con los no leídos de cada chat (sin clics), para el barrido de perdidos. */
   readInbox(): Promise<{ abayaChatId: string; unread: number }[]> {
-    return this.exec.run(
-      async () =>
-        (await new ChatListPage(this.d.page()).listChats()).map((c) => ({
-          abayaChatId: c.abayaChatId,
-          unread: c.unread,
-        })),
-      PRIORITY.READ_INBOX,
+    return this.run('READ_INBOX', null, PRIORITY.READ_INBOX, async () =>
+      (await new ChatListPage(this.d.page()).listChats()).map((c) => ({
+        abayaChatId: c.abayaChatId,
+        unread: c.unread,
+      })),
     );
   }
 
   /** Estado del asesor y opciones del menú de estados (D-020, diagnóstico). Solo lee. */
   readAgentState(): Promise<{ current: string | null; options: string[] }> {
-    return this.exec.run(async () => {
+    return this.run('AGENT_STATE', null, PRIORITY.READ_INBOX, async () => {
       const page = new AgentStatePage(this.d.page());
       return { current: await page.current(), options: await page.options() };
-    }, PRIORITY.READ_INBOX);
+    });
   }
 
   /**
@@ -176,7 +206,7 @@ export class BrowserActor {
    * estado es parte de la sesión (al entrar, el robot se pone «Disponible» en el mismo paso).
    */
   switchAgentState(name: string): Promise<'OK' | 'NOT_CHANGED' | 'BLOCKED_KILL_SWITCH'> {
-    return this.traced(PRIORITY.MAINTENANCE, async () => {
+    return this.traced('AGENT_STATE', null, PRIORITY.MAINTENANCE, async () => {
       const start = Date.now();
       await this.d.gate.waitUntilOpen();
       if (await this.d.killSwitch.isActive()) {
@@ -191,7 +221,7 @@ export class BrowserActor {
 
   /** Abre un chat (lo usa el worker para leer chats con no leídos, y las demás acciones). */
   openChat(abayaChatId: string): Promise<boolean> {
-    return this.traced(PRIORITY.OPEN_CHAT, async () => {
+    return this.traced('OPEN_CHAT', abayaChatId, PRIORITY.OPEN_CHAT, async () => {
       const start = Date.now();
       if (!(await this.preflight('OPEN_CHAT', abayaChatId, start))) return false;
       const ok = await this.open(abayaChatId);
@@ -205,7 +235,7 @@ export class BrowserActor {
    * caso: pasa a la cola de backoffice) → verificar que salió de la bandeja.
    */
   transfer(req: TransferRequest): Promise<HandoffOutcome> {
-    return this.traced(PRIORITY.TRANSFER, async () => {
+    return this.traced('TRANSFER', req.abayaChatId, PRIORITY.TRANSFER, async () => {
       const start = Date.now();
       const chatId = req.abayaChatId;
       if (!(await this.preflight('TRANSFER', chatId, start)))
@@ -257,7 +287,7 @@ export class BrowserActor {
    */
   closeConversation(req: CloseRequest): Promise<HandoffOutcome> {
     const { abayaChatId } = req;
-    return this.traced(PRIORITY.CLOSE, async () => {
+    return this.traced('CLOSE', abayaChatId, PRIORITY.CLOSE, async () => {
       const start = Date.now();
       if (!(await this.preflight('CLOSE', abayaChatId, start)))
         return { result: 'BLOCKED_KILL_SWITCH' };
@@ -296,6 +326,7 @@ export class BrowserActor {
     const msg = await this.d.outbound.get(messageId);
     if (!msg) return 'NOT_FOUND';
     const chatId = msg.abayaChatId;
+    this.activity('SEND', chatId);
 
     if (msg.status === 'SENT_VERIFIED') return 'ALREADY_SENT';
     if (msg.status === 'UNCERTAIN') {

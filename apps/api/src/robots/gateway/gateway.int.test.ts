@@ -14,6 +14,7 @@ import { PgBlobStore } from '@abaya/knowledge';
 import { createLogger } from '@abaya/logger';
 import {
   MemoryInboundQueue,
+  MemoryLiveBus,
   WS_CLOSE_REVOKED,
   traceAad,
   type RobotQueueHandlers,
@@ -35,6 +36,7 @@ const cipher = new FieldCipher(KEY);
 const flags = new MemoryFlagStore();
 const alerts = new MemoryAlertAdapter();
 const queue = new MemoryInboundQueue();
+const liveBus = new MemoryLiveBus();
 const enqueued: { robotUser: string; messageId: string }[] = [];
 const handlers = new Map<string, RobotQueueHandlers>();
 let db: TestDatabase;
@@ -82,6 +84,7 @@ beforeAll(async () => {
     redisUrl: 'redis://127.0.0.1:1',
     logger: createLogger('t', { level: 'silent' }),
     revalidateMs: 300,
+    live: liveBus,
     consumers: (robotUser, h) => {
       handlers.set(robotUser, h);
       return { close: async () => void handlers.delete(robotUser) };
@@ -105,6 +108,9 @@ beforeEach(async () => {
   queue.jobs.length = 0;
   enqueued.length = 0;
   offsetMs = 0;
+  liveBus.activity.clear();
+  liveBus.watched.clear();
+  liveBus.last.clear();
 });
 
 const post = (path: string, body: unknown, token?: string) =>
@@ -507,6 +513,50 @@ describe('WebSocket: tareas y estado empujados al robot', () => {
 
     flags.values.set(KILL_SWITCH_KEY, '1');
     await poll(() => c.frames.some((f) => f.t === 'flags' && f.killSwitch === true));
+    c.ws.close();
+  });
+
+  it('D-032: actividad del robot y pantalla solo mientras un ADMIN la mira', async () => {
+    const a = (await access(await install('robot-a'))).accessToken;
+    const instanceId = randomUUID();
+    await rpc(a, 'presence.claim', { instanceId, host: 'PC-01', version: '1.0.0' });
+    const c = connect(a, instanceId);
+    await opened(c.ws);
+    await poll(() => c.frames.some((f) => f.t === 'flags'));
+    expect(c.frames.find((f) => f.t === 'flags')).toMatchObject({ screen: false });
+
+    const activity = {
+      action: 'SEND',
+      abayaChatId: '1001',
+      since: new Date().toISOString(),
+      queued: 1,
+    };
+    c.ws.send(JSON.stringify({ t: 'activity', activity }));
+    await poll(() => liveBus.activity.has('robot-a'));
+    expect(liveBus.activity.get('robot-a')).toEqual(activity);
+
+    const frame = (jpeg: string) => ({
+      t: 'screen',
+      frame: { jpeg, width: 1280, height: 720, at: new Date().toISOString() },
+    });
+    // Nadie mira: la imagen no se reenvía.
+    c.ws.send(JSON.stringify(frame('/9j/nadie')));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(liveBus.last.has('robot-a')).toBe(false);
+
+    await liveBus.watchScreen('robot-a');
+    await poll(() => c.frames.some((f) => f.t === 'flags' && f.screen === true));
+    c.ws.send(JSON.stringify(frame('/9j/mirando')));
+    await poll(() => liveBus.last.get('robot-a')?.jpeg === '/9j/mirando');
+
+    // Imagen inválida o demasiado grande: se descarta.
+    c.ws.send(JSON.stringify(frame('x'.repeat(1_000_001))));
+    c.ws.send(JSON.stringify({ t: 'screen', frame: { jpeg: '' } }));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(liveBus.last.get('robot-a')?.jpeg).toBe('/9j/mirando');
+
+    liveBus.unwatch('robot-a');
+    await poll(() => c.frames.filter((f) => f.t === 'flags').at(-1)?.screen === false);
     c.ws.close();
   });
 

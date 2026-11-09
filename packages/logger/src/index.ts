@@ -27,10 +27,14 @@ export const REDACT_PATHS = [
 
 const PHONE_RE = /(\+?57\s?)?\b3\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/g;
 const DOC_RE = /\b\d{6,10}\b/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 
-/** Enmascara teléfonos y números de documento dentro de textos libres. */
+/**
+ * Enmascara correos, teléfonos y números de documento dentro de textos libres. El correo va
+ * primero para que sus dígitos no queden a medias como [NUM].
+ */
 export function scrubText(input: string): string {
-  return input.replace(PHONE_RE, '[TEL]').replace(DOC_RE, '[NUM]');
+  return input.replace(EMAIL_RE, '[CORREO]').replace(PHONE_RE, '[TEL]').replace(DOC_RE, '[NUM]');
 }
 
 export function createLogger(

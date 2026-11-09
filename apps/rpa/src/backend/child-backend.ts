@@ -26,6 +26,8 @@ import type { RobotBackend } from './robot-backend.js';
 /** Lo que se configura en el propio equipo (`robot.local.env`): nada secreto. */
 export const localSettingsSchema = z.object({
   RPA_PORT: z.coerce.number().int().positive().default(3001),
+  /** Interfaz del /health: solo el propio equipo (nadie en la red lo necesita). */
+  RPA_LISTEN_HOST: z.string().min(1).default('127.0.0.1'),
   ABAYA_HEADLESS: z
     .enum(['true', 'false'])
     .default('true')
@@ -215,6 +217,13 @@ export async function createChildBackend(
         }
         return (await h.close(data as never)) satisfies HandoffDecision;
       });
+    },
+    live: {
+      reportActivity: (activity) => void client.sendLive({ t: 'activity', activity }),
+      sendScreenFrame: (frame) => void client.sendLive({ t: 'screen', frame }),
+      onScreenWatch: (cb) => {
+        client.onScreen = cb;
+      },
     },
     uploadTrace: (ref, zip) => client.uploadTrace(ref, zip),
     updates: {

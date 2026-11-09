@@ -177,6 +177,25 @@ export class UsersService {
     };
   }
 
+  /**
+   * D-032: ¿sigue valiendo la sesión de un stream abierto (sin renovar su inactividad)? Un stream
+   * puede durar horas: se corta si la sesión venció, se cerró o el usuario perdió el rol.
+   */
+  async sessionStillValid(sessionId: string, role: AdminRole): Promise<boolean> {
+    const session = await this.prisma.adminSession.findUnique({
+      where: { id: sessionId },
+      include: { user: { select: { active: true, role: true } } },
+    });
+    const now = this.now().getTime();
+    return (
+      !!session &&
+      session.expiresAt.getTime() > now &&
+      now - session.lastSeenAt.getTime() <= SESSION_IDLE_MS &&
+      session.user.active &&
+      session.user.role === role
+    );
+  }
+
   async logout(token: string | undefined, actor?: string): Promise<void> {
     if (!token) return;
     const r = await this.prisma.adminSession.deleteMany({ where: { tokenHash: tokenHash(token) } });

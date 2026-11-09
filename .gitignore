@@ -25,3 +25,6 @@ packages/db/src/generated/
 evals/reports/
 apps/panel/dist/
 apps/rpa/test/loadtest/reports/
+
+# Archify: espacio de trabajo de los diagramas (no se versiona; ver docs/diagramas/README.md)
+.archify/

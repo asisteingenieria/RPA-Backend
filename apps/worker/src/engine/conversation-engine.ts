@@ -1,6 +1,8 @@
 import {
   LlmProviderError,
   isWorkUsage,
+  noSaleTagForProcess,
+  worseSentiment,
   routeByOperator,
   templatesByRole,
   type FlowProcess,
@@ -277,7 +279,11 @@ export class ConversationEngine {
     }
     // Mientras manda los datos para validar su portabilidad, un «1» no es la opción A.
     const validating = stage === 'MENU' && profile.portabilityCheck === 'DATA';
-    const menuOption = stage === 'MENU' && !validating ? parseMenuOption(plain) : undefined;
+    // D-033: sin menú de letras, un «a» o un «1» no es una opción: lo clasifica el modelo.
+    const menuOption =
+      stage === 'MENU' && !validating && agent.flow.opening !== 'SIN_MENU'
+        ? parseMenuOption(plain)
+        : undefined;
 
     // Después de los canales de soporte (el chat sigue abierto): «no» → despedida y cierre.
     if (
@@ -340,7 +346,8 @@ export class ConversationEngine {
           'TRANSFERENCIA',
           p,
           [
-            say('TRANSFERENCIA', p.saleFullName ?? p.name),
+            // D-034: sin mensaje, el robot finaliza en Avaya sin decir nada.
+            ...(agent.flow.transferMessage ? [say('TRANSFERENCIA', p.saleFullName ?? p.name)] : []),
             {
               type: 'TRANSFER_BACKOFFICE',
               saleDataNote: saleDataSummary(p, agent.flow.saleData),
@@ -403,7 +410,11 @@ export class ConversationEngine {
         return result(
           'TRANSFERENCIA',
           profile,
-          [consent, say('TRANSFERENCIA', profile.name), { type: 'TRANSFER_BACKOFFICE' }],
+          [
+            consent,
+            ...(agent.flow.transferMessage ? [say('TRANSFERENCIA', profile.name)] : []),
+            { type: 'TRANSFER_BACKOFFICE' },
+          ],
           [],
           'NO_LLM',
         );
@@ -710,6 +721,15 @@ export class ConversationEngine {
     });
     if (!t.ok) return { stage, profile, actions: [say('RESPUESTA_SEGURA')], rendered: [] };
     const to = t.to;
+
+    // D-033 (blueprint): con tope de rebates, cada objeción trabajada cuenta; desde el primer
+    // rebate, si el cliente abandona o se agotan, el cierre lleva la no venta de la ruta (FC-92),
+    // salvo que el modelo ya haya dado un motivo más preciso.
+    if (agent.flow.objectionRebates > 0 && (intent === 'OBJECION' || intent === 'NO_INTERESADO')) {
+      if (to === 'OBJECIONES') merged.rebates = (merged.rebates ?? 0) + 1;
+      if ((to === 'OBJECIONES' || to === 'CIERRE_SIN_VENTA') && !merged.closeTag)
+        merged.closeTag = noSaleTagForProcess(merged.process);
+    }
 
     // Plantillas de salida de estados terminales: el texto es 100 % fijo.
     switch (to) {
@@ -1529,6 +1549,13 @@ function mergeProfile(p: Profile, out: TurnOutput): Profile {
     ...p,
     // D-025: la última tipificación que el modelo dio según la conversación.
     ...(out.tipificacion ? { closeTag: out.tipificacion } : {}),
+    // D-035: sentimiento (solo medición): el último y el peor de la conversación.
+    ...(out.sentimiento
+      ? {
+          sentiment: out.sentimiento,
+          sentimentWorst: worseSentiment(p.sentimentWorst, out.sentimiento),
+        }
+      : {}),
     ...(clean(ex.name) ? { name: clean(ex.name) } : {}),
     ...(clean(ex.currentOperator) ? { currentOperator: clean(ex.currentOperator) } : {}),
     ...(ex.lineType ? { lineType: ex.lineType } : {}),
@@ -1554,7 +1581,9 @@ function portabilityTransfer(agent: AgentConfig, p: Profile, now: Date): TurnRes
     'TRANSFERENCIA',
     profile,
     [
-      send(T.systemText(agent, 'PORTABILIDAD_TRANSFERENCIA', p.saleFullName ?? p.name, now)),
+      ...(agent.flow.transferMessage
+        ? [send(T.systemText(agent, 'PORTABILIDAD_TRANSFERENCIA', p.saleFullName ?? p.name, now))]
+        : []),
       {
         type: 'TRANSFER_BACKOFFICE',
         serviceCase: 'VALIDACION_PORTABILIDAD',

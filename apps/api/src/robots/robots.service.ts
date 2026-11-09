@@ -185,7 +185,7 @@ export class RobotsService {
     const robot = await this.get(robotUser);
     if (!robot.enabled) throw new ServiceError(409, 'El robot está deshabilitado');
     if (!robot.abayaPasswordEncrypted) {
-      throw new ServiceError(409, 'Primero registre la contraseña de Abaya del robot');
+      throw new ServiceError(409, 'Primero registre la contraseña de Avaya del robot');
     }
     const code = enrollmentCode();
     const expiresAt = new Date(this.now().getTime() + ENROLLMENT_TTL_MS);
@@ -441,7 +441,7 @@ export class RobotsService {
   async robotConfig(robotUser: string) {
     const robot = await this.get(robotUser);
     if (!robot.abayaPasswordEncrypted) {
-      throw new ServiceError(409, 'El robot no tiene contraseña de Abaya registrada');
+      throw new ServiceError(409, 'El robot no tiene contraseña de Avaya registrada');
     }
     if (!this.child.abayaBaseUrl) {
       throw new ServiceError(503, 'ABAYA_BASE_URL no está configurada en el servidor');
@@ -719,7 +719,7 @@ export class RobotsService {
     const password = str(input.abayaPassword);
     if (password.length > 200) throw new ServiceError(400, 'Contraseña de Abaya demasiado larga');
     if (password) data.abayaPasswordEncrypted = new Uint8Array(this.cipher.encrypt(password, aad));
-    else if (creating) throw new ServiceError(400, 'Falta la contraseña de Abaya del robot');
+    else if (creating) throw new ServiceError(400, 'Falta la contraseña de Avaya del robot');
 
     const mfa = input.mfaMode === undefined && creating ? 'none' : input.mfaMode;
     if (mfa !== undefined) {

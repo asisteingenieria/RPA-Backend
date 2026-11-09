@@ -107,6 +107,16 @@ abaya-rpa/
 12. **El flujo lo decide la máquina de estados**, no el modelo.
 13. **Ningún cambio de prompt o de modelo sale sin pasar la suite de evaluación.**
 
+## Seguridad
+
+Contexto de seguridad en **`docs/seguridad.md`**: superficie expuesta, controles por capa,
+variables (`TRUST_PROXY`, `RPA_LISTEN_HOST`, `ADMIN_COOKIE_SECURE`…), reglas al cambiar código,
+pendientes y registro de cambios. Leerlo antes de tocar la API, la pasarela, los logs o las
+dependencias, y agregar ahí cada cambio de seguridad. Hallazgos en `docs/security-review.md`;
+evidencias para Claro en `docs/documentacionplan.md`. Ningún ajuste de seguridad puede impedir
+que el robot arranque en su horario (07:00–22:00): valores por defecto tolerantes y despliegue
+fuera de horario.
+
 ## Forma de trabajo (sección 16)
 
 - Una fase por sesión; modo plan primero; commit al final de cada fase con CI en verde.
@@ -128,6 +138,15 @@ abaya-rpa/
 - [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
 - [x] v1.10 Abaya = ySocial (D-012), plantillas (D-013) y oferta con imágenes (D-014): Brain «Planes Agosto» v8 publicado y conectado (79/79, 0 inventados; descuentos por imagen, D-016), agente v22 publicado en local (D-015: conversación configurable en el panel; D-018: insultos y amenazas; imágenes por proceso); el robot pega la imagen en Abaya (probado en el simulador). Falta la prueba en vivo y activar `SEND_PLAN_IMAGES`
 - [~] 14/10/2026: D-020 (`probar.cmd`) en producción; D-021 (proceso según el operador), D-022 (plataforma de video pedida) y D-023 (consulta de portabilidad, `ServiceCase`) , D-024 (compartidas solo con uso laboral) y D-025 (tipificación del cierre) hechos y probados en local, agente v22 publicado y v23 (D-024) en borrador en local; falta subirlos a producción (runbook §12.3)
+
+## Diagramas (documentación)
+
+En `docs/diagramas/` (índice y cómo actualizarlos en su `README.md`): arquitectura del software y
+tablas de la base de datos (3 diagramas por tema, todas las columnas) hechos con la skill **Archify**
+(HTML con iconos, en español, `meta.locale: "es"`), más el proceso de venta y una arquitectura
+simple en Mermaid. Las especificaciones están en `docs/diagramas/fuentes/`; el ERD se regenera con
+`generar-base-de-datos.cjs` desde `schema.prisma`. Archify trabaja en `.archify/` (no versionado) y
+cita código del último commit: regenerar después de hacer commit.
 
 ## Abaya simulado
 
@@ -202,6 +221,19 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
 - Consulta de portabilidad (D-023): en el menú, intención `CONSULTA_PORTABILIDAD` → «¿recibiste la
   confirmación?»; sí → `PORTABILIDAD_CONFIRMADA` + `SOPORTE`; no → datos (`saleData`) y «Finalizar»
   al backoffice como `ServiceCase` (no es venta). Flujo `portabilityInquiry`.
+- Entrega de RV (D-033, 09/11/2026): flujo `opening` (`MENU_LETRAS` | `SIN_MENU`: solo el saludo y
+  el modelo clasifica en las opciones internas; sin `parseMenuOption`), `objectionRebates` (tope de
+  rebates que cuenta el código en `Profile.rebates`; agotado → cierre; con rebate, el abandono se
+  tipifica con `noSaleTagForProcess`) y dato `CIUDAD` (`Profile.saleCity`). Ofertas, plantillas,
+  menú y flujo de la v24 sin cambios (perillas apagadas en la v25); la v25 solo suma reglas al guion.
+  Agente v25 y Brain «Conocimiento Claro» se cargan por importación (D-019). Revisión de la entrega
+  en `docs/plan-base-conocimiento.md`.
+- D-034 (09/11/2026): `flow.transferMessage` (false = «Finalizar» sin avisar al cliente); la
+  aplicación se llama **Avaya** en textos visibles (los identificadores `abaya` no cambian); si el
+  cliente escribe mientras se arma la respuesta, `TurnService` la descarta y rehace el turno
+  (`pendingInboundIds`, tope `SUPERSEDE_MAX_MS` 45 s).
+- Sentimiento (D-035, solo medición): campo `sentimiento` del turno (`SENTIMENTS`), guardado como
+  `Profile.sentiment`/`sentimentWorst` y en claro en `Conversation`; no cambia el flujo.
 - Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso
   (regla 9 del sistema). Amenazas de violencia: alerta `CUSTOMER_THREAT` a supervisores (determinista).
 - Apertura (D-017): al asignarse un caso nuevo el robot envía el saludo con el menú sin esperar
@@ -253,6 +285,14 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
   que pide escribir; `STT_PROVIDER=ninguno` para no transcribir nunca.
   ySocial no cierra la sesión al cerrar el navegador (`ALREADY_CONNECTED`) y esconde «Salir» con
   casos asignados: el robot hace `logout()` al detenerse y el diagnóstico no cierra la ventana con casos.
+- Monitor en vivo (D-032, solo ADMIN, solo mirar): `GET /admin/live/stream[?chat=]` (SSE: tablero
+  `board` cada 2 s compartido y chat `chat` cada 1 s, solo cambios) y `GET /admin/live/robots/:robot/screen`
+  (SSE `frame`). El robot informa lo que hace (`BrowserActor.onActivity` → `ActivityReporter`) y,
+  solo con `flags.screen` (marca `abaya:live:screen:watch:<robot>` en Redis, 10 s), transmite el
+  screencast de Chromium (`apps/rpa/src/live/screen-streamer.ts`, ≤ 2 fps, JPEG, nunca en disco) por el
+  WebSocket de la pasarela; bus `RedisLiveBus` en `@abaya/robot-store` (`live.ts`). `live/` no puede
+  hacer clic ni escribir (prueba en `rule4.test.ts`). Auditoría: LIVE_VIEWED, CONVERSATION_VIEWED,
+  SCREEN_VIEWED, SCREEN_VIEW_ENDED. Panel: `interfazRPA/src/components/rpa/live/monitor.tsx`.
 - Pausa (D-031): con kill switch o pausa el robot no vuelve a entrar a Abaya (ni se pone Disponible)
   aunque el asesor haga «Salir»; al reanudar entra solo (`SessionManager.halted`).
 - Verificación (D-030): ySocial pinta emojis como `img.emoji` (texto en `alt`) y el formato como

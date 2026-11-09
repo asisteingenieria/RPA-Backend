@@ -298,7 +298,7 @@ describe('trazabilidad: lista, detalle y exportación', () => {
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ actor: 'admin1', target: 'AB-2' });
     expect((await get('/admin/conversations/no-existe', cookie)).status).toBe(404);
-    // También por el id del chat de Abaya (enlaces desde En vivo y Robots).
+    // También por el id del chat de Avaya (enlaces desde En vivo y Robots).
     const byChat = (await (await get('/admin/conversations/AB-2', cookie)).json()) as {
       id: string;
     };

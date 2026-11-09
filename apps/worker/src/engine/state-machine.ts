@@ -89,6 +89,13 @@ export interface TransitionInput {
 
 export type Transition = { ok: true; to: Stage } | { ok: false; reason: string };
 
+/**
+ * D-033: ¿ya se usaron todos los rebates del flujo? (blueprint: 3 por sub-agente). 0 = sin tope.
+ */
+export function rebatesExhausted(p: Profile, flow: AgentFlow): boolean {
+  return flow.objectionRebates > 0 && (p.rebates ?? 0) >= flow.objectionRebates;
+}
+
 export function isIntentAllowed(stage: Stage, intent: Intent): boolean {
   return ALLOWED_INTENTS[stage].includes(intent);
 }
@@ -130,9 +137,13 @@ export function transition(i: TransitionInput): Transition {
           ? { ok: true, to: 'AUTORIZACION' }
           : { ok: false, reason: 'ACEPTA_PLAN sin plan válido' };
       }
-      // Una objeción o un "no me interesa" se trabaja primero en OBJECIONES.
+      // Una objeción o un "no me interesa" se trabaja primero en OBJECIONES (D-033: si quedan
+      // rebates; agotados, cierre sin venta).
       if (intent === 'OBJECION' || intent === 'NO_INTERESADO')
-        return { ok: true, to: 'OBJECIONES' };
+        return {
+          ok: true,
+          to: rebatesExhausted(i.profile, flow) ? 'CIERRE_SIN_VENTA' : 'OBJECIONES',
+        };
       return { ok: true, to: 'OFERTA' };
 
     case 'OBJECIONES':
@@ -141,6 +152,13 @@ export function transition(i: TransitionInput): Transition {
           ? { ok: true, to: 'AUTORIZACION' }
           : { ok: false, reason: 'ACEPTA_PLAN sin plan válido' };
       }
+      // D-033: con tope de rebates, un «no» o una objeción se trabajan hasta agotarlos; sin tope,
+      // «no me interesa» cierra (como antes).
+      if (flow.objectionRebates > 0 && (intent === 'NO_INTERESADO' || intent === 'OBJECION'))
+        return {
+          ok: true,
+          to: rebatesExhausted(i.profile, flow) ? 'CIERRE_SIN_VENTA' : 'OBJECIONES',
+        };
       if (intent === 'NO_INTERESADO') return { ok: true, to: 'CIERRE_SIN_VENTA' };
       if (intent === 'OBJECION') return { ok: true, to: 'OBJECIONES' };
       // Pregunta o dato: la objeción quedó resuelta, se vuelve a la oferta.

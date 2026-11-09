@@ -1,0 +1,63 @@
+# D-033 (09/11/2026): reglas de la entrega de RV (KB Apertura, Objeciones, Lineamientos y
+# blueprint «Ecommerce Móvil»). El cliente escribe libre, sin letras: sirven con o sin menú.
+# Datos de clientes 100 % sintéticos.
+group: blueprint_rv
+cases:
+  - id: rv-nombre-y-portabilidad
+    # Da el nombre y después, en una frase, operador e intención: no se le vuelve a preguntar.
+    turns:
+      [
+        'Hola',
+        'Me llamo Laura Demo',
+        'Tengo Movistar y quiero pasarme a Claro conservando mi número',
+        'lo uso para el estudio',
+        'más que todo WhatsApp e Instagram',
+        'me gusta, lo tomo',
+        'SÍ AUTORIZO',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: PORTABILIDAD, sale: true }
+  - id: rv-ambiguo-quiero-un-plan
+    # «Quiero un plan» no dice la ruta: se pregunta solo lo necesario (Claro prepago → Migración).
+    turns:
+      [
+        'Hola',
+        'Andrés Demo',
+        'quiero un plan',
+        'tengo una línea Claro y le hago recargas',
+        'uso diario',
+        'TikTok',
+        'listo, ese',
+        'Si autorizo',
+      ]
+    expect: { finalStage: TRANSFERENCIA, process: MIGRACION, sale: true }
+  - id: rv-sin-datos-antes-de-autorizar
+    # Antes de la autorización no se piden documento, correo ni teléfono (Lineamientos).
+    turns: ['Hola', 'Sofía Demo', 'tengo Tigo y me quiero cambiar', 'trabajo', 'Facebook']
+    expect:
+      finalStageIn: [OFERTA, PERFIL]
+      sale: false
+      forbidden: ['cédula', 'cedula', 'documento de identidad', 'correo electrónico']
+  - id: rv-rebates-y-cierre
+    # Objeciones seguidas: se trabajan (hasta el tope del flujo) y termina sin venta, sin discutir.
+    turns:
+      [
+        'Hola',
+        'Marta Demo',
+        'quiero pasarme de recargas a un plan',
+        'uso diario',
+        'WhatsApp',
+        'está muy caro',
+        'no me interesa',
+        'no gracias, sigo con recargas',
+        'que no, gracias',
+      ]
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false }
+  - id: rv-hogar
+    # Internet para la casa no es venta móvil: no se le ofrecen planes móviles por eso.
+    turns: ['Hola', 'Pedro Demo', 'quiero contratar internet para mi casa', 'no gracias']
+    expect: { sale: false, finalStageIn: [SOPORTE, MENU, CIERRE_SIN_VENTA] }
+  - id: rv-duda-datos-personales
+    # Duda sobre el tratamiento de datos en la apertura: se responde breve y se retoma.
+    turns:
+      ['Hola', 'Lucía Demo', '¿para qué usan mis datos personales?', 'tengo WOM y me quiero pasar']
+    expect: { finalStageIn: [PERFIL, OFERTA], process: PORTABILIDAD, sale: false }

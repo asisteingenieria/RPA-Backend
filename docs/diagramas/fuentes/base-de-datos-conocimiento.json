@@ -1,0 +1,719 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "Base de datos (3/3): conocimiento (Brains)",
+    "locale": "es",
+    "output": ".archify/erd-conocimiento-20261027-094500/conocimiento.html",
+    "quality_profile": "standard",
+    "repository": {
+      "url": "https://github.com/asisteingenieria/RPA-Backend.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 56,
+    "gapY": 36
+  },
+  "entities": [
+    {
+      "id": "AgentBrain",
+      "label": "AgentBrain",
+      "attributes": [
+        {
+          "name": "agentKey",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainId",
+          "type": "text",
+          "key": [
+            "pk",
+            "fk"
+          ],
+          "references": "Brain.id"
+        },
+        {
+          "name": "connectedBy",
+          "type": "text"
+        },
+        {
+          "name": "connectedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 566,
+          "end_line": 575,
+          "label": "model AgentBrain"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 0,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "Brain",
+      "label": "Brain",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "createdBy",
+          "type": "text"
+        },
+        {
+          "name": "sourcesChangedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 437,
+          "end_line": 448,
+          "label": "model Brain"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 0,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "BrainVersion",
+      "label": "BrainVersion",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainId",
+          "type": "text",
+          "key": "fk",
+          "references": "Brain.id"
+        },
+        {
+          "name": "version",
+          "type": "integer"
+        },
+        {
+          "name": "status",
+          "type": "BrainVersionStatus"
+        },
+        {
+          "name": "basedOn",
+          "type": "integer?"
+        },
+        {
+          "name": "diff",
+          "type": "jsonb?"
+        },
+        {
+          "name": "evalSummary",
+          "type": "jsonb?"
+        },
+        {
+          "name": "createdBy",
+          "type": "text"
+        },
+        {
+          "name": "publishedBy",
+          "type": "text?"
+        },
+        {
+          "name": "publishedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 450,
+          "end_line": 473,
+          "label": "model BrainVersion"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 0,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "KnowledgeBlob",
+      "label": "KnowledgeBlob",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "dataEncrypted",
+          "type": "bytea"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 511,
+          "end_line": 516,
+          "label": "model KnowledgeBlob"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 0,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "KnowledgeSource",
+      "label": "KnowledgeSource",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainId",
+          "type": "text",
+          "key": "fk",
+          "references": "Brain.id"
+        },
+        {
+          "name": "kind",
+          "type": "KnowledgeSourceKind"
+        },
+        {
+          "name": "use",
+          "type": "KnowledgeUse"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "mime",
+          "type": "text?"
+        },
+        {
+          "name": "sizeBytes",
+          "type": "integer"
+        },
+        {
+          "name": "contentHash",
+          "type": "text"
+        },
+        {
+          "name": "blobRef",
+          "type": "text?"
+        },
+        {
+          "name": "url",
+          "type": "text?"
+        },
+        {
+          "name": "refreshHours",
+          "type": "integer?"
+        },
+        {
+          "name": "lastContentHash",
+          "type": "text?"
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb?"
+        },
+        {
+          "name": "status",
+          "type": "KnowledgeSourceStatus"
+        },
+        {
+          "name": "errorReason",
+          "type": "text?"
+        },
+        {
+          "name": "issues",
+          "type": "jsonb?"
+        },
+        {
+          "name": "parsed",
+          "type": "jsonb?"
+        },
+        {
+          "name": "lastIngestedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdBy",
+          "type": "text"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 475,
+          "end_line": 509,
+          "label": "model KnowledgeSource"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 0,
+      "col": 4,
+      "width": 285
+    },
+    {
+      "id": "KnowledgeUsage",
+      "label": "KnowledgeUsage",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text"
+        },
+        {
+          "name": "messageId",
+          "type": "text?"
+        },
+        {
+          "name": "brainId",
+          "type": "text"
+        },
+        {
+          "name": "brainVersionId",
+          "type": "text"
+        },
+        {
+          "name": "brainVersion",
+          "type": "integer"
+        },
+        {
+          "name": "kind",
+          "type": "KnowledgeUse"
+        },
+        {
+          "name": "provided",
+          "type": "text[]"
+        },
+        {
+          "name": "rendered",
+          "type": "text[]"
+        },
+        {
+          "name": "recordHash",
+          "type": "text?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 577,
+          "end_line": 594,
+          "label": "model KnowledgeUsage"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 1,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "CatalogRecord",
+      "label": "CatalogRecord",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainVersionId",
+          "type": "text",
+          "key": "fk",
+          "references": "BrainVersion.id"
+        },
+        {
+          "name": "process",
+          "type": "text"
+        },
+        {
+          "name": "code",
+          "type": "text"
+        },
+        {
+          "name": "name",
+          "type": "text?"
+        },
+        {
+          "name": "dataText",
+          "type": "text"
+        },
+        {
+          "name": "sharedDataText",
+          "type": "text?"
+        },
+        {
+          "name": "includesText",
+          "type": "text?"
+        },
+        {
+          "name": "extrasText",
+          "type": "text?"
+        },
+        {
+          "name": "unlimitedAppsText",
+          "type": "text?"
+        },
+        {
+          "name": "callsText",
+          "type": "text?"
+        },
+        {
+          "name": "priceCop",
+          "type": "integer"
+        },
+        {
+          "name": "discountText",
+          "type": "text?"
+        },
+        {
+          "name": "hash",
+          "type": "text"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 518,
+          "end_line": 539,
+          "label": "model CatalogRecord"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 1,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "VersionImage",
+      "label": "VersionImage",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainVersionId",
+          "type": "text",
+          "key": "fk",
+          "references": "BrainVersion.id"
+        },
+        {
+          "name": "sourceName",
+          "type": "text"
+        },
+        {
+          "name": "sourceHash",
+          "type": "text"
+        },
+        {
+          "name": "blobRef",
+          "type": "text"
+        },
+        {
+          "name": "mime",
+          "type": "text"
+        },
+        {
+          "name": "sizeBytes",
+          "type": "integer"
+        },
+        {
+          "name": "processes",
+          "type": "text[]"
+        },
+        {
+          "name": "ord",
+          "type": "integer"
+        },
+        {
+          "name": "cards",
+          "type": "jsonb"
+        },
+        {
+          "name": "videoApps",
+          "type": "boolean"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 541,
+          "end_line": 564,
+          "label": "model VersionImage"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 1,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "VersionChunk",
+      "label": "VersionChunk",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "brainVersionId",
+          "type": "text",
+          "key": "fk",
+          "references": "BrainVersion.id"
+        },
+        {
+          "name": "use",
+          "type": "KnowledgeUse"
+        },
+        {
+          "name": "sourceName",
+          "type": "text"
+        },
+        {
+          "name": "sourceHash",
+          "type": "text"
+        },
+        {
+          "name": "ord",
+          "type": "integer"
+        },
+        {
+          "name": "text",
+          "type": "text"
+        },
+        {
+          "name": "tokens",
+          "type": "integer"
+        },
+        {
+          "name": "embedding",
+          "type": "double precision[]"
+        },
+        {
+          "name": "embeddingModel",
+          "type": "text?"
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb?"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 611,
+          "end_line": 628,
+          "label": "model VersionChunk"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 1,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "SourceChunk",
+      "label": "SourceChunk",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "sourceId",
+          "type": "text",
+          "key": "fk",
+          "references": "KnowledgeSource.id"
+        },
+        {
+          "name": "ord",
+          "type": "integer"
+        },
+        {
+          "name": "text",
+          "type": "text"
+        },
+        {
+          "name": "tokens",
+          "type": "integer"
+        },
+        {
+          "name": "embedding",
+          "type": "double precision[]"
+        },
+        {
+          "name": "embeddingModel",
+          "type": "text?"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 596,
+          "end_line": 609,
+          "label": "model SourceChunk"
+        }
+      ],
+      "tag": "Conocimiento (Brains)",
+      "row": 1,
+      "col": 4,
+      "width": 285
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Brain",
+      "to": "BrainVersion",
+      "label": "versiones",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "Brain",
+      "to": "KnowledgeSource",
+      "label": "fuentes",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "BrainVersion",
+      "to": "CatalogRecord",
+      "label": "planes",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "BrainVersion",
+      "to": "VersionImage",
+      "label": "imágenes",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "Brain",
+      "to": "AgentBrain",
+      "label": "agentes conectados",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true,
+      "identifying": true
+    },
+    {
+      "from": "KnowledgeSource",
+      "to": "SourceChunk",
+      "label": "fragmentos",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    },
+    {
+      "from": "BrainVersion",
+      "to": "VersionChunk",
+      "label": "fragmentos",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cómo se usa",
+      "items": [
+        "Brain: catálogo de planes; el motor lee la versión PUBLISHED",
+        "CatalogRecord: cada plan con su precio y textos",
+        "VersionImage: imágenes de la oferta por proceso",
+        "SourceChunk y VersionChunk: fragmentos con embeddings para la búsqueda híbrida"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Referencias sin llave foránea",
+      "items": [
+        "KnowledgeUsage registra qué datos usó cada turno (conversationId, brainVersionId)",
+        "blobRef → KnowledgeBlob (archivo cifrado)"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Cómo leer las tablas",
+      "items": [
+        "PK llave primaria · FK llave foránea · UK valor único",
+        "Tipo con «?»: admite nulo; «[]»: lista",
+        "Tipos con mayúscula inicial son enumeraciones"
+      ]
+    }
+  ]
+}
