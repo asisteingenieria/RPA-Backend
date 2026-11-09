@@ -17,6 +17,8 @@ cases:
         '1020304050',
         'Mónica Andrea Ruiz',
         'monica.ruiz@ejemplo.test',
+        '3001112233',
+        'Cali',
       ]
     expect: { finalStage: TRANSFERENCIA, sale: true }
   # D-010: la autorización solo vale por escrito; por nota de voz se pide escribirla.

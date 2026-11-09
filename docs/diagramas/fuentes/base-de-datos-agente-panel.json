@@ -1,0 +1,665 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "Base de datos (2/3): agente, modelo de lenguaje y panel",
+    "locale": "es",
+    "output": ".archify/erd-agente-panel-20261027-094500/agente-panel.html",
+    "quality_profile": "standard",
+    "repository": {
+      "url": "https://github.com/asisteingenieria/RPA-Backend.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 56,
+    "gapY": 36
+  },
+  "entities": [
+    {
+      "id": "AgentConfigVersion",
+      "label": "AgentConfigVersion",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "key": "uk"
+        },
+        {
+          "name": "status",
+          "type": "AgentConfigStatus"
+        },
+        {
+          "name": "agentName",
+          "type": "text"
+        },
+        {
+          "name": "companyName",
+          "type": "text"
+        },
+        {
+          "name": "companyInfo",
+          "type": "text"
+        },
+        {
+          "name": "welcome",
+          "type": "text"
+        },
+        {
+          "name": "prompt",
+          "type": "text"
+        },
+        {
+          "name": "model",
+          "type": "text?"
+        },
+        {
+          "name": "temperature",
+          "type": "double precision"
+        },
+        {
+          "name": "templates",
+          "type": "jsonb?"
+        },
+        {
+          "name": "reactivationMinutes",
+          "type": "integer?"
+        },
+        {
+          "name": "reactivationMax",
+          "type": "integer?"
+        },
+        {
+          "name": "flow",
+          "type": "jsonb?"
+        },
+        {
+          "name": "evalSummary",
+          "type": "jsonb?"
+        },
+        {
+          "name": "evalVerdict",
+          "type": "text?"
+        },
+        {
+          "name": "evaluatedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "changeNote",
+          "type": "text?"
+        },
+        {
+          "name": "publishReason",
+          "type": "text?"
+        },
+        {
+          "name": "appliedToOpen",
+          "type": "boolean"
+        },
+        {
+          "name": "createdBy",
+          "type": "text"
+        },
+        {
+          "name": "publishedBy",
+          "type": "text?"
+        },
+        {
+          "name": "publishedAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 222,
+          "end_line": 259,
+          "label": "model AgentConfigVersion"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 0,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "AgentTestRecord",
+      "label": "AgentTestRecord",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "versionId",
+          "type": "text?"
+        },
+        {
+          "name": "version",
+          "type": "integer?"
+        },
+        {
+          "name": "source",
+          "type": "text"
+        },
+        {
+          "name": "note",
+          "type": "text?"
+        },
+        {
+          "name": "transcript",
+          "type": "jsonb"
+        },
+        {
+          "name": "finalStage",
+          "type": "text"
+        },
+        {
+          "name": "createdBy",
+          "type": "text"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 630,
+          "end_line": 645,
+          "label": "model AgentTestRecord"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 0,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "LlmCall",
+      "label": "LlmCall",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text"
+        },
+        {
+          "name": "stage",
+          "type": "text"
+        },
+        {
+          "name": "provider",
+          "type": "text"
+        },
+        {
+          "name": "model",
+          "type": "text"
+        },
+        {
+          "name": "promptVersionId",
+          "type": "text"
+        },
+        {
+          "name": "latencyMs",
+          "type": "integer"
+        },
+        {
+          "name": "inputTokens",
+          "type": "integer"
+        },
+        {
+          "name": "outputTokens",
+          "type": "integer"
+        },
+        {
+          "name": "validationResult",
+          "type": "text"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 285,
+          "end_line": 301,
+          "label": "model LlmCall"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 0,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "Plan",
+      "label": "Plan",
+      "attributes": [
+        {
+          "name": "code",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "process",
+          "type": "text"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "dataGb",
+          "type": "integer"
+        },
+        {
+          "name": "priceCop",
+          "type": "integer"
+        },
+        {
+          "name": "discountText",
+          "type": "text?"
+        },
+        {
+          "name": "benefits",
+          "type": "text[]"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        },
+        {
+          "name": "validFrom",
+          "type": "timestamp"
+        },
+        {
+          "name": "validTo",
+          "type": "timestamp?"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 186,
+          "end_line": 199,
+          "label": "model Plan"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 1,
+      "col": 0,
+      "width": 285
+    },
+    {
+      "id": "PromptVersion",
+      "label": "PromptVersion",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "stage",
+          "type": "text"
+        },
+        {
+          "name": "version",
+          "type": "integer"
+        },
+        {
+          "name": "content",
+          "type": "text"
+        },
+        {
+          "name": "approvedBy",
+          "type": "text?"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 201,
+          "end_line": 212,
+          "label": "model PromptVersion"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 1,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "ModelUsage",
+      "label": "ModelUsage",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "kind",
+          "type": "UsageKind"
+        },
+        {
+          "name": "provider",
+          "type": "text"
+        },
+        {
+          "name": "model",
+          "type": "text"
+        },
+        {
+          "name": "inputTokens",
+          "type": "integer"
+        },
+        {
+          "name": "outputTokens",
+          "type": "integer"
+        },
+        {
+          "name": "latencyMs",
+          "type": "integer?"
+        },
+        {
+          "name": "estimated",
+          "type": "boolean"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 269,
+          "end_line": 283,
+          "label": "model ModelUsage"
+        }
+      ],
+      "tag": "Agente y modelo de lenguaje",
+      "row": 1,
+      "col": 2,
+      "width": 285
+    },
+    {
+      "id": "AdminUser",
+      "label": "AdminUser",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "username",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "passwordHash",
+          "type": "text"
+        },
+        {
+          "name": "role",
+          "type": "AdminRole"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        },
+        {
+          "name": "mustChangePassword",
+          "type": "boolean"
+        },
+        {
+          "name": "failedAttempts",
+          "type": "integer"
+        },
+        {
+          "name": "lockedUntil",
+          "type": "timestamp?"
+        },
+        {
+          "name": "knowledgePublisher",
+          "type": "boolean"
+        },
+        {
+          "name": "lastLoginAt",
+          "type": "timestamp?"
+        },
+        {
+          "name": "createdBy",
+          "type": "text?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 339,
+          "end_line": 356,
+          "label": "model AdminUser"
+        }
+      ],
+      "tag": "Panel y administración",
+      "row": 0,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "AdminSession",
+      "label": "AdminSession",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "tokenHash",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "key": "fk",
+          "references": "AdminUser.id"
+        },
+        {
+          "name": "expiresAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "lastSeenAt",
+          "type": "timestamp"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 358,
+          "end_line": 369,
+          "label": "model AdminSession"
+        }
+      ],
+      "tag": "Panel y administración",
+      "row": 1,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "AdminAuditLog",
+      "label": "AdminAuditLog",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "actor",
+          "type": "text"
+        },
+        {
+          "name": "action",
+          "type": "text"
+        },
+        {
+          "name": "target",
+          "type": "text?"
+        },
+        {
+          "name": "detail",
+          "type": "jsonb?"
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 313,
+          "end_line": 324,
+          "label": "model AdminAuditLog"
+        }
+      ],
+      "tag": "Panel y administración",
+      "row": 2,
+      "col": 3,
+      "width": 285
+    },
+    {
+      "id": "AppSetting",
+      "label": "AppSetting",
+      "attributes": [
+        {
+          "name": "key",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "value",
+          "type": "jsonb"
+        },
+        {
+          "name": "updatedBy",
+          "type": "text"
+        },
+        {
+          "name": "updatedAt",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 327,
+          "end_line": 332,
+          "label": "model AppSetting"
+        }
+      ],
+      "tag": "Panel y administración",
+      "row": 3,
+      "col": 3,
+      "width": 285
+    }
+  ],
+  "relationships": [
+    {
+      "from": "AdminUser",
+      "to": "AdminSession",
+      "label": "sesiones",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "toOptional": true
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Versiones del agente",
+      "items": [
+        "AgentConfigVersion: guion, plantillas y flujo; solo una PUBLISHED la usa el motor",
+        "Publicar pasa por la suite de evaluación (evalSummary, evalVerdict)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Referencias sin llave foránea",
+      "items": [
+        "LlmCall.conversationId → Conversation (diagrama 1)",
+        "AgentTestRecord.versionId → AgentConfigVersion",
+        "AgentBrain.agentKey conecta el agente con los Brains (diagrama 3)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Seguridad del panel",
+      "items": [
+        "AdminUser guarda solo el hash de la contraseña",
+        "AdminSession guarda el hash del token de la cookie",
+        "AdminAuditLog registra cada acción de los usuarios"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Cómo leer las tablas",
+      "items": [
+        "PK llave primaria · FK llave foránea · UK valor único",
+        "Tipo con «?»: admite nulo; «[]»: lista",
+        "Tipos con mayúscula inicial son enumeraciones"
+      ]
+    }
+  ]
+}

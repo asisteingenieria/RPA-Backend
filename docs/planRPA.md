@@ -6,6 +6,8 @@
 > Cambio v1.9: Brains (bases de conocimiento); fase K1 = catálogo de planes versionado y publicado con evaluación, sección 6.3.9 y docs/DECISIONS.md (D-001)
 > Cambio v1.10: Abaya real es ySocial (D-012); plantillas de la campaña (D-013); oferta solo con imágenes de los planes, el robot las pega en Abaya, menú C/D y línea nueva, descripción de un plan y reactivación de la campaña (D-014). Secciones 6.3.2, 6.3.10, 6.4 y 6.6
 > Cambio v1.11: la conversación se configura en el panel (plantillas del sistema y flujo), D-015, sección 6.3.8
+> Cambio v1.12: monitor en vivo para ADMIN: conversaciones de cada robot en tiempo real y su pantalla (solo mirar), D-032, sección F7
+> Cambio v1.13: reglas y flujo de la entrega de RV (inicio sin menú, tope de rebates, ciudad en los datos; KB como guion, plantillas y Brain de búsqueda), D-033, sección 6.3.8
 > Herramienta de desarrollo: Claude Code
 > Estado: listo para iniciar
 
@@ -660,6 +662,24 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   la tipificación (lista cerrada de No venta y SAC) y el robot la marca al «Finalizar y cerrar el
   caso» en ySocial; sin ella, la etiqueta por motivo; por inactividad, la tipificada o «Cliente
   abandona conversación». Detalle en `docs/DECISIONS.md` (D-025).
+- **D-033 (09/11/2026): reglas y flujo de la entrega de RV.** Tres perillas nuevas del flujo:
+  **inicio** (`opening`: menú de letras o solo el saludo, y el cliente escribe libre; el modelo
+  clasifica en las opciones internas y decide el código), **tope de rebates por objeción**
+  (`objectionRebates`, 0 = sin tope; lo cuenta el código; agotado → cierre sin venta; desde el
+  primer rebate, el abandono se tipifica como no venta de la ruta) y la **ciudad** en los datos de
+  la venta (`CIUDAD`). El resto (apertura y enrutamiento, argumentario de objeciones, servicio y
+  ventas, Habeas Data, captura PLT-013, documentos de consulta) va en el guion, las plantillas y un
+  Brain de búsqueda. Las ofertas no cambian. Detalle en `docs/DECISIONS.md` (D-033) y
+  `docs/plan-base-conocimiento.md`.
+- **D-034 (09/11/2026): finalizar sin mensaje, «Avaya» y mensajes seguidos.** Con los datos, el
+  robot da «Finalizar» sin avisar al cliente (flujo `transferMessage`; la acción ya pasa el caso al
+  backoffice). La aplicación se llama **Avaya** en el panel y en los textos visibles. Si el cliente
+  escribe otra vez mientras se arma la respuesta, esa respuesta se descarta y el turno se rehace con
+  todos sus mensajes (tope de 45 s). Detalle en `docs/DECISIONS.md` (D-034).
+- **D-035 (09/11/2026): sentimiento del cliente, solo medición.** El modelo lo clasifica en cada
+  turno (positivo, neutro, negativo, molesto); se guardan el último y el peor en la conversación y
+  se ven en Trazabilidad y En vivo. No cambia lo que hace el robot. Detalle en `docs/DECISIONS.md`
+  (D-035).
 
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 
@@ -789,6 +809,7 @@ El robot lee y escribe datos personales. Aplican la Ley 1581 de 2012 (protecció
 | Credenciales | Gestor de secretos, rotación periódica. |
 | Sesión guardada | `storageState` cifrado (AES-256-GCM). |
 | Trazas y capturas | Solo en error, cifradas, retención máxima 7 días, acceso auditado. |
+| Pantalla en vivo | Solo ADMIN y solo mientras alguien mira; las imágenes no se guardan (solo la última, 10 s en Redis); cada vista queda en `AdminAuditLog` con su duración. *(v1.12, D-032)* |
 | Datos en reposo | Cifrado de campos para mensajes, resúmenes y respuestas de consentimiento. |
 | Logs | Redacción automática de teléfonos, nombres, documentos y contenido. |
 | Red | Robot en máquina con acceso a Abaya; salida a Internet solo hacia el proveedor de LLM. |
@@ -1007,8 +1028,13 @@ LLM simulados.
   | Cambiar su propia contraseña | ✅ | ✅ |
   | Ver la configuración del agente (v1.8) | ✅ | ✅ |
   | Guardar, publicar o restaurar la configuración del agente (v1.8) | ✅ | ❌ |
+  | Ver en vivo las conversaciones de cada robot y su pantalla (v1.12, D-032) | ✅ | ❌ |
 
   Salvaguardas: nadie se desactiva ni se quita el rol a sí mismo y siempre queda al menos un `ADMIN` activo; desactivar o restablecer la contraseña cierra las sesiones abiertas del usuario.
+- Monitor en vivo (v1.12, D-032): en la pestaña En vivo, cada robot con lo que hace en ese momento,
+  sus chats abiertos y sus mensajes en tiempo real (SSE), y «Ver pantalla»: el screencast del
+  Chromium del robot, solo mientras un ADMIN lo mira, por el WebSocket de la pasarela. Solo mirar
+  (regla 4), sin guardar imágenes y con auditoría de quién miró y cuánto tiempo.
 - Robots padre/hijo (v1.4, sección 2.6): registro de robots, instalador para Windows con código de instalación, presencia y detección de duplicados, pausa por robot y vista "Robots" con rendimiento por equipo. Permisos: ver robots y su rendimiento, ambos roles; crear, pausar, deshabilitar, generar códigos y cambiar credenciales, solo `ADMIN`.
 
 **Criterios de aceptación**

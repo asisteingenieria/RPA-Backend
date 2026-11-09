@@ -34,5 +34,7 @@ cases:
         'prefiero seguir en prepago',
         'no, por ahora no me interesa, gracias',
         'en serio no quiero nada',
+        'no gracias, sigo con recargas',
+        'que no, gracias',
       ]
     expect: { finalStage: CIERRE_SIN_VENTA, sale: false, closeTag: NO_VENTA_PREFIERE_PREPAGO }

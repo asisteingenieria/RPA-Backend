@@ -38,6 +38,11 @@ export class PlaywrightSessionDriver implements SessionDriver {
     return this.context;
   }
 
+  /** ¿Hay una página abierta? (el monitor en vivo no debe fallar si no). */
+  get hasPage(): boolean {
+    return !!this._page && !this._page.isClosed();
+  }
+
   /** Página activa, para el BrowserActor y el InboundWatcher. */
   get page(): Page {
     if (!this._page) throw new Error('Sesión sin página abierta');

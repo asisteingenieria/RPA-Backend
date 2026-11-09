@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  robotActivitySchema,
+  screenFrameSchema,
+  type RobotActivity,
+  type ScreenFrame,
+} from './live.js';
 
 /**
  * Protocolo de la pasarela de robots (v1.6, sección 2.8): lo que un robot hijo le pide al
@@ -88,17 +94,29 @@ export const rpcRequestSchema = z.object({
 export type JobKind = 'send' | 'transfer' | 'close';
 
 export type ServerFrame =
-  /** `update`: versión que el robot debe instalar cuando esté libre (v1.7), o null. */
-  | { t: 'flags'; killSwitch: boolean; paused: boolean; update?: string | null }
+  /**
+   * `update`: versión que el robot debe instalar cuando esté libre (v1.7), o null.
+   * `screen`: un ADMIN mira la pantalla del robot; transmitirla mientras sea true (D-032).
+   */
+  | { t: 'flags'; killSwitch: boolean; paused: boolean; update?: string | null; screen?: boolean }
   | { t: 'job'; id: string; kind: JobKind; data: unknown; retries?: number };
 
 export type RobotFrame =
   | { t: 'result'; id: string; ok: true; value: unknown }
-  | { t: 'result'; id: string; ok: false; error: string };
+  | { t: 'result'; id: string; ok: false; error: string }
+  /** D-032: lo que hace el robot ahora y una imagen de su pantalla (solo si se la pidieron). */
+  | { t: 'activity'; activity: RobotActivity }
+  | { t: 'screen'; frame: ScreenFrame };
 
-export const robotFrameSchema = z.discriminatedUnion('ok', [
+const resultFrameSchema = z.discriminatedUnion('ok', [
   z.object({ t: z.literal('result'), id: z.string(), ok: z.literal(true), value: z.unknown() }),
   z.object({ t: z.literal('result'), id: z.string(), ok: z.literal(false), error: z.string() }),
+]);
+
+export const robotFrameSchema = z.union([
+  resultFrameSchema,
+  z.object({ t: z.literal('activity'), activity: robotActivitySchema }),
+  z.object({ t: z.literal('screen'), frame: screenFrameSchema }),
 ]);
 
 /** Cierre del WebSocket por el servidor: el robot no debe reconectar (deshabilitado, etc.). */

@@ -25,6 +25,17 @@ export const envSchema = z.object({
   FIELD_ENCRYPTION_PREVIOUS_KEYS: optionalString,
   API_PORT: z.coerce.number().int().positive().default(3000),
   RPA_PORT: z.coerce.number().int().positive().default(3001),
+  /**
+   * Interfaz en la que escucha el /health del robot. Por defecto solo el propio equipo; en Docker
+   * (puerto publicado) va `0.0.0.0`.
+   */
+  RPA_LISTEN_HOST: z.string().min(1).default('127.0.0.1'),
+  /**
+   * Proxies de confianza de Express (`trust proxy`): de quién se acepta `X-Forwarded-For` para
+   * saber la IP real del cliente (bloqueo por intentos fallidos). `loopback` = nginx en el mismo
+   * servidor; `false` = no confiar en ninguno.
+   */
+  TRUST_PROXY: z.string().min(1).default('loopback'),
   ABAYA_BASE_URL: optionalString,
   ABAYA_USER: optionalString,
   ABAYA_PASSWORD: optionalString,

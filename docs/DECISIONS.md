@@ -1,5 +1,158 @@
 # Decisiones de diseño
 
+## D-035 · Sentimiento del cliente, solo para medición · APROBADA — implementada en local
+
+**Contexto (09/11/2026).** Las reglas de Claro piden evaluar el sentimiento del cliente. No había
+dónde guardarlo. El usuario pidió implementarlo **solo para medición**: no cambia lo que el robot
+hace ni dice.
+
+**Decisión.** El modelo devuelve en cada turno `sentimiento` (lista cerrada `SENTIMENTS`:
+POSITIVO, NEUTRO, NEGATIVO, MOLESTO; `packages/domain/src/sentiment.ts`), según el último mensaje
+del cliente; la regla va en las reglas del sistema (`agent-config.ts`). El código guarda en el perfil
+el último (`Profile.sentiment`) y el más negativo de la conversación (`Profile.sentimentWorst`,
+`worseSentiment`), y los copia en claro a `Conversation.sentiment` y `Conversation.sentimentWorst`
+(migración `20261109000000_sentimiento`): es una categoría, no un dato personal, y así se puede medir
+con SQL sin descifrar el perfil. Se ve en Trazabilidad (Cliente), En vivo y «Probar agente». Un valor
+fuera de la lista lo rechaza el esquema de salida (como la tipificación).
+
+**No hace.** No escala, no cierra ni cambia el tono por código; si después Claro quiere una acción
+(p. ej. asesor tras dos turnos «molesto»), va como perilla del flujo y la decide el código (regla 12).
+
+**Pruebas.** `sentiment.test.ts` (el peor), `conversation-engine.test.ts` (último y peor; la
+respuesta no cambia); la línea base sin red lo llena por palabras clave (98/100, sin cambios).
+
+## D-034 · Finalizar sin mensaje, nombre «Avaya» y mensajes seguidos del cliente · APROBADA — implementada en local
+
+**Contexto (09/11/2026).** Correcciones del usuario al probar la v25: (1) al tener los datos, el
+robot decía «¡Gracias, X! Te transfiero con uno de nuestros asesores…»; no debe decir nada: da
+«Finalizar» en la interfaz y esa acción ya pasa el caso a la cola de backoffice. (2) El nombre
+correcto de la aplicación es **Avaya** (con v). (3) Blindar el caso en que el cliente escribe dos o
+más mensajes seguidos en cualquier momento de la conversación.
+
+**Decisión.**
+
+1. **Paso al backoffice sin mensaje** (`AgentFlow.transferMessage`, casilla «Avisar al cliente que
+   se transfiere» en el flujo). `false` = el robot finaliza sin enviar las plantillas
+   `TRANSFERENCIA` ni `PORTABILIDAD_TRANSFERENCIA` (el cierre no espera mensajes previos). Por
+   defecto `true` para que las versiones anteriores no cambien; la v25 lo trae apagado.
+2. **Avaya.** En el panel (`interfazRPA`) y en los textos que ve una persona (errores de la API,
+   «Probar agente», resumen para el backoffice) se escribe «Avaya». Los identificadores del código
+   (`abaya-*`, `abayaChatId`, colas, paquetes `@abaya/*`, formato de exportación) no se renombran:
+   cambiarlos rompería la base, el robot instalado y los archivos exportados, sin beneficio.
+3. **Mensajes seguidos.** Ya existía el agrupador de ráfagas (espera `BURST_QUIET_MS`, 4 s, sin
+   mensajes nuevos antes de responder; un turno a la vez por conversación). El hueco era un mensaje
+   que llega **mientras** el modelo arma la respuesta: el robot enviaba una respuesta solo al
+   primero. Ahora, antes de guardar el turno, el worker revisa si hay mensajes del cliente que no
+   estaban en la ráfaga (`ConversationStore.pendingInboundIds`); si los hay, **descarta la respuesta**
+   (no envía ni marca nada como atendido; solo guarda el registro de la llamada al modelo) y rehace
+   el turno con todos los mensajes. Para no dejar al cliente esperando si escribe sin parar, pasados
+   `SUPERSEDE_MAX_MS` (45 s) desde su primer mensaje sin respuesta se responde con lo que hay y lo
+   demás va en el turno siguiente. Un mensaje que llega cuando la respuesta ya está guardada se
+   responde en el turno siguiente (como una persona). Datos tras el «SÍ»: sigue la espera de
+   `saleDataWaitSeconds`.
+4. **«Probar agente» igual que Avaya.** El simulador del panel ya no bloquea el cuadro de texto
+   mientras el agente responde: junta los mensajes seguidos (espera 4 s sin mensajes nuevos), los
+   envía en un solo turno y, si el cliente escribe mientras llega la respuesta, la descarta y
+   responde todos juntos (mismo tope de 45 s). La nota de voz sí espera a que se respondan los
+   mensajes escritos (`interfazRPA/src/hooks/use-agent-test.ts`).
+
+**Pruebas.** `turn.service.test.ts` (D-034: respuesta vieja descartada y rehecha con los dos
+mensajes; sin mensajes nuevos responde de una vez), `conversation-engine.test.ts` (finaliza sin
+mensaje) y `agent-flow.test.ts` (valor por defecto).
+
+## D-033 · Reglas y flujo de la entrega de RV (KB y blueprint «Ecommerce Móvil») · APROBADA — implementada en local
+
+**Contexto (09/11/2026).** RV entregó el blueprint conversacional «Bictoria · Ecommerce Móvil
+(WhatsApp)» y 11 KB en Markdown (revisión en `docs/plan-base-conocimiento.md`). Las KB de oferta
+tienen la vigencia de agosto y diferencias de códigos con las imágenes publicadas; mientras Claro
+las aclara, el usuario pidió **dejar las ofertas como están** y aplicar las reglas de las KB que no
+son de oferta y el flujo, probando primero en local.
+
+**Decisión.** Lo que el panel ya permitía va en la versión del agente; para lo demás, tres
+perillas nuevas del flujo (listas cerradas, D-015), con valores por defecto que dejan las
+versiones anteriores igual:
+
+1. **Inicio** (`AgentFlow.opening`): `MENU_LETRAS` (como antes) o `SIN_MENU`: el robot envía solo
+   el saludo (blueprint PLT-001 + PLT-002: pide el nombre) y el cliente escribe libre. El modelo
+   clasifica su necesidad en las mismas opciones internas (A/B/E…) y el código decide el camino
+   (regla 12); un «a» o un «1» suelto ya no es una opción.
+2. **Tope de rebates** (`AgentFlow.objectionRebates`, 0–10; 0 = sin tope, como antes; blueprint:
+   3). El código cuenta cada objeción o «no me interesa» trabajado (`Profile.rebates`); agotados,
+   cierre sin venta con la despedida. Desde el primer rebate, si el cliente abandona, el cierre se
+   tipifica como **no venta de la ruta** (FC-92: Portabilidad → mejor oferta de otros operadores;
+   Migración y Línea nueva → prefiere prepago), salvo que el modelo haya dado un motivo más preciso.
+3. **Ciudad** en los datos de la venta (`SALE_DATA_FIELDS` + `CIUDAD`, `Profile.saleCity`): el
+   código la reconoce con etiqueta («Ciudad: …») o sola en su renglón o entre comas (lista de
+   ciudades principales). `CELULAR` se presenta como «línea a activar».
+
+**Contenido (agente v25, en local).** Corrección del usuario (09/11/2026): **se mantienen las
+plantillas, la apertura con menú, el flujo, el ofrecimiento y la reactivación de la v24**; las
+perillas nuevas quedan apagadas (`MENU_LETRAS`, `objectionRebates: 0`, sin `CIUDAD`), así que el
+camino es idéntico al de la v24. La v25 solo agrega al guion reglas de las KB que no cambian el
+camino: no decir «el más vendido» ni «gratis» sin respaldo; argumentos de la KB Objeciones (validar
+la emoción, «ya tengo operador», «no confío», «no quiero perder mi número», no inventar cobertura);
+antes de la autorización solo nombre y ciudad; interés no es aceptación; y responder dudas puntuales
+con los documentos de consulta sin sacar de ahí precios ni textos legales. Brain «Conocimiento
+Claro» con búsqueda (publicado y conectado en local): FAQ (la 30 adaptada al chat), Servicio al
+Cliente, Lineamientos y Legal Regulatorio. La versión con el blueprint completo (saludo sin menú,
+plantillas PLT, 3 rebates, ciudad) queda descartada por ahora; las perillas siguen disponibles en
+el panel.
+
+**No se aplica (y por qué).** Ofertas de las KB y presentación «PROMOCIÓN FLASH» (pendiente de
+Claro); la autorización sigue **antes** de pedir datos aunque el blueprint no la tenga (Lineamientos
+y requerimiento 4 de seguridad); transferencia a la cola SAC (acción nueva en ySocial, fase 4);
+reagendamiento por franjas (no tiene nodo); guardrail con contador de 5 intentos; tope duro de
+30 min (con 3 min × 6 intentos el cierre llega antes); nombre «Bictoria» (P11). El correo se sigue
+pidiendo hasta que Claro confirme si sale.
+
+**Suite.** Casos `12-blueprint-rv.yaml` (cliente que escribe libre); los casos con letras se
+traducen al texto de la opción cuando la versión no tiene menú (`customerTurn`); los casos de
+«no» seguidos tienen negativas suficientes para cerrar con o sin tope. Línea base sin red: 98/100
+con la v24 y con la v25 (las 2 fallas son las de siempre).
+
+## D-032 · Monitor en vivo: conversaciones de cada robot y su pantalla · APROBADA — implementada
+
+**Contexto (20/10/2026).** Con tráfico real, los ADMIN querían ver qué está haciendo cada robot en
+el momento, como si miraran su pantalla por AnyDesk. La pestaña En vivo solo mostraba estados y
+conteos que se refrescaban cada 10 s. AnyDesk muestra el escritorio entero, no un robot, y no
+queda en la auditoría del panel.
+
+**Decisión.** Dos capas en la pestaña En vivo, **solo para ADMIN**:
+
+1. **Conversaciones en vivo.** Una tarjeta por robot con lo que hace en ese momento (enviando,
+   abriendo un chat, transfiriendo, cerrando, revisando la bandeja, libre) y sus chats abiertos.
+   De cada chat se ven la etapa, de quién es el turno, desde cuándo y el último mensaje. Al abrir
+   un chat, sus mensajes llegan en vivo con su estado de entrega. El servidor empuja los cambios
+   por SSE (`GET /admin/live/stream`, `?chat=` para un chat); el tablero se arma con una sola
+   consulta compartida cada 2 s y el chat cada 1 s, y solo se envía lo que cambió.
+2. **Ver pantalla.** El Chromium del robot transmite su pantalla con el _screencast_ de Chromium
+   (`Page.startScreencast`, JPEG, como máximo 2 imágenes por segundo, 1280 px; si la pantalla no
+   cambia, una imagen cada 5 s). Solo transmite mientras un ADMIN la mira: el panel marca
+   `abaya:live:screen:watch:<robot>` en Redis (10 s, se renueva) y la pasarela se lo avisa al
+   robot en las banderas del WebSocket (`flags.screen`). Las imágenes suben por ese mismo
+   WebSocket (el equipo no abre puertos) y el servidor las reenvía por Redis al panel
+   (`GET /admin/live/robots/:robot/screen`, SSE).
+
+Lo que hace el robot ahora (`RobotActivity`) lo informa el `BrowserActor` al empezar y terminar
+cada acción y queda en Redis (`abaya:live:activity:<robot>`, 60 s).
+
+**Reglas.**
+
+- **Solo mirar.** El panel no hace clic ni escribe en el navegador del robot (regla 4: toda acción
+  pasa por el `BrowserActor`). Para intervenir están la pausa y el asesor que toma el chat; AnyDesk
+  queda para soporte técnico del equipo.
+- Mirar no es una acción en Abaya: la transmisión no pasa por la fila del `BrowserActor`, no la
+  frena el kill switch ni la pausa (sirve justamente para ver a un asesor terminar un chat) y no
+  retrasa ningún envío.
+- **Datos personales (sección 8).** La pantalla y los chats muestran datos de clientes:
+  - solo ADMIN, igual que Trazabilidad (D-002);
+  - las imágenes no se guardan en disco, base de datos ni logs (solo la última, 10 s en Redis,
+    para quien abre la vista);
+  - queda en Auditoría: `SCREEN_VIEWED` y `SCREEN_VIEW_ENDED` (con los segundos), `LIVE_VIEWED`
+    (tablero) y `CONVERSATION_VIEWED` (chat), estos dos una vez cada 10 min.
+- Compatibilidad: un robot sin esta versión no informa actividad ni transmite (el panel dice
+  «sin datos»); un servidor viejo nunca pide la pantalla.
+
 ## D-031 · Con el robot en pausa no vuelve a entrar a Abaya · APROBADA — implementada
 
 **Contexto (16/10/2026, pruebas con tráfico real).** Con el robot en pausa en el panel, el asesor

@@ -23,9 +23,9 @@ export function buildSaleSummary(i: SaleSummaryInput): string {
     `Plan: ${p.planCode ?? 'N/D'}${i.plan ? ` - ${planTitle(i.plan)}` : ''}`,
     `Cliente: ${p.name ?? 'N/D'}`,
     ...(p.process === 'PORTABILIDAD' ? [`Operador actual: ${p.currentOperator ?? 'N/D'}`] : []),
-    'Número: el del chat de Abaya',
+    'Número: el del chat de Avaya',
     `Autorización de datos: ${bogotaDateTime(i.consentAt)} (hora de Bogotá)`,
-    `Chat Abaya: ${i.abayaChatId}`,
+    `Chat Avaya: ${i.abayaChatId}`,
     `Conversación: ${i.conversationId}`,
   ].join('\n');
 }

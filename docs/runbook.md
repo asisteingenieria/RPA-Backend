@@ -127,6 +127,14 @@ credenciales cifradas y entrega la configuración a cada equipo al arrancar.
   _Apagado_ (cerrado en orden), _Deshabilitado_.
 - **Trazas de error:** Robots → **Ver** → "Trazas de error" (solo ADMIN). Cada descarga queda
   auditada. Abrir con `npx playwright show-trace archivo.zip`.
+- **Monitor en vivo (D-032, solo ADMIN):** En vivo → «Monitor en vivo»: cada robot con lo que hace
+  ahora y sus chats; clic en un chat = mensajes en tiempo real; **Ver pantalla** = el navegador del
+  robot (solo mirar, 1–2 imágenes por segundo, el robot transmite solo mientras la ventana está
+  abierta). Para intervenir: **Pausar** y que el asesor tome el chat. Queda en Auditoría
+  (`LIVE_VIEWED`, `CONVERSATION_VIEWED`, `SCREEN_VIEWED`/`SCREEN_VIEW_ENDED` con los segundos).
+  «Sin datos de actividad» o «el robot no ha enviado imagen»: robot apagado, sin conexión a la
+  pasarela o con un paquete anterior a D-032. Por nginx no hace falta cambiar nada: el stream (SSE)
+  pide `X-Accel-Buffering: no` y manda un latido cada 15 s (menos que `proxy_read_timeout 300s`).
 - **Usuario de Windows:** el archivo del robot está protegido con DPAPI para el usuario que
   instaló. El robot debe correr con **ese mismo usuario** (el instalador crea el arranque
   automático para él); si se cambia de usuario, reinstalar con un código nuevo.
@@ -451,3 +459,39 @@ scp dist\robot-package\abaya-robot-windows.zip dist\robot-package\abaya-robot-wi
 
 El panel → Robots debe mostrar la versión nueva con «Firma válida»; los robots se actualizan solos
 cuando no tienen chats (§10).
+
+### 12.7 Ajustes de seguridad del 04/11/2026 (sin cortar el horario del robot)
+
+Cambios de código: IP real detrás de nginx (`TRUST_PROXY`), HSTS, correos enmascarados,
+dependencias al día y `/health` del robot solo en `127.0.0.1` (`docs/security-review.md`, H1–H5).
+
+**Orden para no afectar el horario (07:00–22:00):**
+
+1. **Servidor (API y worker), después de las 22:00.** Actualizar como en §12.2. No hace falta
+   tocar el `.env`: `TRUST_PROXY=loopback` y `RPA_LISTEN_HOST=127.0.0.1` son los valores por
+   defecto. El robot sigue conectado; si el reinicio corta el WebSocket, se reconecta solo.
+2. **nginx: IP real del cliente.** En cada `location` que va a la API (`/admin`, `/robot-api`,
+   `/health`, `/panel`) debe estar:
+
+   ```
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Real-IP $remote_addr;
+   ```
+
+   Sin estas líneas todo sigue funcionando como antes (el bloqueo por intentos sigue siendo
+   compartido). Comprobar y recargar **sin cortar conexiones**: `sudo nginx -t && sudo systemctl reload nginx`.
+3. **nginx: TLS.** En el bloque `server` de 443:
+
+   ```
+   ssl_protocols TLSv1.2 TLSv1.3;
+   server_tokens off;
+   ```
+
+   Con 1.2 y 1.3 el robot (Node) y los navegadores negocian TLS 1.3. Verificar desde el servidor:
+   `openssl s_client -connect 10.255.255.194:443 -tls1_3 </dev/null 2>/dev/null | grep -E "Protocol|Cipher"`.
+   Dejar solo `TLSv1.3` (lo que pide Claro) después de confirmar que el robot y el panel
+   siguen conectados un día completo. `nginx -t` antes de cada `reload`.
+4. **Paquete del robot, después de las 22:00** (§12.5). Cambia `zod` y el `/health` local; nada
+   del equipo usa ese puerto. El robot se actualiza solo cuando no tiene chats y vuelve a la
+   versión anterior si la nueva no arranca (§10). Para no publicar en horario, subir el paquete
+   después del cierre.

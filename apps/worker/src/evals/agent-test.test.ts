@@ -87,7 +87,7 @@ describe('probar agente (turno simulado)', () => {
     expect(state.stage).toBe('TRANSFERENCIA');
     expect(all.events).toEqual([
       'Consentimiento registrado (evidencia con cadena de hashes)',
-      'Finalizar en Abaya: la venta pasa a la cola de backoffice',
+      'Finalizar en Avaya: la venta pasa a la cola de backoffice',
     ]);
     expect(all.replies.at(-1)).toContain('Te transfiero con uno de nuestros asesores');
   });

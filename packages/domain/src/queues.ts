@@ -134,3 +134,25 @@ export const KILL_SWITCH_REASON_KEY = 'abaya:killswitch:reason';
 export function robotPauseKey(robotUser: string): string {
   return `abaya:pause:${robotUser.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
 }
+
+const liveId = (robotUser: string) => robotUser.replace(/[^a-zA-Z0-9_.-]/g, '_');
+
+/** D-032: lo que hace el robot en este momento (JSON `RobotActivity`, vence a los 60 s). */
+export function robotActivityKey(robotUser: string): string {
+  return `abaya:live:activity:${liveId(robotUser)}`;
+}
+
+/** D-032: un ADMIN mira la pantalla de este robot (se renueva mientras mira, vence a los 10 s). */
+export function screenWatchKey(robotUser: string): string {
+  return `abaya:live:screen:watch:${liveId(robotUser)}`;
+}
+
+/** D-032: última imagen de la pantalla (10 s), para quien abre la vista sin esperar un cambio. */
+export function screenLastKey(robotUser: string): string {
+  return `abaya:live:screen:last:${liveId(robotUser)}`;
+}
+
+/** D-032: canal de Redis por el que pasan las imágenes de la pantalla (nunca se guardan). */
+export function screenChannel(robotUser: string): string {
+  return `abaya:live:screen:${liveId(robotUser)}`;
+}

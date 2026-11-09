@@ -1,0 +1,1142 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "RPA de ventas en Abaya (ySocial): del mensaje del cliente a la respuesta",
+    "locale": "es",
+    "translations": {
+      "page.title": "{title} · Diagrama",
+      "diagram.description.architecture": "Un diagrama de arquitectura generado por Archify.",
+      "diagram.description.workflow": "Un diagrama de flujo de trabajo generado por Archify.",
+      "diagram.description.sequence": "Un diagrama de secuencia generado por Archify.",
+      "diagram.description.dataflow": "Un diagrama de flujo de datos generado por Archify.",
+      "diagram.description.lifecycle": "Un diagrama de ciclo de vida generado por Archify.",
+      "node.focus": "Enfocar {label}",
+      "node.focus.detail": "Enfocar {label}, {detail}",
+      "node.context.architecture": "Componente de arquitectura",
+      "node.context.workflow": "Nodo de flujo de trabajo",
+      "node.context.sequence": "Participante de secuencia",
+      "node.context.dataflow": "Nodo de flujo de datos",
+      "node.context.lifecycle": "Estado del ciclo de vida",
+      "legend.title": "Leyenda",
+      "legend.architecture.frontend": "Frontend",
+      "legend.architecture.backend": "Backend",
+      "legend.architecture.database": "Base de datos",
+      "legend.architecture.cloud": "Nube",
+      "legend.architecture.security": "Seguridad",
+      "legend.architecture.messagebus": "Bus de mensajes",
+      "legend.architecture.external": "Externo",
+      "legend.workflow.frontend": "Interfaz de usuario",
+      "legend.workflow.backend": "Lógica del agente",
+      "legend.workflow.security": "Política",
+      "legend.workflow.messagebus": "Acción de herramienta",
+      "legend.workflow.database": "Contexto / traza",
+      "legend.workflow.cloud": "Servicio en la nube",
+      "legend.workflow.external": "Sistema externo",
+      "legend.sequence.emphasis": "solicitud principal",
+      "legend.sequence.return": "respuesta",
+      "legend.sequence.security": "seguridad",
+      "legend.sequence.dashed": "traza asíncrona",
+      "legend.sequence.default": "mensaje",
+      "legend.dataflow.emphasis": "datos primarios",
+      "legend.dataflow.security": "política / PII",
+      "legend.dataflow.dashed": "lote asíncrono",
+      "legend.dataflow.database": "almacén de datos",
+      "legend.dataflow.default": "flujo de datos",
+      "legend.lifecycle.start": "estado inicial",
+      "legend.lifecycle.active": "activo",
+      "legend.lifecycle.waiting": "en espera",
+      "legend.lifecycle.decision": "decisión",
+      "legend.lifecycle.success": "éxito",
+      "legend.lifecycle.failure": "fallo / salida",
+      "legend.lifecycle.neutral": "neutral",
+      "legend.lifecycle.external": "externo",
+      "legend.lifecycle.final": "estado final",
+      "viewer.kind.frontend": "Frontend",
+      "viewer.kind.backend": "Backend",
+      "viewer.kind.database": "Base de datos",
+      "viewer.kind.cloud": "Nube",
+      "viewer.kind.security": "Seguridad",
+      "viewer.kind.messagebus": "Bus de mensajes",
+      "viewer.kind.external": "Externo",
+      "viewer.kind.neutral": "Neutral",
+      "viewer.kind.node": "Nodo",
+      "viewer.kind.start": "Inicio",
+      "viewer.kind.active": "Activo",
+      "viewer.kind.waiting": "En espera",
+      "viewer.kind.decision": "Decisión",
+      "viewer.kind.success": "Éxito",
+      "viewer.kind.failure": "Fallo",
+      "viewer.toolbar.actions": "Acciones del diagrama",
+      "viewer.theme.toggle.title": "Cambiar tema (T)",
+      "viewer.theme.toggle": "Cambiar tema de color",
+      "viewer.theme.dark": "Oscuro",
+      "viewer.theme.light": "Claro",
+      "viewer.preset.choose.title": "Elegir estilo visual (S alterna)",
+      "viewer.preset.choose": "Elegir estilo visual",
+      "viewer.preset.style": "Estilo",
+      "viewer.preset.menu": "Estilo visual",
+      "viewer.preset.identity": "Identidad visual",
+      "viewer.preset.cycles": "alterna",
+      "viewer.preset.classic": "Clásico",
+      "viewer.preset.classic.short": "Clásico",
+      "viewer.preset.classic.hint": "Predeterminado técnico estable",
+      "viewer.preset.flow": "Flujo de señal",
+      "viewer.preset.flow.short": "Flujo",
+      "viewer.preset.flow.hint": "Presentación con énfasis en el movimiento",
+      "viewer.preset.blueprint": "Plano",
+      "viewer.preset.blueprint.hint": "Revisión de ingeniería",
+      "viewer.preset.editorial": "Editorial",
+      "viewer.preset.editorial.hint": "Notas de publicación y lanzamiento",
+      "viewer.preset.badge.signalFlow": "FLUJO DE SEÑAL",
+      "viewer.preset.badge.blueprint": "PLANO / REV 01",
+      "viewer.preset.badge.editorial": "EDITORIAL / NOTA DE CAMPO",
+      "viewer.preset.badge.editorialPlate": "ARCHIFY / LÁMINA 04",
+      "viewer.preset.current": "Estilo visual: {style}. Elegir estilo visual",
+      "viewer.motion.live": "Activa",
+      "viewer.motion.still": "Fija",
+      "viewer.motion.pause": "Pausar animación",
+      "viewer.motion.resume": "Reanudar animación",
+      "viewer.motion.reduced": "Animación pausada por la preferencia de movimiento reducido",
+      "viewer.motion.hidden": "Animación pausada mientras esta página está oculta",
+      "viewer.motion.yielding": "Pausar animación; cediendo a {owner}",
+      "viewer.motion.yielding.title": "Vista previa en vivo activada · cediendo a {owner}",
+      "viewer.owner.route": "Sonda de ruta",
+      "viewer.owner.lens": "Lente semántico",
+      "viewer.owner.relationship": "Vista previa de relación",
+      "viewer.owner.intent": "Traza de intención",
+      "viewer.owner.focus": "enfoque semántico",
+      "viewer.owner.legend": "vista previa de la leyenda",
+      "viewer.owner.reader": "interacción del lector",
+      "viewer.present.enter": "Entrar al modo presentación",
+      "viewer.present.enter.title": "Modo presentación (F)",
+      "viewer.present.exit": "Salir del modo presentación",
+      "viewer.present.exit.title": "Salir del modo presentación (F o Escape)",
+      "viewer.present.present": "Presentar",
+      "viewer.present.exit.label": "Salir",
+      "viewer.export.button": "Exportar",
+      "viewer.export.button.title": "Exportar diagrama (E)",
+      "viewer.export.diagram": "Exportar diagrama",
+      "viewer.export.menu": "Exportar",
+      "viewer.export.subtitle": "Salidas portables y limpias",
+      "viewer.export.share": "Compartir",
+      "viewer.export.shareCard": "Tarjeta para compartir",
+      "viewer.export.routeShareCard": "Tarjeta de ruta para compartir",
+      "viewer.export.reachShareCard": "Tarjeta de alcance para compartir",
+      "viewer.export.copyDiagram": "Copiar diagrama",
+      "viewer.export.clipboardPng": "PNG al portapapeles",
+      "viewer.export.raster": "Imágenes rasterizadas",
+      "viewer.export.image": "Imagen",
+      "viewer.export.lossless": "Imagen sin pérdida",
+      "viewer.export.compact": "Imagen compacta",
+      "viewer.export.modern": "Imagen moderna",
+      "viewer.export.vectorMotion": "Vector y movimiento",
+      "viewer.export.vectorMotion.heading": "Vector y movimiento",
+      "viewer.export.editable": "Vector editable",
+      "viewer.export.svg.auto": "SVG · Auto",
+      "viewer.export.svg.auto.hint": "Coincide con el tema del host",
+      "viewer.export.svg.light": "SVG · Claro",
+      "viewer.export.svg.light.hint": "Siempre claro",
+      "viewer.export.svg.dark": "SVG · Oscuro",
+      "viewer.export.svg.dark.hint": "Siempre oscuro",
+      "viewer.export.motion6s": "Movimiento de 6 s",
+      "viewer.export.unsupported": "No compatible con este navegador",
+      "viewer.export.clipboardUnsupported": "Este navegador no admite escribir imágenes en el portapapeles",
+      "viewer.export.clipboardUnsupported.short": "Escritura de imágenes en el portapapeles no admitida en este navegador.",
+      "viewer.export.motionUnavailable": "Captura de movimiento no disponible en este navegador",
+      "viewer.export.webmUnavailable": "WebM no disponible en este navegador",
+      "viewer.export.failed": "Falló la exportación: {message}",
+      "viewer.export.unknownVariant": "Variante de tarjeta para compartir desconocida: {variant}",
+      "viewer.export.routeRequired": "Traza una ruta antes de exportar una tarjeta de ruta para compartir",
+      "viewer.export.reachRequired": "Traza el alcance definido antes de exportar una tarjeta de alcance para compartir",
+      "viewer.export.unknown": "desconocido",
+      "viewer.export.routeFailed": "Falló la exportación de la tarjeta de ruta para compartir: {message}",
+      "viewer.export.reachFailed": "Falló la exportación de la tarjeta de alcance para compartir: {message}",
+      "viewer.export.copyFailed": "Error al copiar: {message}",
+      "viewer.export.copiedPng": "PNG copiado al portapapeles",
+      "viewer.export.downloadedRoute": "Tarjeta de ruta para compartir descargada",
+      "viewer.export.downloadedReach": "Tarjeta de alcance para compartir descargada",
+      "viewer.export.downloadedWebm": "WebM descargado",
+      "viewer.export.recording": "Grabando 6 segundos de movimiento…",
+      "viewer.export.card.routeSummary.one": "Ruta: {source} → {target} · {count} paso",
+      "viewer.export.card.routeSummary.other": "Ruta: {source} → {target} · {count} pasos",
+      "viewer.export.card.reachSummary": "Alcance definido {direction} desde {origin} · {nodes} · {links} · máx {hops}",
+      "viewer.export.card.node.one": "{count} nodo",
+      "viewer.export.card.node.other": "{count} nodos",
+      "viewer.export.card.link.one": "{count} enlace",
+      "viewer.export.card.link.other": "{count} enlaces",
+      "viewer.export.card.hop.one": "{count} salto",
+      "viewer.export.card.hop.other": "{count} saltos",
+      "viewer.export.card.routeBadge": "ARCHIFY · RUTA · {hops}",
+      "viewer.export.card.reachBadge": "ARCHIFY · ALCANCE {direction}",
+      "viewer.export.direction.upstream": "Ascendente",
+      "viewer.export.direction.downstream": "Descendente",
+      "viewer.export.error.canvasUnavailable": "Lienzo no disponible para {label}",
+      "viewer.export.error.contextUnavailable": "Contexto de lienzo 2D no disponible para {label}",
+      "viewer.export.error.toBlobUnavailable": "canvas.toBlob no disponible para {label}",
+      "viewer.export.error.toBlobNull": "canvas.toBlob no devolvió datos para {label}",
+      "viewer.export.error.variantsCombined": "Las variantes de tarjeta para compartir no se pueden combinar",
+      "viewer.export.error.viewerState": "La exportación de la tarjeta para compartir no pudo quitar el estado temporal del visor",
+      "viewer.export.error.routeState": "La exportación de la tarjeta de ruta no pudo preservar la ruta resuelta de forma segura",
+      "viewer.export.error.reachState": "La exportación de la tarjeta de alcance no pudo preservar el alcance definido de forma segura",
+      "viewer.export.error.webmRequirements": "La exportación de movimiento WebM requiere una animación de traza y compatibilidad del navegador con MediaRecorder",
+      "viewer.export.error.mediaRecorder": "MediaRecorder falló",
+      "viewer.export.error.emptyWebm": "MediaRecorder produjo un WebM vacío",
+      "viewer.export.error.webmBackground": "No se pudo cargar el fondo SVG para la exportación WebM",
+      "viewer.guide.title": "Explorar este sistema",
+      "viewer.focus.selectedNodes": "{count} nodos seleccionados",
+      "viewer.guide.eyebrow": "Guía del diagrama",
+      "viewer.guide.close": "Cerrar la guía del diagrama",
+      "viewer.guide.inspecting": "Inspeccionando la semántica compilada",
+      "viewer.guide.actions": "Acciones de exploración del diagrama",
+      "viewer.guide.find": "Buscar cualquier nodo",
+      "viewer.guide.find.hint": "Busca por etiquetas, responsabilidades, tipos e IDs estables.",
+      "viewer.guide.route": "Trazar una ruta",
+      "viewer.guide.route.aria": "Trazar una ruta dirigida",
+      "viewer.guide.route.hint": "Pregunta cómo se conectan dos nodos semánticos en el sentido definido.",
+      "viewer.guide.map": "Ver todo el sistema",
+      "viewer.guide.map.hint": "Abre el Radar semántico con un viewport en vivo y nodos estables.",
+      "viewer.guide.lens": "Comparar tipos semánticos",
+      "viewer.guide.lens.hint": "Cuenta roles, revela su tráfico y compara enlaces directos definidos.",
+      "viewer.guide.present": "Entrar al modo presentación",
+      "viewer.guide.present.hint": "Dale al diagrama en vivo todo el viewport sin cambiar la exportación.",
+      "viewer.guide.shortcuts": "Atajos de teclado adicionales",
+      "viewer.guide.shortcut.export": "Exportar",
+      "viewer.guide.shortcut.theme": "Tema",
+      "viewer.guide.shortcut.style": "Estilo",
+      "viewer.guide.shortcut.reset": "Restablecer",
+      "viewer.guide.shortcut.zoomIn": "Acercar",
+      "viewer.guide.shortcut.zoomOut": "Alejar",
+      "viewer.guide.shortcut.close": "Cerrar",
+      "viewer.guide.facts": "{nodes} · {relationships}",
+      "viewer.guide.fact.node.one": "{count} nodo semántico",
+      "viewer.guide.fact.node.other": "{count} nodos semánticos",
+      "viewer.guide.fact.relationship.one": "{count} relación",
+      "viewer.guide.fact.relationship.other": "{count} relaciones",
+      "viewer.guide.open": "Abrir la guía del diagrama",
+      "viewer.finder.title": "Buscar un nodo",
+      "viewer.finder.close": "Cerrar el buscador de nodos",
+      "viewer.finder.placeholder": "Buscar etiquetas o IDs",
+      "viewer.finder.search": "Buscar nodos del diagrama",
+      "viewer.finder.results": "Nodos del diagrama",
+      "viewer.finder.empty": "No hay nodos coincidentes",
+      "viewer.finder.result.focus": "Enfocar {label}",
+      "viewer.finder.result.routeStart": "Elegir {label} como inicio de la ruta",
+      "viewer.finder.result.routeTarget": "Elegir {label} como destino de la ruta, {links}",
+      "viewer.finder.status.empty": "No hay nodos coincidentes",
+      "viewer.finder.status.count.one": "{count} nodo coincidente",
+      "viewer.finder.status.count.other": "{count} nodos coincidentes",
+      "viewer.finder.noun.nodes": "nodos",
+      "viewer.finder.link.one": "{count} enlace",
+      "viewer.finder.link.other": "{count} enlaces",
+      "viewer.finder.result.focus.one": "Enfocar {label}, {count} conexión relacionada",
+      "viewer.finder.result.focus.other": "Enfocar {label}, {count} conexiones relacionadas",
+      "viewer.finder.status.filtered": "{visible} de {available} {noun}",
+      "viewer.finder.status.all": "{available} {noun}",
+      "viewer.passport.eyebrow": "Pasaporte semántico",
+      "viewer.passport.metadata": "Metadatos del nodo",
+      "viewer.passport.evidence": "Evidencia de fuente verificada",
+      "viewer.passport.verified": "Fuente verificada",
+      "viewer.passport.verificationScope": "Verificado contra el Git local en la revisión fijada. No se ha comprobado el acceso remoto.",
+      "viewer.passport.reach": "Alcance definido",
+      "viewer.passport.reach.trace": "Trazar la alcanzabilidad definida",
+      "viewer.passport.upstream": "Ascendente",
+      "viewer.passport.downstream": "Descendente",
+      "viewer.passport.upstream.trace": "Trazar la alcanzabilidad definida ascendente",
+      "viewer.passport.downstream.trace": "Trazar la alcanzabilidad definida descendente",
+      "viewer.passport.close": "Cerrar el pasaporte semántico",
+      "viewer.passport.move": "Mover el pasaporte semántico. Arrastra, usa las flechas o pulsa Inicio para restablecer.",
+      "viewer.passport.copy": "Copiar enlace",
+      "viewer.passport.copy.focus": "Copiar enlace al nodo enfocado",
+      "viewer.passport.relations": "Relaciones",
+      "viewer.passport.relations.show": "Mostrar relaciones conectadas",
+      "viewer.passport.relations.hide": "Ocultar relaciones conectadas",
+      "viewer.passport.relations.list": "Relaciones conectadas",
+      "viewer.passport.copyRelation": "Copiar relación",
+      "viewer.passport.copyNode": "Copiar nodo",
+      "viewer.passport.copyPinned": "Copiar enlace a la relación fijada",
+      "viewer.passport.copySource": "Copiar enlace al nodo de origen",
+      "viewer.passport.copy.focused.success": "Enlace del nodo enfocado copiado",
+      "viewer.passport.copy.pinned.success": "Enlace de la relación fijada copiado",
+      "viewer.passport.copy.focused.failed": "No se pudo copiar el enlace del nodo enfocado",
+      "viewer.passport.copy.pinned.failed": "No se pudo copiar el enlace de la relación fijada",
+      "viewer.passport.relationship.none": "No hay relaciones conectadas",
+      "viewer.passport.relationship.count.one": "{count} relación",
+      "viewer.passport.relationship.count.other": "{count} relaciones",
+      "viewer.passport.relationship.show.one": "Mostrar {count} relación conectada",
+      "viewer.passport.relationship.show.other": "Mostrar {count} relaciones conectadas",
+      "viewer.passport.relationship.summary": "{out} salientes · {in} entrantes{loops}",
+      "viewer.passport.relationship.loops": " · {count} bucle",
+      "viewer.passport.relationship.explorer": "Explorador de relaciones directas",
+      "viewer.passport.relationship.help": "Usa las flechas para explorar las relaciones. Pulsa Enter o Espacio para fijar detalles; Escape las borra.",
+      "viewer.passport.relationship.loopsBack": "vuelve sobre sí mismo",
+      "viewer.passport.relationship.connectsTo": "conecta a",
+      "viewer.passport.relationship.connectsFrom": "conecta desde",
+      "viewer.passport.relationship.pinned": "Relación fijada · {from} → {to} · {label}",
+      "viewer.passport.relationship.inspect": "Inspeccionar relación {index} de {total}: {from} a {to}, {label}. Pulsa Enter para ver detalles.",
+      "viewer.passport.relationship.group.out": "Salientes",
+      "viewer.passport.relationship.group.in": "Entrantes",
+      "viewer.passport.relationship.group.loop": "Bucles propios",
+      "viewer.passport.relationship.row": "{group}: {relationship}, {neighbor}",
+      "viewer.passport.relationship.direction.out": "SAL →",
+      "viewer.passport.relationship.direction.in": "← ENT",
+      "viewer.passport.relationship.direction.loop": "BUCLE",
+      "viewer.passport.sourceCount.one": "{count} referencia de fuente verificada",
+      "viewer.passport.sourceCount.other": "{count} referencias de fuente verificadas",
+      "viewer.passport.sourceMarker": "SRC",
+      "viewer.passport.beacon.one": "{count} fuente verificada; enfoca este nodo para inspeccionar",
+      "viewer.passport.beacon.other": "{count} fuentes verificadas; enfoca este nodo para inspeccionar",
+      "viewer.passport.repository.open": "Abrir la revisión verificada del repositorio {revision}",
+      "viewer.passport.source.open": "Abrir la fuente verificada {path} en la revisión {revision}",
+      "viewer.passport.source.openLink": "Abrir ↗",
+      "viewer.passport.reach.upstream.one": "Trazar {count} nodo definido ascendente",
+      "viewer.passport.reach.upstream.other": "Trazar {count} nodos definidos ascendentes",
+      "viewer.passport.reach.downstream.one": "Trazar {count} nodo definido descendente",
+      "viewer.passport.reach.downstream.other": "Trazar {count} nodos definidos descendentes",
+      "viewer.passport.reach.noUpstream": "No hay nodos definidos ascendentes",
+      "viewer.passport.reach.noDownstream": "No hay nodos definidos descendentes",
+      "viewer.passport.reach.status": "{direction} · {nodes} nodos · {links} enlaces · máx {hops} saltos",
+      "viewer.route.eyebrow": "Ruta",
+      "viewer.route.start": "Haz clic donde empieza la ruta",
+      "viewer.route.start.find": "Buscar inicio",
+      "viewer.route.start.find.aria": "Buscar un inicio de ruta",
+      "viewer.route.copy": "Copiar enlace",
+      "viewer.route.copy.aria": "Copiar enlace a la ruta trazada",
+      "viewer.route.clear": "Borrar",
+      "viewer.route.clear.aria": "Borrar la sonda de ruta",
+      "viewer.route.traced": "Ruta",
+      "viewer.route.pickTwo": "Haz clic en dos nodos del diagrama",
+      "viewer.route.pickOne": "Haz clic en un nodo del diagrama",
+      "viewer.route.controls": "Controles del recorrido de la ruta",
+      "viewer.route.previous": "Posición anterior de la ruta",
+      "viewer.route.play": "Reproducir el recorrido de la ruta",
+      "viewer.route.pause": "Pausar el recorrido de la ruta",
+      "viewer.route.replay": "Repetir el recorrido de la ruta",
+      "viewer.route.next": "Posición siguiente de la ruta",
+      "viewer.route.journey": "Recorrido",
+      "viewer.route.pause.label": "Pausar",
+      "viewer.route.replay.label": "Repetir",
+      "viewer.route.overview": "Vista general",
+      "viewer.route.overview.aria": "Mostrar la vista general completa de la ruta",
+      "viewer.route.instructions": "Haz clic en un inicio y luego en un final. La ruta sigue las flechas.",
+      "viewer.route.destination": "¿Dónde termina la ruta desde {label}?",
+      "viewer.route.destination.find": "Buscar destino",
+      "viewer.route.destination.find.aria": "Buscar un destino de ruta alcanzable",
+      "viewer.route.differentDestination": "Elige un destino diferente",
+      "viewer.route.distinct": "Elige dos nodos distintos.",
+      "viewer.route.unreachable": "No se llega a {label} desde aquí",
+      "viewer.route.unreachable.detail": "No se llega a {target} desde {source} siguiendo las flechas. Elige un nodo resaltado.",
+      "viewer.route.start.instructions": "Luego elige el final. Solo se iluminan los nodos alcanzables.",
+      "viewer.route.copy.success": "Enlace de la ruta trazada copiado",
+      "viewer.route.copy.failed": "No se pudo copiar el enlace de la ruta trazada",
+      "viewer.route.position": "Posición de la ruta {index} de {total}: {label}",
+      "viewer.route.step": "Paso {index} de {total} · {phase} · {label}",
+      "viewer.route.motionRequired": "El recorrido automático requiere la animación Activa",
+      "viewer.route.trigger.clear": "Borrar la ruta trazada",
+      "viewer.route.overview.status": "{nodes} · {hops} · ruta más corta",
+      "viewer.route.overview.node.one": "{count} nodo",
+      "viewer.route.overview.node.other": "{count} nodos",
+      "viewer.route.overview.hop.one": "{count} paso",
+      "viewer.route.overview.hop.other": "{count} pasos",
+      "viewer.route.phase.playing": "Reproduciendo",
+      "viewer.route.phase.complete": "Completo",
+      "viewer.route.phase.inspecting": "Inspeccionando",
+      "viewer.route.destination.count.one": "{count} nodo alcanzable está resaltado. Haz clic en él.",
+      "viewer.route.destination.count.other": "{count} nodos alcanzables están resaltados. Haz clic en uno.",
+      "viewer.route.noOutgoing": "Ninguna flecha sale de este nodo. Bórralo y elige otro inicio.",
+      "viewer.route.result.title": "{source} a {target}",
+      "viewer.route.finder.source.title": "Elegir el inicio de la ruta",
+      "viewer.route.finder.source.placeholder": "Buscar orígenes de ruta",
+      "viewer.route.finder.source.empty": "No hay orígenes de ruta coincidentes",
+      "viewer.route.finder.source.results": "Nodos que pueden iniciar una ruta",
+      "viewer.route.finder.source.noun": "orígenes de ruta",
+      "viewer.route.finder.source.badge": "inicio",
+      "viewer.route.finder.target.title": "Destino desde {label}",
+      "viewer.route.finder.target.placeholder": "Buscar destinos alcanzables",
+      "viewer.route.finder.target.empty": "No hay destinos alcanzables coincidentes",
+      "viewer.route.finder.target.results": "Destinos de ruta alcanzables",
+      "viewer.route.finder.target.noun": "destinos alcanzables",
+      "viewer.route.hop.one": "{count} salto",
+      "viewer.route.hop.other": "{count} saltos",
+      "viewer.lens.eyebrow": "Lente semántico",
+      "viewer.lens.title": "Comparar roles del sistema",
+      "viewer.lens.close": "Cerrar el lente semántico",
+      "viewer.lens.instruction": "Elige hasta dos tipos semánticos. Uno revela su tráfico real; dos comparan solo las relaciones directas definidas.",
+      "viewer.lens.kinds": "Tipos semánticos",
+      "viewer.lens.choose": "Elige un tipo para inspeccionar sus nodos y las relaciones que lo tocan.",
+      "viewer.lens.copy": "Copiar enlace al lente semántico",
+      "viewer.lens.clear": "Borrar el lente semántico",
+      "viewer.lens.open": "Abrir el lente semántico",
+      "viewer.lens.openActive": "Abrir el lente semántico activo",
+      "viewer.lens.legend": "Leyenda semántica",
+      "viewer.lens.legend.inspect.one": "Inspeccionar {label}, {count} nodo",
+      "viewer.lens.legend.inspect.other": "Inspeccionar {label}, {count} nodos",
+      "viewer.lens.kind.count.one": "{label}, {count} nodo",
+      "viewer.lens.kind.count.other": "{label}, {count} nodos",
+      "viewer.lens.compare.one": "{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} relación directa",
+      "viewer.lens.compare.other": "{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} relaciones directas",
+      "viewer.lens.single": "{nodes} · {relationships} · los pares conectados permanecen visibles",
+      "viewer.lens.node.one": "{count} nodo {label}",
+      "viewer.lens.node.other": "{count} nodos {label}",
+      "viewer.lens.relationship.one": "{count} relación en contacto",
+      "viewer.lens.relationship.other": "{count} relaciones en contacto",
+      "viewer.radar.title": "Radar semántico",
+      "viewer.radar.building": "Construyendo la vista general",
+      "viewer.radar.openFull": "Abrir el radar semántico completo",
+      "viewer.radar.open": "Abrir el radar",
+      "viewer.radar.close": "Cerrar el radar semántico",
+      "viewer.radar.surface": "Vista general del diagrama. Haz clic en un nodo para enfocarlo, o usa las flechas para desplazarte.",
+      "viewer.radar.click": "Clic en el nodo",
+      "viewer.radar.drag": "Arrastra para desplazar",
+      "viewer.radar.space": "El radar semántico necesita más espacio de MAPA.",
+      "viewer.radar.nodes": "Nodos del radar del diagrama semántico",
+      "viewer.radar.focus": "Enfocar {label} desde el Radar semántico",
+      "viewer.radar.status": "{count} nodos · {viewport}",
+      "viewer.radar.fullMap": "{count} nodos · mapa completo",
+      "viewer.radar.compacted": "Radar compactado para no tapar el Pasaporte semántico ni los controles de MAPA.",
+      "viewer.radar.cancelWaiting": "Cancelar la espera del radar semántico por más espacio de MAPA",
+      "viewer.radar.needsSpace": "El radar semántico necesita más espacio de MAPA visible",
+      "viewer.radar.viewport.full": "mapa completo",
+      "viewer.radar.viewport.width": "{percent}% de ancho",
+      "viewer.radar.viewport.scale": "{percent}% del viewport",
+      "viewer.nav.controls": "Controles de vista del diagrama",
+      "viewer.nav.route": "Trazar una ruta dirigida",
+      "viewer.nav.route.title": "Trazar ruta (R)",
+      "viewer.nav.route.short": "RUTA",
+      "viewer.nav.radar": "Abrir el radar semántico",
+      "viewer.nav.radar.title": "Radar semántico (M)",
+      "viewer.nav.radar.short": "MAPA",
+      "viewer.nav.lens": "Abrir el lente semántico",
+      "viewer.nav.lens.title": "Lente semántico (L)",
+      "viewer.nav.lens.short": "LENTE",
+      "viewer.nav.find": "Buscar un nodo",
+      "viewer.nav.find.title": "Buscar un nodo (/)",
+      "viewer.outline.title": "Índice de nodos",
+      "viewer.rail.show": "Notas e índice",
+      "viewer.rail.controls": "Panel lateral",
+      "viewer.rail.collapse": "Contraer panel lateral",
+      "viewer.rail.bottom": "Mover el panel debajo",
+      "viewer.rail.right": "Mover el panel al lado",
+      "viewer.nav.guide": "Abrir la guía del diagrama",
+      "viewer.nav.guide.title": "Guía del diagrama (?)",
+      "viewer.nav.zoomOut": "Alejar",
+      "viewer.nav.zoomOut.title": "Alejar (-)",
+      "viewer.nav.reset": "Restablecer la vista del diagrama",
+      "viewer.nav.reset.title": "Restablecer vista (0)",
+      "viewer.nav.read": "LEER",
+      "viewer.nav.zoomIn": "Acercar",
+      "viewer.nav.zoomIn.title": "Acercar (+)",
+      "viewer.nav.camera": "{hint}. Restablecer la vista del diagrama",
+      "viewer.nav.camera.title": "{semantic}{hint} · restablecer vista (0)",
+      "viewer.nav.camera.semantic": "Cámara semántica activa · ",
+      "viewer.nav.level.map": "MAPA",
+      "viewer.nav.level.read": "LEER",
+      "viewer.nav.level.full": "COMPLETO",
+      "viewer.nav.level.auto": "AUTO",
+      "viewer.nav.detail.map": "Acerca para revelar las etiquetas de relación y el contexto de los nodos",
+      "viewer.nav.detail.read": "Acerca de nuevo para revelar etiquetas y anotaciones",
+      "viewer.nav.detail.full": "Detalle completo del diagrama",
+      "viewer.intent.summary": "{label}. {out} salientes, {in} entrantes{loops}. {total} conexiones. Pulsa Enter para ver detalles.",
+      "viewer.intent.loops": ", {count} bucle propio",
+      "viewer.common.copied": "Copiado",
+      "viewer.common.copyFailed": "Error al copiar",
+      "viewer.common.copyLink": "Copiar enlace",
+      "viewer.common.clear": "Borrar",
+      "viewer.common.close": "Cerrar"
+    },
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-rpa-ventas-20261015-173839/rpa-ventas.html",
+    "repository": {
+      "url": "https://github.com/asisteingenieria/RPA-Backend.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "9c9aa55b84f401840083d5e308a3d3e20d9b3b53"
+    },
+    "viewBox": [
+      1215,
+      776
+    ],
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "Código (robot, API, worker)"
+        },
+        "security": {
+          "label": "Seguridad y validación"
+        },
+        "messagebus": {
+          "label": "Cola o pasarela"
+        },
+        "database": {
+          "label": "Datos y configuración"
+        },
+        "cloud": {
+          "label": "Servicio externo (ySocial, Gemini)"
+        },
+        "external": {
+          "label": "Persona"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "ysocial",
+      "label": "Cliente y ySocial / Abaya"
+    },
+    {
+      "id": "robot",
+      "label": "Robot en el PC (apps/rpa)"
+    },
+    {
+      "id": "seguridad",
+      "label": "Compuertas y fallas",
+      "variant": "exception"
+    },
+    {
+      "id": "servidor",
+      "label": "Servidor (apps/api y apps/worker)"
+    },
+    {
+      "id": "motor",
+      "label": "Motor: redacta y valida"
+    }
+  ],
+  "phases": [
+    {
+      "id": "entrada",
+      "label": "Leer el mensaje",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "decision",
+      "label": "Decidir y redactar",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "salida",
+      "label": "Escribir en ySocial",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "cli_escribe",
+    "ys_asigna",
+    "rb_watch",
+    "rb_proc",
+    "sv_pasarela",
+    "wk_motor",
+    "md_llm",
+    "md_valid",
+    "wk_outbox",
+    "sg_gate",
+    "rb_actor",
+    "ys_publica"
+  ],
+  "nodes": [
+    {
+      "id": "cli_escribe",
+      "lane": "ysocial",
+      "col": 0,
+      "type": "external",
+      "label": "Cliente escribe",
+      "sublabel": "WhatsApp",
+      "width": 113
+    },
+    {
+      "id": "ys_asigna",
+      "lane": "ysocial",
+      "col": 1,
+      "type": "cloud",
+      "label": "Caso asignado",
+      "sublabel": "aviso ACEPTAR (N)",
+      "width": 114,
+      "sources": [
+        {
+          "path": "apps/rpa/src/abaya/selectors.ts",
+          "line": 62,
+          "end_line": 74,
+          "label": "bandeja y aviso"
+        }
+      ]
+    },
+    {
+      "id": "ys_publica",
+      "lane": "ysocial",
+      "col": 4,
+      "type": "cloud",
+      "label": "Mensaje publicado",
+      "sublabel": "el cliente lo recibe",
+      "width": 130,
+      "sources": [
+        {
+          "path": "apps/rpa/src/abaya/pages/chat.page.ts",
+          "line": 216,
+          "end_line": 224,
+          "label": "verificación"
+        }
+      ]
+    },
+    {
+      "id": "ys_finaliza",
+      "lane": "ysocial",
+      "col": 3,
+      "type": "cloud",
+      "label": "FINALIZAR",
+      "sublabel": "backoffice o etiqueta",
+      "width": 136,
+      "sources": [
+        {
+          "path": "apps/rpa/src/abaya/selectors.ts",
+          "line": 105,
+          "end_line": 140,
+          "label": "Finalizar y etiquetas"
+        }
+      ]
+    },
+    {
+      "id": "rb_arranque",
+      "lane": "robot",
+      "col": 0,
+      "type": "backend",
+      "label": "Arranque",
+      "sublabel": "horario · login",
+      "width": 103,
+      "sources": [
+        {
+          "path": "apps/rpa/src/main.ts",
+          "line": 33,
+          "end_line": 60,
+          "label": "espera el horario"
+        },
+        {
+          "path": "apps/rpa/src/session/session-manager.ts",
+          "line": 70,
+          "end_line": 105,
+          "label": "login y relogin"
+        }
+      ]
+    },
+    {
+      "id": "rb_watch",
+      "lane": "robot",
+      "col": 1,
+      "type": "backend",
+      "label": "InboundWatcher",
+      "sublabel": "XHR + SignalR + DOM",
+      "width": 125,
+      "sources": [
+        {
+          "path": "apps/rpa/src/inbound/inbound-watcher.ts",
+          "line": 34,
+          "end_line": 49
+        },
+        {
+          "path": "apps/rpa/src/abaya/network/parsers.ts",
+          "line": 13,
+          "end_line": 50,
+          "label": "parsers zod"
+        }
+      ]
+    },
+    {
+      "id": "rb_proc",
+      "lane": "robot",
+      "col": 2,
+      "type": "backend",
+      "label": "InboundProcessor",
+      "sublabel": "huella · sin duplicados",
+      "width": 147,
+      "sources": [
+        {
+          "path": "apps/rpa/src/inbound/inbound-processor.ts",
+          "line": 104,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "rb_actor",
+      "lane": "robot",
+      "col": 4,
+      "type": "backend",
+      "label": "BrowserActor",
+      "sublabel": "Enter o flecha",
+      "width": 98,
+      "sources": [
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 294,
+          "end_line": 370,
+          "label": "doSend"
+        },
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 448,
+          "end_line": 475,
+          "label": "submit según sendMode"
+        },
+        {
+          "path": "apps/rpa/src/abaya/pages/chat.page.ts",
+          "line": 127,
+          "end_line": 146,
+          "label": "sendMode"
+        }
+      ]
+    },
+    {
+      "id": "rb_handoff",
+      "lane": "robot",
+      "col": 3,
+      "type": "backend",
+      "label": "Handoff",
+      "sublabel": "transferir · cerrar",
+      "width": 125,
+      "sources": [
+        {
+          "path": "apps/rpa/src/handoff/handoff-processor.ts",
+          "line": 31,
+          "end_line": 80
+        }
+      ]
+    },
+    {
+      "id": "sg_turno",
+      "lane": "seguridad",
+      "col": 0,
+      "type": "security",
+      "label": "Fin de turno",
+      "sublabel": "FinTurno · Salir",
+      "width": 109,
+      "sources": [
+        {
+          "path": "apps/rpa/src/schedule/shift-end.ts",
+          "line": 31,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "sg_gate",
+      "lane": "seguridad",
+      "col": 4,
+      "type": "security",
+      "label": "Compuerta",
+      "sublabel": "kill switch · pausa · edad",
+      "width": 163,
+      "sources": [
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 294,
+          "end_line": 320,
+          "label": "estado y edad"
+        },
+        {
+          "path": "apps/rpa/src/child/gateway-client.ts",
+          "line": 99,
+          "end_line": 120,
+          "label": "banderas por WebSocket"
+        },
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 477,
+          "end_line": 486,
+          "label": "preflight"
+        }
+      ]
+    },
+    {
+      "id": "sg_falla",
+      "lane": "seguridad",
+      "col": 5,
+      "type": "security",
+      "label": "No se escribe",
+      "sublabel": "UNCERTAIN · STALE",
+      "width": 114,
+      "sources": [
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 527,
+          "end_line": 532,
+          "label": "uncertain"
+        },
+        {
+          "path": "apps/rpa/src/actor/browser-actor.ts",
+          "line": 30,
+          "end_line": 37,
+          "label": "STALE_AFTER_MS"
+        }
+      ]
+    },
+    {
+      "id": "sv_pasarela",
+      "lane": "servidor",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Pasarela + cola",
+      "sublabel": "abaya.inbound",
+      "width": 113,
+      "sources": [
+        {
+          "path": "apps/api/src/robots/gateway/robot-gateway.service.ts",
+          "line": 108,
+          "end_line": 120,
+          "label": "inbound.store"
+        },
+        {
+          "path": "packages/robot-store/src/inbound-sink.ts",
+          "line": 38,
+          "end_line": 60,
+          "label": "guarda y encola"
+        }
+      ]
+    },
+    {
+      "id": "wk_motor",
+      "lane": "servidor",
+      "col": 3,
+      "type": "backend",
+      "label": "Turno y estados",
+      "sublabel": "ráfaga → etapa",
+      "width": 113,
+      "sources": [
+        {
+          "path": "apps/worker/src/conversation/turn-scheduler.ts",
+          "line": 11,
+          "end_line": 45,
+          "label": "ráfaga"
+        },
+        {
+          "path": "apps/worker/src/engine/state-machine.ts",
+          "line": 14,
+          "end_line": 40,
+          "label": "etapas"
+        },
+        {
+          "path": "apps/worker/src/engine/conversation-engine.ts",
+          "line": 374,
+          "end_line": 410,
+          "label": "SÍ AUTORIZO"
+        }
+      ]
+    },
+    {
+      "id": "wk_outbox",
+      "lane": "servidor",
+      "col": 4,
+      "type": "database",
+      "label": "Outbox → ws-hub",
+      "sublabel": "colas por robot",
+      "width": 113,
+      "sources": [
+        {
+          "path": "apps/worker/src/outbox/outbox-publisher.ts",
+          "line": 18,
+          "end_line": 95
+        },
+        {
+          "path": "apps/api/src/robots/gateway/ws-hub.ts",
+          "line": 37,
+          "end_line": 90,
+          "label": "WebSocket al robot"
+        }
+      ]
+    },
+    {
+      "id": "cf_guion",
+      "lane": "motor",
+      "col": 2,
+      "type": "database",
+      "label": "Guion y plantillas",
+      "sublabel": "agente publicado",
+      "width": 133,
+      "sources": [
+        {
+          "path": "apps/api/src/admin/agent-config.service.ts",
+          "line": 378,
+          "end_line": 420,
+          "label": "publicar"
+        },
+        {
+          "path": "apps/worker/src/catalog/catalog.ts",
+          "line": 139,
+          "end_line": 160,
+          "label": "catálogo del Brain"
+        }
+      ]
+    },
+    {
+      "id": "md_llm",
+      "lane": "motor",
+      "col": 3,
+      "type": "cloud",
+      "label": "LLM redacta",
+      "sublabel": "Gemini",
+      "width": 92,
+      "sources": [
+        {
+          "path": "apps/worker/src/engine/conversation-engine.ts",
+          "line": 990,
+          "end_line": 1000
+        },
+        {
+          "path": "apps/worker/src/llm/adapters/gemini.adapter.ts",
+          "line": 40,
+          "end_line": 115
+        }
+      ]
+    },
+    {
+      "id": "md_valid",
+      "lane": "motor",
+      "col": 4,
+      "type": "security",
+      "label": "Validadores",
+      "sublabel": "cifras vs catálogo",
+      "width": 120,
+      "sources": [
+        {
+          "path": "apps/worker/src/engine/validators/validators.ts",
+          "line": 58,
+          "end_line": 80
+        },
+        {
+          "path": "apps/worker/src/engine/conversation-engine.ts",
+          "line": 950,
+          "end_line": 960
+        }
+      ]
+    },
+    {
+      "id": "md_seguro",
+      "lane": "motor",
+      "col": 5,
+      "type": "security",
+      "label": "Respuesta segura",
+      "sublabel": "tras 2.º fallo",
+      "width": 120,
+      "sources": [
+        {
+          "path": "apps/worker/src/engine/conversation-engine.ts",
+          "line": 705,
+          "end_line": 715
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "cli_escribe",
+      "to": "ys_asigna",
+      "label": "mensaje",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e2",
+      "from": "ys_asigna",
+      "to": "rb_watch",
+      "label": "caso",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "from": "rb_arranque",
+      "to": "rb_watch",
+      "label": "sesión",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e4",
+      "from": "rb_watch",
+      "to": "rb_proc",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e5",
+      "from": "rb_proc",
+      "to": "sv_pasarela",
+      "label": "inbound.store",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e6",
+      "from": "sv_pasarela",
+      "to": "wk_motor",
+      "label": "turno",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e7",
+      "from": "wk_motor",
+      "to": "md_llm",
+      "label": "pide texto",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e8",
+      "from": "md_llm",
+      "to": "md_valid",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e9",
+      "from": "md_valid",
+      "to": "wk_outbox",
+      "label": "válido",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e10",
+      "from": "wk_outbox",
+      "to": "sg_gate",
+      "label": "WebSocket",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e11",
+      "from": "sg_gate",
+      "to": "rb_actor",
+      "label": "pasa",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e12",
+      "from": "rb_actor",
+      "to": "ys_publica",
+      "label": "envía",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e13",
+      "from": "md_valid",
+      "to": "md_seguro",
+      "label": "falla",
+      "role": "error",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e14",
+      "from": "md_seguro",
+      "to": "wk_outbox",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right"
+    },
+    {
+      "id": "e15",
+      "from": "cf_guion",
+      "to": "md_llm",
+      "label": "reglas",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e17",
+      "from": "sg_gate",
+      "to": "sg_falla",
+      "label": "no pasa",
+      "role": "error",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e18",
+      "from": "sg_gate",
+      "to": "rb_handoff",
+      "label": "transferir / cerrar",
+      "role": "branch",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e19",
+      "from": "rb_handoff",
+      "to": "ys_finaliza",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e20",
+      "from": "rb_arranque",
+      "to": "sg_turno",
+      "label": "22:00",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Motor: el código decide el camino",
+      "items": [
+        "Caso nuevo → saludo con menú sin esperar al cliente (D-017)",
+        "A Portabilidad · B Migración · C/D → soporte; el operador decide el proceso (D-021)",
+        "Perfil (uso, red) → oferta del catálogo → autorización de consulta",
+        "Solo «SÍ / SÍ AUTORIZO» escrito es consentimiento (regex)",
+        "Autorizado → documento, nombre y correo → «Finalizar» al backoffice",
+        "Nota de voz → plantilla NOTA_DE_VOZ_ILEGIBLE, sin modelo (D-027)",
+        "Sin respuesta: 3 reactivaciones cada 2 min → cierre con etiqueta"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Lo que pone el panel (D-015)",
+      "items": [
+        "Guion, plantillas y flujo: versión del agente evaluada y publicada",
+        "Catálogo y precios: Brain publicado; el validador compara cada cifra",
+        "Horario 07:00–22:00 que el robot consulta cada minuto (D-026)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Nunca a ciegas (reglas 1, 2 y 5)",
+      "items": [
+        "Kill switch y pausa revisados antes de cada acción",
+        "Identidad del chat («Caso #N») antes y justo antes de enviar",
+        "Envío según el modo del asesor: Enter, flecha o ambos (D-028)",
+        "No visto tras enviar → UNCERTAIN, sin reintento, alerta",
+        "Respuesta con más de 5 min → no se envía (SEND_STALE)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Pausa con asesor humano",
+      "items": [
+        "Pausar en el panel y Break en el Chromium del robot",
+        "El asesor termina o transfiere el chat en ySocial",
+        "Reanudar solo con el chat fuera de la bandeja",
+        "Detener: Break → bandeja vacía → Ctrl+C (ySocial no cierra la sesión sola)"
+      ]
+    }
+  ]
+}

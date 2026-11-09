@@ -1,4 +1,4 @@
-import type { LineType, ModelCloseTag, Stage } from '@abaya/domain';
+import type { LineType, ModelCloseTag, Sentiment, Stage } from '@abaya/domain';
 import type { KnowledgeUsageRecord, PlanImageRef } from '@abaya/knowledge';
 
 export type SaleProcess = 'PORTABILIDAD' | 'MIGRACION' | 'LINEA_NUEVA';
@@ -78,6 +78,13 @@ export interface Profile {
   planRecordHash?: string;
   /** D-025: motivo para tipificar el cierre en ySocial si el chat no termina en venta. */
   closeTag?: ModelCloseTag;
+  /** D-035: sentimiento del cliente en su último mensaje y el peor de la conversación (medición). */
+  sentiment?: Sentiment;
+  sentimentWorst?: Sentiment;
+  /** D-033: rebates de objeción ya usados (los cuenta el código; tope en el flujo). */
+  rebates?: number;
+  /** D-033 (blueprint, captura PLT-013): ciudad del cliente tras el «SÍ». */
+  saleCity?: string;
   /**
    * D-024: dijo que usará el plan para el trabajo (lo reconoce el código en el uso). Queda fijo:
    * lo que conteste después (la red social) no lo cambia.

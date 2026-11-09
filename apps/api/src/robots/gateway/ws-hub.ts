@@ -12,6 +12,7 @@ import {
   robotFrameSchema,
   type HandoffDecision,
   type JobKind,
+  type LiveBus,
   type RobotQueueHandlers,
   type ServerFrame,
 } from '@abaya/robot-store';
@@ -25,6 +26,8 @@ const FLAGS_MS = 1_000;
 const REVALIDATE_MS = 15_000;
 /** Una tarea que no responde en este tiempo se da por fallida (la cola decide reintentar). */
 export const JOB_TIMEOUT_MS = 120_000;
+/** D-032: tope de imágenes de pantalla por segundo que se reenvían de un robot (el robot manda 2). */
+const SCREEN_MAX_FPS = 4;
 
 interface Pending {
   resolve: (v: unknown) => void;
@@ -38,6 +41,9 @@ class RobotConnection {
   private readonly timers: NodeJS.Timeout[] = [];
   private flags = '';
   private alive = true;
+  /** D-032: un ADMIN mira la pantalla de este robot (según la última revisión de banderas). */
+  private screenOn = false;
+  private screenWindow = { start: 0, count: 0 };
   closed = false;
 
   constructor(
@@ -104,6 +110,11 @@ class RobotConnection {
     }
     if (!parsed.success) return;
     const f = parsed.data;
+    if (f.t === 'activity') {
+      void this.d.live?.setActivity(this.robotUser, f.activity).catch(() => undefined);
+      return;
+    }
+    if (f.t === 'screen') return this.onScreen(f.frame);
     const p = this.pending.get(f.id);
     if (!p) return;
     this.pending.delete(f.id);
@@ -112,16 +123,28 @@ class RobotConnection {
     else p.reject(new Error(f.error.slice(0, 200)));
   }
 
+  /** D-032: imagen de la pantalla. Solo se reenvía si alguien la mira y sin pasar el tope. */
+  private onScreen(frame: Parameters<LiveBus['publishFrame']>[1]) {
+    const live = this.d.live;
+    if (!live || !this.screenOn) return;
+    const now = Date.now();
+    if (now - this.screenWindow.start >= 1_000) this.screenWindow = { start: now, count: 0 };
+    if (++this.screenWindow.count > SCREEN_MAX_FPS) return;
+    void live.publishFrame(this.robotUser, frame).catch(() => undefined);
+  }
+
   /** Kill switch global y pausa de ESTE robot: se empujan al cambiar (y al conectar). */
   private async pushFlags() {
     try {
-      const [ks, pause, robot] = await Promise.all([
+      const [ks, pause, robot, screen] = await Promise.all([
         this.d.flags.get(KILL_SWITCH_KEY),
         this.d.flags.get(robotPauseKey(this.robotUser)),
         this.d.prisma.robot.findUnique({
           where: { robotUser: this.robotUser },
           select: { updateRequested: true, version: true },
         }),
+        // Mirar la pantalla no es una acción: si Redis falla, simplemente no se transmite.
+        this.d.live?.screenWatched(this.robotUser).catch(() => false) ?? false,
       ]);
       const target = this.d.release?.installable() ?? null;
       const update = robot?.updateRequested && target && robot.version !== target ? target : null;
@@ -130,7 +153,9 @@ class RobotConnection {
         killSwitch: ks === '1',
         paused: pause === '1',
         update,
+        screen,
       };
+      this.screenOn = screen;
       const key = JSON.stringify(frame);
       if (key !== this.flags) {
         this.flags = key;
@@ -139,6 +164,7 @@ class RobotConnection {
     } catch {
       // Sin Redis no se puede afirmar que el robot pueda actuar: se detiene (falla cerrado).
       const frame = { t: 'flags' as const, killSwitch: true, paused: false };
+      this.screenOn = false;
       this.flags = JSON.stringify(frame);
       this.send(frame);
     }
@@ -174,6 +200,8 @@ export interface HubDeps {
   jobTimeoutMs?: number;
   /** Versión publicada (v1.7): se avisa a los robots con actualización pedida. */
   release?: ReleaseService;
+  /** D-032: actividad y pantalla de los robots para el monitor en vivo del panel. */
+  live?: LiveBus;
   /** Cada cuánto se revisa si el robot fue deshabilitado o revocado. */
   revalidateMs?: number;
   /** Pruebas: consumidores de colas sin Redis. */

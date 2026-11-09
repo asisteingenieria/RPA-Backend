@@ -19,6 +19,7 @@ import {
   EXPLICIT_YES,
   type TurnKnowledge,
 } from '../engine/conversation-engine.js';
+import { parseMenuOption } from '../engine/state-machine.js';
 import * as T from '../engine/templates/templates.js';
 import {
   discountedPriceCop,
@@ -92,7 +93,21 @@ export function loadCases(dir: string, filter?: string): EvalCase[] {
 // ---------- chequeos globales ----------
 
 /** D-013: respuesta del cliente de prueba cuando el robot le pide los datos (sintética). */
-export const SYNTHETIC_CUSTOMER_DATA = '1000000000 Cliente Demo cliente.demo@ejemplo.test';
+// D-033: con todos los datos que puede pedir el flujo (también línea a activar y ciudad).
+export const SYNTHETIC_CUSTOMER_DATA =
+  '1000000000, Cliente Demo, cliente.demo@ejemplo.test, 3000000000, Bogotá';
+
+/**
+ * D-033: los casos escriben la opción del menú como letra («A», «Opción B»). Si la versión no
+ * envía menú (SIN_MENU), el cliente de la prueba dice lo mismo con palabras: el texto de esa
+ * opción en el flujo («Cambiarme de operador»).
+ */
+export function customerTurn(turn: string, agent: AgentConfig | undefined): string {
+  if (agent?.flow.opening !== 'SIN_MENU') return turn;
+  const letter = parseMenuOption(turn);
+  const option = letter && agent.flow.menu.find((o) => o.letter === letter);
+  return option ? option.text : turn;
+}
 
 /** Quita de un mensaje todo el texto que proviene de plantillas del código. */
 function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentConfig): string {
@@ -253,7 +268,7 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     for (const t of store.outboundTexts(c.id).slice(before))
       transcript.push({ role: 'bot', text: t });
   };
-  for (const turn of c.turns) await say(turn);
+  for (const turn of c.turns) await say(customerTurn(turn, agent));
   // D-013: tras el «SÍ» el robot pide los datos; el cliente de la prueba los manda (sintéticos)
   // para que el caso termine como en la vida real: finalizado y pasado al backoffice.
   // D-023: igual con los datos para validar una portabilidad que el cliente ya solicitó.

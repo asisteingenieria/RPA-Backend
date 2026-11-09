@@ -28,6 +28,7 @@ const out = (over: Partial<TurnOutput> = {}): TurnOutput => ({
   planCode: null,
   extracted: { name: null, currentOperator: null, lineType: null, usage: null },
   tipificacion: null,
+  sentimiento: null,
   confidence: 'ALTA',
   ...over,
 });
@@ -2392,5 +2393,89 @@ describe('D-023: pregunta por una portabilidad que ya solicitó', () => {
     expect(sent(r)).toEqual([T.SUPPORT]);
     expect(r.profile.supportRedirected).toBe(true);
     expect(r.profile.portabilityCheck).toBeUndefined();
+  });
+});
+
+describe('D-033: flujo del blueprint RV (apertura sin menú y rebates)', () => {
+  const agent: AgentConfig = {
+    ...DEFAULT_AGENT_CONFIG,
+    welcome: '¡Con Claro lo puedes todo! ¿Con quién tengo el gusto de hablar?',
+    flow: { ...DEFAULT_AGENT_CONFIG.flow, opening: 'SIN_MENU', objectionRebates: 3 },
+  };
+  const make = (steps: ScriptStep[]) => {
+    const llm = new ScriptedLlmAdapter(steps);
+    return {
+      llm,
+      e: new ConversationEngine({ llm, catalog, now: () => NOW, agentConfig: () => agent }),
+    };
+  };
+
+  it('sin menú: el saludo va solo y un «a» lo clasifica el modelo, no el código', async () => {
+    const { e, llm } = make([out({ intent: 'PREGUNTA', reply: 'Mucho gusto, Ana.' })]);
+    const open = await e.runTurn(state({ history: [] }), ['Hola']);
+    expect(sent(open)).toEqual([agent.welcome]);
+    const r = await e.runTurn(state({ history: [{ role: 'bot', text: agent.welcome }] }), ['a']);
+    expect(llm.requests).toHaveLength(1);
+    expect(llm.requests[0]!.systemFixed).toContain('NO recibió un menú');
+    expect(r.stage).toBe('MENU');
+  });
+
+  it('cuenta los rebates, deja la no venta de la ruta y cierra al agotarlos', async () => {
+    const offered: Profile = { process: 'PORTABILIDAD', currentOperator: 'Otro', usage: 'redes' };
+    const { e } = make([
+      out({ intent: 'OBJECION', reply: 'Entiendo, ¿qué tiene hoy tu plan?' }),
+      out({ intent: 'NO_INTERESADO', reply: 'Comprendo. ¿Qué te haría falta?' }),
+      out({ intent: 'OBJECION', reply: 'Te entiendo, es la mejor red del país.' }),
+      out({ intent: 'NO_INTERESADO', reply: 'x' }),
+    ]);
+    const r1 = await e.runTurn(state({ stage: 'OFERTA', profile: offered }), ['muy caro']);
+    expect(r1.stage).toBe('OBJECIONES');
+    expect(r1.profile.rebates).toBe(1);
+    // Si abandona aquí, el cierre lleva la no venta de Portabilidad (FC-92), no «abandona».
+    expect(r1.profile.closeTag).toBe('NO_VENTA_MEJOR_OFERTA');
+    const r2 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r1.profile }), ['no']);
+    expect(r2.profile.rebates).toBe(2);
+    const r3 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r2.profile }), ['no sé']);
+    expect(r3.profile.rebates).toBe(3);
+    const r4 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r3.profile }), ['que no']);
+    expect(r4.stage).toBe('CIERRE_SIN_VENTA');
+    expect(r4.actions).toContainEqual({ type: 'CLOSE', reason: 'NO_SALE' });
+    expect(r4.profile.closeTag).toBe('NO_VENTA_MEJOR_OFERTA');
+  });
+});
+
+describe('D-034: pasar al backoffice sin mensaje (flow.transferMessage = false)', () => {
+  const agent: AgentConfig = {
+    ...DEFAULT_AGENT_CONFIG,
+    flow: { ...DEFAULT_AGENT_CONFIG.flow, transferMessage: false },
+  };
+  it('con los datos completos finaliza en Avaya sin decir nada', async () => {
+    const llm = new ScriptedLlmAdapter([]);
+    const e = new ConversationEngine({ llm, catalog, now: () => NOW, agentConfig: () => agent });
+    const r = await e.runTurn(
+      state({
+        stage: 'AUTORIZACION',
+        profile: { process: 'MIGRACION', usage: 'redes', planCode: 'M1', dataRequested: true },
+      }),
+      ['1000000000\nAna Demo\nana@ejemplo.test'],
+    );
+    expect(r.stage).toBe('TRANSFERENCIA');
+    expect(r.actions.map((a) => a.type)).toEqual(['TRANSFER_BACKOFFICE']);
+    expect(llm.requests).toHaveLength(0);
+  });
+});
+
+describe('D-035: sentimiento del cliente (solo medición)', () => {
+  it('guarda el último y el peor, y no cambia la respuesta', async () => {
+    const { e } = engine([
+      out({ intent: 'OBJECION', reply: 'Te entiendo.', sentimiento: 'MOLESTO' }),
+      out({ intent: 'PREGUNTA', reply: 'Claro, te cuento.', sentimiento: 'POSITIVO' }),
+    ]);
+    const offered: Profile = { process: 'PORTABILIDAD', currentOperator: 'Otro', usage: 'redes' };
+    const r1 = await e.runTurn(state({ stage: 'OFERTA', profile: offered }), ['qué caro, qué rabia']);
+    expect(r1.profile).toMatchObject({ sentiment: 'MOLESTO', sentimentWorst: 'MOLESTO' });
+    const r2 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r1.profile }), ['¿y qué incluye?']);
+    expect(r2.profile).toMatchObject({ sentiment: 'POSITIVO', sentimentWorst: 'MOLESTO' });
+    expect(sent(r2)).toEqual(['Claro, te cuento.']);
   });
 });

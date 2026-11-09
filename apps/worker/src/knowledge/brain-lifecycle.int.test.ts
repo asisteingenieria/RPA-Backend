@@ -119,6 +119,7 @@ async function conversationShowingP1(catalog: PublishedBrainCatalog, chat: strin
     planCode: null,
     extracted: { name: null, currentOperator: null, lineType: null, usage: null },
     tipificacion: null,
+    sentimiento: null,
     confidence: 'ALTA',
     ...o,
   });

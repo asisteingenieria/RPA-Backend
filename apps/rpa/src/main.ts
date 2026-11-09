@@ -17,6 +17,7 @@ try {
   // Sin él, modo directo con .env (desarrollo, pruebas y demo).
   const agentPath = resolve(process.env.ROBOT_AGENT_FILE || 'robot.json');
   let port: number;
+  let host: string;
   if (AgentFile.exists(agentPath)) {
     const local = localSettingsSchema.parse(process.env);
     const agent = await AgentFile.open(agentPath);
@@ -24,10 +25,11 @@ try {
     client.onRefused = () => requestShutdown(EXIT.NO_RESTART);
     setRobotBackend(await createChildBackend(client, agent, local));
     port = local.RPA_PORT;
+    host = local.RPA_LISTEN_HOST;
     logger.info({ robotUser: agent.robotUser }, 'robot hijo conectado al servidor');
   } else {
     setRobotBackend(createDirectBackend());
-    port = loadConfig().RPA_PORT;
+    ({ RPA_PORT: port, RPA_LISTEN_HOST: host } = loadConfig());
   }
 
   await waitForShift();
@@ -38,8 +40,8 @@ try {
   onShutdownRequest((code) => {
     void app.close().finally(() => process.exit(code));
   });
-  await app.listen(port);
-  logger.info({ port }, 'rpa escuchando');
+  await app.listen(port, host);
+  logger.info({ port, host }, 'rpa escuchando');
 } catch (err) {
   logger.error({ err: err instanceof Error ? err.message : 'error' }, 'el robot no pudo arrancar');
   process.exit(err instanceof RobotRefusedError ? EXIT.NO_RESTART : EXIT.ERROR);

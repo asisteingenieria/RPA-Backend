@@ -83,7 +83,7 @@ export interface ConversationListItem {
   agentVersion: number | null;
 }
 
-interface Profile {
+export interface Profile {
   process?: string;
   name?: string;
   currentOperator?: string;
@@ -484,7 +484,7 @@ export class ConversationsService {
 
   /** Conversación completa. `f` (opcional) da la posición en el filtro para anterior/siguiente. */
   async detail(ref: string, actor: string, f?: ConversationFilters) {
-    // Acepta el id interno o el id del chat de Abaya (En vivo y Robots solo conocen el segundo).
+    // Acepta el id interno o el id del chat de Avaya (En vivo y Robots solo conocen el segundo).
     const c =
       (await this.prisma.conversation.findUnique({
         where: { id: ref },
@@ -744,6 +744,9 @@ export class ConversationsService {
         name: profile.name?.trim() || null,
         currentOperator: profile.currentOperator?.trim() || null,
         declaredUse: profile.usage?.trim() || null,
+        // D-035: sentimiento (solo medición): el del último turno y el peor de la conversación.
+        sentiment: c.sentiment,
+        sentimentWorst: c.sentimentWorst,
         process: PROCESSES.includes(profile.process as Process)
           ? (profile.process as Process)
           : null,
@@ -913,7 +916,8 @@ export class ConversationsService {
     return out;
   }
 
-  private async auditView(actor: string, chatId: string, id: string) {
+  /** También la usa el monitor en vivo (D-032) al abrir un chat. */
+  async auditView(actor: string, chatId: string, id: string) {
     const since = new Date(this.now().getTime() - VIEW_AUDIT_WINDOW_MS);
     const recent = await this.prisma.adminAuditLog.findFirst({
       where: { actor, action: 'CONVERSATION_VIEWED', target: chatId, createdAt: { gte: since } },
@@ -930,7 +934,7 @@ export class ConversationsService {
     });
   }
 
-  private profile(id: string, enc: Uint8Array | null): Profile {
+  profile(id: string, enc: Uint8Array | null): Profile {
     if (!enc) return {};
     const raw = this.decrypt(enc, profileAad(id));
     if (!raw) return {};
@@ -941,7 +945,7 @@ export class ConversationsService {
     }
   }
 
-  private body(m: {
+  body(m: {
     direction: string;
     fingerprint: string | null;
     idempotencyKey: string | null;

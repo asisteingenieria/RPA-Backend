@@ -11,17 +11,115 @@ export interface SaleData {
   fullName?: string;
   email?: string;
   phone?: string;
+  /** D-033 (blueprint, PLT-013): ciudad del cliente. */
+  city?: string;
 }
 
 const EMAIL = /[\p{L}\d._%+-]+@[\p{L}\d-]+(?:\.[\p{L}\d-]+)+/u;
 /** Números con o sin separadores: 1.020.304.050, 300 123 4567, 1020304050. */
 const NUMBER = /\d(?:[\d.\s-]*\d)?/g;
-const PHONE_HINT = /cel(?:ular)?|tel[eé]fono|m[oó]vil|whats?app|contacto/i;
+const PHONE_HINT = /cel(?:ular)?|tel[eé]fono|m[oó]vil|whats?app|contacto|l[ií]nea/i;
 const DOC_HINT =
   /c[eé]dula|\bc\.?\s?c\.?\b|documento|\bdni\b|identificaci[oó]n|\bpasaporte\b|\bc\.?\s?e\.?\b/i;
 /** Etiquetas que acompañan los datos y no son parte del nombre. */
 const LABELS =
-  /\b(?:mi\s+nombre(?:\s+completo)?\s+es|nombre(?:\s+completo)?|me\s+llamo|soy|c[eé]dula|documento(?:\s+de\s+identidad)?|identificaci[oó]n|correo(?:\s+electr[oó]nico)?|e-?mail|mail|celular|tel[eé]fono|n[uú]mero|cc|ce)\b[:.]?/giu;
+  /\b(?:mi\s+nombre(?:\s+completo)?\s+es|nombre(?:\s+completo)?|me\s+llamo|soy|c[eé]dula|documento(?:\s+de\s+identidad)?|identificaci[oó]n|correo(?:\s+electr[oó]nico)?|e-?mail|mail|celular|tel[eé]fono|l[ií]nea(?:\s+a)?\s+activar|l[ií]nea|n[uú]mero(?:\s+de)?|cc|ce)\b[:.]?/giu;
+
+/** D-033: «Ciudad: Bogotá» (como en la plantilla de captura), hasta el fin de línea o la coma. */
+const CITY_LABELED = /\bciudad\s*[:-]?\s*([\p{L}][\p{L} .'-]{2,39})/iu;
+/** Ciudades principales: se reconocen sin etiqueta («…, 3001234567, Medellín»). */
+const CITIES = [
+  'bogota',
+  'medellin',
+  'cali',
+  'barranquilla',
+  'cartagena',
+  'cucuta',
+  'bucaramanga',
+  'pereira',
+  'santa marta',
+  'ibague',
+  'manizales',
+  'villavicencio',
+  'pasto',
+  'monteria',
+  'neiva',
+  'armenia',
+  'valledupar',
+  'sincelejo',
+  'popayan',
+  'tunja',
+  'riohacha',
+  'florencia',
+  'quibdo',
+  'yopal',
+  'soacha',
+  'bello',
+  'itagui',
+  'envigado',
+  'soledad',
+  'palmira',
+  'buenaventura',
+  'tulua',
+  'girardot',
+  'zipaquira',
+  'facatativa',
+  'chia',
+  'fusagasuga',
+  'duitama',
+  'sogamoso',
+  'apartado',
+  'barrancabermeja',
+  'floridablanca',
+  'giron',
+  'piedecuesta',
+  'dosquebradas',
+  'cartago',
+  'buga',
+  'jamundi',
+  'rionegro',
+  'mosquera',
+  'funza',
+  'leticia',
+  'san andres',
+  'arauca',
+  'mocoa',
+];
+/** Sin tildes ni mayúsculas, un carácter por cada carácter del original (lo demás, espacio). */
+const fold = (s: string) =>
+  [...s]
+    .map((ch) => {
+      const f = ch.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      return f.length === 1 && /[a-zñ]/.test(f) ? f : ' ';
+    })
+    .join('');
+
+/** La ciudad del mensaje y el texto que la contiene (para no tomarla como parte del nombre). */
+function findCity(text: string): { city: string; raw: string } | undefined {
+  const labeled = CITY_LABELED.exec(text);
+  if (labeled) {
+    const raw = labeled[0].split(/[\n,;]/)[0]!;
+    const city = labeled[1]!
+      .split(/[\n,;]/)[0]!
+      .trim()
+      .replace(/\.+$/, '');
+    if (city.length >= 3) return { city, raw };
+  }
+  // Sin etiqueta, solo si va sola en su renglón o entre comas («Pereira» dentro de «Juan Pereira»
+  // es un apellido), con «en», «de» o «vivo en» delante como mucho.
+  for (const part of text.split(/[\n,;]/)) {
+    const seg = part.trim();
+    const bare = fold(seg)
+      .replace(/^\s*(?:vivo\s+en|estoy\s+en|desde|de|en)\s+/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!CITIES.includes(bare)) continue;
+    const words = seg.split(/\s+/).slice(-bare.split(' ').length);
+    const city = words.map((w) => w.charAt(0).toLocaleUpperCase('es-CO') + w.slice(1)).join(' ');
+    return { city: city.replace(/[.!]+$/, ''), raw: seg };
+  }
+  return undefined;
+}
 /** Palabras que delatan una frase y no un nombre («no tengo correo», «ya te lo envié»). */
 const NOT_A_NAME = new Set(
   (
@@ -41,6 +139,11 @@ const capitalize = (w: string) =>
 export function extractSaleData(text: string): SaleData {
   const out: SaleData = {};
   let rest = ` ${text} `;
+  const city = findCity(text);
+  if (city) {
+    out.city = city.city;
+    rest = rest.replace(city.raw, ' ');
+  }
   const email = EMAIL.exec(rest)?.[0];
   if (email) {
     out.email = email.toLowerCase();
@@ -84,6 +187,8 @@ export function hasSaleData(p: Profile, f: SaleDataField): boolean {
       return !!p.saleEmail;
     case 'CELULAR':
       return !!p.salePhone;
+    case 'CIUDAD':
+      return !!p.saleCity;
   }
 }
 
@@ -91,7 +196,10 @@ export function hasSaleData(p: Profile, f: SaleDataField): boolean {
 export function mergeSaleData(p: Profile, d: SaleData): { profile: Profile; gotNew: boolean } {
   const next: Profile = { ...p };
   let gotNew = false;
-  const set = (k: 'saleDocument' | 'saleFullName' | 'saleEmail' | 'salePhone', v?: string) => {
+  const set = (
+    k: 'saleDocument' | 'saleFullName' | 'saleEmail' | 'salePhone' | 'saleCity',
+    v?: string,
+  ) => {
     if (!v || next[k] === v) return;
     next[k] = v;
     gotNew = true;
@@ -100,6 +208,7 @@ export function mergeSaleData(p: Profile, d: SaleData): { profile: Profile; gotN
   set('saleFullName', d.fullName);
   set('saleEmail', d.email);
   set('salePhone', d.phone);
+  set('saleCity', d.city);
   return { profile: next, gotNew };
 }
 
@@ -119,7 +228,8 @@ export function saleDataSummary(p: Profile, required: readonly SaleDataField[]):
     `Documento: ${p.saleDocument ?? 'N/D'}`,
     `Nombre completo: ${p.saleFullName ?? p.name ?? 'N/D'}`,
     `Correo: ${p.saleEmail ?? 'N/D'}`,
-    `Celular: ${p.salePhone ?? 'el del chat de Abaya'}`,
+    `Celular: ${p.salePhone ?? 'el del chat de Avaya'}`,
+    ...(required.includes('CIUDAD') || p.saleCity ? [`Ciudad: ${p.saleCity ?? 'N/D'}`] : []),
     ...(missing.length ? [`Faltó: ${missingDataText(missing)} (el backoffice lo pide)`] : []),
   ].join('\n');
 }

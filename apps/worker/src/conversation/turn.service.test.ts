@@ -32,6 +32,7 @@ const base = (over: Partial<TurnOutput>): TurnOutput => ({
   planCode: null,
   extracted: { name: null, currentOperator: null, lineType: null, usage: null },
   tipificacion: null,
+  sentimiento: null,
   confidence: 'ALTA',
   ...over,
 });
@@ -670,5 +671,59 @@ describe('D-014 fase 2: oferta con imágenes en conversaciones reales', () => {
       imageId: 'vi-alto',
     });
     expect(c.stage).toBe('OFERTA');
+  });
+});
+
+describe('D-034: el cliente escribe otra vez mientras se arma la respuesta', () => {
+  function setupBurst() {
+    const store = new MemoryConversationStore();
+    const seen: string[][] = [];
+    let interrupt: string | null = null;
+    const llm = new ScriptedLlmAdapter((req: LlmRequest) => {
+      seen.push(req.messages.filter((m) => m.role === 'user').map((m) => m.content));
+      // Mientras el modelo «piensa», llega otro mensaje del cliente.
+      if (interrupt) store.addInbound('b1', interrupt);
+      interrupt = null;
+      return base({ reply: 'Con gusto te ayudo.' });
+    });
+    const later: { id: string; ms: number }[] = [];
+    const svc = new TurnService({
+      store,
+      engine: new ConversationEngine({ llm, catalog }),
+      catalog,
+      alerts,
+      logger: silent,
+      later: (id, ms) => void later.push({ id, ms }),
+    });
+    store.create('b1');
+    // En el perfil cada mensaje pasa por el modelo.
+    store.get('b1').stage = 'PERFIL';
+    store.get('b1').profile = { process: 'MIGRACION' };
+    return { store, svc, seen, later, interruptWith: (t: string) => (interrupt = t) };
+  }
+  const outbound = (store: MemoryConversationStore) =>
+    store.get('b1').messages.filter((m) => m.direction === 'OUTBOUND');
+  const pendingIn = (store: MemoryConversationStore) =>
+    store.get('b1').messages.filter((m) => m.direction === 'INBOUND' && !m.processed);
+
+  it('no envía la respuesta vieja: rehace el turno con todos los mensajes', async () => {
+    const { store, svc, seen, later, interruptWith } = setupBurst();
+    interruptWith('quiero saber de los planes');
+    await say(store, svc, 'b1', 'tengo una pregunta');
+    expect(outbound(store)).toHaveLength(0);
+    expect(pendingIn(store)).toHaveLength(2);
+    expect(later).toEqual([{ id: 'b1', ms: 1_000 }]);
+
+    await svc.handle('b1');
+    expect(outbound(store)).toHaveLength(1);
+    expect(pendingIn(store)).toHaveLength(0);
+    expect(seen.at(-1)!.join(' ')).toMatch(/tengo una pregunta[\s\S]*quiero saber de los planes/);
+  });
+
+  it('sin mensajes nuevos responde de una vez', async () => {
+    const { store, svc, later } = setupBurst();
+    await say(store, svc, 'b1', 'tengo una pregunta', 'quiero saber de los planes');
+    expect(outbound(store)).toHaveLength(1);
+    expect(later).toEqual([]);
   });
 });

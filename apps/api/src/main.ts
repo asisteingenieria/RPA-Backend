@@ -7,7 +7,7 @@ import { loadConfig } from '@abaya/config';
 import { createLogger } from '@abaya/logger';
 import { AppModule, hubDeps } from './app.module.js';
 import { RobotWsHub } from './robots/gateway/ws-hub.js';
-import { securityHeaders } from './security-headers.js';
+import { parseTrustProxy, securityHeaders } from './security-headers.js';
 
 const config = loadConfig();
 const logger = createLogger('api');
@@ -17,6 +17,9 @@ const app = await NestFactory.create<NestExpressApplication>(AppModule, {
 });
 app.enableShutdownHooks();
 app.disable('x-powered-by');
+// Detrás de nginx, sin esto todas las peticiones llegan como 127.0.0.1 y el bloqueo por intentos
+// fallidos (login del panel y tokens de los robots) bloquearía a TODOS a la vez.
+app.set('trust proxy', parseTrustProxy(config.TRUST_PROXY));
 app.use(securityHeaders);
 
 // Panel de operación (F7): build estático de apps/panel servido en /panel.

@@ -6,7 +6,7 @@ Comandos para copiar y pegar, en el orden en que se usan. Equipos involucrados:
 | ------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **Equipo de desarrollo** | Donde está el código y la llave de firma (`.secrets/release-signing.key`)                | PowerShell o Git Bash, en `C:\Users\juan.acosta\Desktop\RobotRPA` |
 | **Servidor**             | `tecnologia@10.255.255.194` (`https://10.255.255.194`), pm2 con `rpa-api` y `rpa-worker` | bash (SSH)                                                        |
-| **PC del robot**         | EQP4B-77, usuario de Windows AGENTERPA2, robot **46325302**                              | PowerShell (usar `&` y `$env:`)                                   |
+| **PC del robot**         | EQP4B-77, usuario de Windows AGENTERPA2, robot **46441856**                              | PowerShell (usar `&` y `$env:`)                                   |
 
 Reglas:
 
@@ -124,7 +124,7 @@ Remove-Item "$env:USERPROFILE\Downloads\abaya-robot-windows*.zip"
 
 1. Panel → **Robots** → **Descargar instalador** (va a Descargas).
 2. Clic derecho sobre el zip → **Extraer todo…** → **Extraer** (deja `Downloads\abaya-robot-windows`).
-3. En la fila del robot **46325302** → **«Nuevo código (reinstalar)»**. El código sirve una sola vez y vence en 24 h.
+3. En la fila del robot **46441856** → **«Nuevo código (reinstalar)»**. El código sirve una sola vez y vence en 24 h.
 
 ### 4.4 Instalar
 
@@ -141,7 +141,7 @@ Pide:
 - **Código de instalación:** el del panel.
 
 **Confirmación:** termina con
-`Listo. Este equipo (EQP4B-77) quedó registrado como 46325302 (versión 1.0.0+…)`.
+`Listo. Este equipo (EQP4B-77) quedó registrado como 46441856 (versión 1.0.0+…)`.
 Los avisos de «Inicio de sesión automático» y «Excepción del antivirus» son pendientes de TI; no impiden que funcione.
 
 - `-NoIniciar`: instala pero no arranca (para probar primero).
@@ -181,6 +181,15 @@ Con el kill switch y la pausa del robot **apagados** en el panel. Cada paso incl
 
 **Confirmación:** todo en `[OK]`. Una línea `[FALLA]` dice qué no encontró en la pantalla.
 Mínimo antes de arrancar: `login --ver` en OK (confirma que la sesión de ySocial está libre).
+
+`probar.cmd` toma el robot en el servidor igual que el robot instalado: si este está corriendo (arranca
+solo al iniciar sesión en Windows, aunque la ventana «Robot Abaya» esté minimizada) o se cerró hace
+menos de **1 minuto** sin apagarse en orden (X o forzado), sale `ROBOT_DUPLICATE` y no abre Abaya.
+Detener el robot (Break → bandeja vacía → Ctrl+C), comprobar que no quede ningún proceso y esperar 1 min:
+
+```powershell
+Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$env:LOCALAPPDATA\AbayaRobot\*" -or $_.CommandLine -like "*AbayaRobot\iniciar.ps1*" } | Select-Object ProcessId, Name
+```
 
 ### 5.1 Probar la conversación (panel de producción)
 
@@ -266,7 +275,7 @@ Panel → **Apagado de emergencia** (kill switch) o **Pausar**. El supervisor re
 | Qué se ve                              | Qué hacer                                                                                                                                                       |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ALREADY_CONNECTED` al arrancar        | La sesión de ySocial quedó abierta (se cerró con la X o con chats). Pedir al supervisor de ySocial que desconecte al agente y repetir `probar.cmd login --ver`. |
-| `ROBOT_DUPLICATE`                      | Otro proceso del mismo robot sigue vivo. Cerrarlo con Ctrl+C y esperar 1 min.                                                                                   |
+| `ROBOT_DUPLICATE`                      | Otro proceso del mismo robot sigue vivo (también al correr `probar.cmd` con el robot instalado encendido). Cerrarlo con Ctrl+C y esperar 1 min (sección 5).      |
 | `SEND_UNCERTAIN`                       | El robot no pudo confirmar que el mensaje salió; no lo reenvía. Revisar el chat y, si falta, enviarlo a mano. Pasar el log a desarrollo.                        |
 | `SEND_STALE`                           | Respuesta de más de 5 min (por ejemplo, preparada durante una pausa): no se envía, a propósito.                                                                 |
 | El panel no muestra cambios            | Faltó el `rsync` (sección 1.b) o Ctrl+F5.                                                                                                                       |

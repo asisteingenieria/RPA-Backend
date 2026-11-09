@@ -23,6 +23,12 @@ import {
 } from './conversation.store.js';
 import type { RobotsPause } from './robots-pause.js';
 
+/**
+ * D-034: tope para rehacer un turno porque el cliente sigue escribiendo: pasado este tiempo desde
+ * su primer mensaje sin respuesta, se responde con lo que hay (el resto va en el turno siguiente).
+ */
+export const SUPERSEDE_MAX_MS = 45_000;
+
 const ACTIVE_STATUSES: ReadonlySet<ConversationStatus> = new Set(['ACTIVE', 'WAITING_CONSENT']);
 
 /**
@@ -140,6 +146,27 @@ export class TurnService {
         { conversationId, reason: outage.reason },
         'LLM sin respuesta: robots pausados',
       );
+      return;
+    }
+
+    // D-034: el cliente escribió otra vez mientras se armaba la respuesta (p. ej. «hola» y luego
+    // «quiero un plan»): esta respuesta quedó vieja. No se envía ni se marca nada como atendido; el
+    // turno se rehace con TODOS sus mensajes (el mensaje nuevo ya programó otro turno). Si el
+    // cliente lleva más de SUPERSEDE_MAX_MS sin respuesta, se responde igual para no dejarlo esperando.
+    if (await this.superseded(input, now)) {
+      await this.d.store.commitTurn({
+        conversationId,
+        stage: input.state.stage,
+        profile: input.state.profile,
+        status: input.status,
+        processedMessageIds: [],
+        outbound: [],
+        llmCalls: result.llmCalls,
+        knowledge: [],
+        events: [],
+      });
+      this.d.later?.(conversationId, 1_000);
+      this.d.logger.info({ conversationId }, 'el cliente escribió de nuevo: el turno se rehace');
       return;
     }
 
@@ -287,6 +314,15 @@ export class TurnService {
       },
       'turno procesado',
     );
+  }
+
+  /** D-034: ¿llegaron mensajes del cliente después de cargar la ráfaga de este turno? */
+  private async superseded(input: TurnInput, now: Date): Promise<boolean> {
+    const oldest = Math.min(...input.pending.map((p) => p.detectedAt.getTime()));
+    if (now.getTime() - oldest > SUPERSEDE_MAX_MS) return false;
+    const known = new Set(input.pending.map((p) => p.id));
+    const current = await this.d.store.pendingInboundIds(input.state.conversationId);
+    return current.some((id) => !known.has(id));
   }
 
   private transcribePending(pending: PendingInbound[]): Promise<string | null> {
