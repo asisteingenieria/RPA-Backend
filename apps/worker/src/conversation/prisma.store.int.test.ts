@@ -557,6 +557,86 @@ describe('D-013: reactivación', () => {
     });
   });
 
+  it('D-042: tras un envío incierto o fallido (corte de red) sigue con la siguiente; robot sin conexión → nada', async () => {
+    const store = new PrismaConversationStore(db.prisma, cipher);
+    const conv = await db.prisma.conversation.create({
+      data: { abayaChatId: 'CH-CORTE', robotUser: 'robot-corte' },
+    });
+    const t0 = new Date('2026-11-10T19:44:00Z');
+    const at = (min: number) => new Date(t0.getTime() + min * 60_000);
+    await db.prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        direction: 'INBOUND',
+        fingerprint: 'corte-fp-1',
+        bodyEncrypted: new Uint8Array(cipher.encrypt('Hola', inboundAad('corte-fp-1'))),
+        processedAt: t0,
+        occurredAt: t0,
+        createdAt: t0,
+      },
+    });
+    await db.prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        direction: 'OUTBOUND',
+        idempotencyKey: 'turno-corte',
+        bodyEncrypted: new Uint8Array(cipher.encrypt('¿Te ayudo?', outboundAad('turno-corte'))),
+        status: 'SENT_VERIFIED',
+        occurredAt: at(1),
+        createdAt: at(1),
+        sentAt: at(1),
+      },
+    });
+    const session = (lastHeartbeat: Date, status = 'ACTIVE') =>
+      db.prisma.rpaSession.upsert({
+        where: { robotUser: 'robot-corte' },
+        create: { robotUser: 'robot-corte', status, lastHeartbeat, consecutiveFails: 0 },
+        update: { status, lastHeartbeat },
+      });
+    const reacts = () =>
+      db.prisma.message.findMany({
+        where: { conversationId: conv.id, idempotencyKey: { startsWith: 'react:' } },
+        orderBy: { createdAt: 'asc' },
+      });
+    const opts = { minutes: 2, max: 3, texts: ['uno', 'dos', 'tres'] };
+
+    await session(at(3));
+    expect((await store.queueReactivations(at(3.5), opts)).sent).toBe(1);
+    // El corte: Avaya no confirmó la reactivación.
+    await db.prisma.message.updateMany({
+      where: { conversationId: conv.id, idempotencyKey: { startsWith: 'react:' } },
+      data: { status: 'UNCERTAIN', createdAt: at(3.5) },
+    });
+    // Sin heartbeat hace 2 min (sin red) o reconectando: ni reactivación ni cierre.
+    await session(at(3.5));
+    expect(await store.queueReactivations(at(8), opts)).toEqual({ sent: 0, exhausted: [] });
+    await session(at(8), 'RELOGGING');
+    expect(await store.queueReactivations(at(8), opts)).toEqual({ sent: 0, exhausted: [] });
+    // Volvió: sigue con la siguiente plantilla aunque la anterior quedó incierta.
+    await session(at(9));
+    expect((await store.queueReactivations(at(9), opts)).sent).toBe(1);
+    // Una que falló (nunca se escribió) no cuenta para agotarla, y la clave no se repite.
+    const second = (await reacts())[1]!;
+    await db.prisma.message.update({
+      where: { id: second.id },
+      data: { status: 'FAILED', createdAt: at(9) },
+    });
+    await session(at(12));
+    expect((await store.queueReactivations(at(12), opts)).sent).toBe(1);
+    const all = await reacts();
+    expect(all.map((m) => m.idempotencyKey)).toEqual([
+      expect.stringMatching(/:1$/),
+      expect.stringMatching(/:2$/),
+      expect.stringMatching(/:3$/),
+    ]);
+    await db.prisma.message.update({
+      where: { id: all[2]!.id },
+      data: { status: 'SENT_VERIFIED', sentAt: at(12) },
+    });
+    await session(at(15));
+    expect((await store.queueReactivations(at(15), opts)).sent).toBe(1); // 3.ª válida (1 incierta + 1 verificada)
+  });
+
   it('reactivación: nunca repite plantilla en la conversación, aunque el cliente haya contestado', async () => {
     const store = new PrismaConversationStore(db.prisma, cipher);
     const conv = await db.prisma.conversation.create({

@@ -695,6 +695,15 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
 - **D-039 (10/11/2026): el robot nunca tira una sesión viva.** Solo con el login de Avaya en pantalla
   se da la sesión por perdida; si la página no muestra nada, espera y recarga la misma página; el
   relogin entra en la misma página. Detalle en `docs/DECISIONS.md` (D-039).
+- **D-040 (10/11/2026): al volver la red tras un corte de 60 s o más**, el robot (acciones en pausa)
+  hace «Salir» (si no lo ve, recarga y reintenta; si no puede, alerta `SESSION_STUCK`), recarga el
+  login 3 veces y vuelve a entrar; el barrido de no leídos
+  recupera lo que el cliente escribió durante el corte. Detalle en `docs/DECISIONS.md`.
+- **D-042 (10/11/2026): tras un corte la conversación sigue.** Sin heartbeat del robot hace 2 min (o
+  sesión no activa) no hay reactivación ni cierre por inactividad; la reactivación continúa aunque el
+  último envío haya quedado incierto o fallido.
+- **D-041 (10/11/2026): tipificar abre el grupo de la etiqueta** (en Avaya los grupos del árbol están
+  cerrados y buscar no los abre); si no puede, cancela el cuadro y reporta `CLOSE_UNCERTAIN`.
 
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 

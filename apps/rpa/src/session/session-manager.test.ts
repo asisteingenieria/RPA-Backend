@@ -55,8 +55,11 @@ class FakeDriver implements SessionDriver {
     return STATE;
   }
   logouts = 0;
+  /** ySocial esconde «Salir» con casos asignados. */
+  logoutHidden = false;
   async logout() {
     this.logouts++;
+    if (this.logoutHidden) return false;
     const was = this.loggedIn;
     this.loggedIn = false;
     return was;
@@ -67,16 +70,26 @@ class FakeDriver implements SessionDriver {
   }
 }
 
+/** D-040: repositorio que falla como la pasarela sin red. */
+class FlakyRepo extends MemorySessionRepository {
+  offline = false;
+  override async save(r: Parameters<MemorySessionRepository['save']>[0]) {
+    if (this.offline) throw new TypeError('fetch failed');
+    return super.save(r);
+  }
+}
+
 function setup(
   over: Partial<{
     driver: FakeDriver;
     store: MemoryStorageStateStore;
     halted: (sleeps: number[]) => Promise<boolean>;
+    now: () => Date;
   }> = {},
 ) {
   const driver = over.driver ?? new FakeDriver();
   const store = over.store ?? new MemoryStorageStateStore();
-  const repo = new MemorySessionRepository();
+  const repo = new FlakyRepo();
   const alerts = new MemoryAlertAdapter();
   const gate = new ActorGate();
   const sleeps: number[] = [];
@@ -109,6 +122,7 @@ function setup(
       recovered++;
     },
     ...(over.halted ? { halted: () => over.halted!(sleeps) } : {}),
+    ...(over.now ? { now: over.now } : {}),
   });
   return { mgr, driver, store, repo, alerts, gate, sleeps, logs, recovered: () => recovered };
 }
@@ -214,6 +228,91 @@ describe('SessionManager', () => {
     expect(t.driver.loginCalls).toBe(2);
     expect(t.mgr.status).toBe('ACTIVE');
     await t.mgr.stop();
+  });
+
+  describe('D-040: corte de red del PC', () => {
+    function clock() {
+      let t = Date.parse('2026-11-10T19:40:00Z');
+      return { now: () => new Date(t), advance: (ms: number) => void (t += ms) };
+    }
+
+    it('al volver la red: «Salir», recarga el login 3 veces, entra y reencola', async () => {
+      const c = clock();
+      const t = setup({ now: c.now });
+      await t.mgr.start();
+      t.repo.offline = true;
+      await expect(t.mgr.heartbeat()).rejects.toThrow('fetch failed');
+      c.advance(90_000);
+      await expect(t.mgr.heartbeat()).rejects.toThrow('fetch failed');
+      expect(t.driver.reloads).toBe(0); // sin red no se toca la página
+      t.repo.offline = false;
+      t.driver.reloadRestores = false; // recargar el login no entra solo
+      await t.mgr.heartbeat();
+      expect(t.driver.logouts).toBe(1);
+      expect(t.driver.reloads).toBe(3); // solo las del login: «Salir» va antes de recargar
+      expect(t.driver.loginCalls).toBe(2); // volvió a entrar
+      expect(t.driver.opens).toHaveLength(1); // en la misma página, sin navegador nuevo
+      expect(t.recovered()).toBe(1);
+      expect(t.mgr.status).toBe('ACTIVE');
+      expect(t.gate.isOpen()).toBe(true);
+      expect(t.logs.join('')).toContain('volvió la red tras un corte');
+      await t.mgr.heartbeat(); // ya no se repite
+      expect(t.driver.logouts).toBe(1);
+      await t.mgr.stop();
+    });
+
+    it('sin «Salir» visible: recarga e intenta otra vez; si sigue sin poder, alerta', async () => {
+      const c = clock();
+      const t = setup({ now: c.now });
+      await t.mgr.start();
+      t.repo.offline = true;
+      await expect(t.mgr.heartbeat()).rejects.toThrow();
+      c.advance(120_000);
+      t.repo.offline = false;
+      t.driver.logoutHidden = true;
+      await t.mgr.heartbeat();
+      expect(t.driver.logouts).toBe(2);
+      expect(t.driver.reloads).toBe(1);
+      expect(t.driver.loginCalls).toBe(1);
+      expect(t.alerts.raised).toContainEqual(
+        expect.objectContaining({ code: 'SESSION_STUCK', severity: 'ALTA' }),
+      );
+      expect(t.gate.isOpen()).toBe(true);
+      await t.mgr.stop();
+    });
+
+    it('si Avaya ya muestra el login al volver la red: recarga 3 veces y entra', async () => {
+      const c = clock();
+      const t = setup({ now: c.now });
+      await t.mgr.start();
+      t.repo.offline = true;
+      await expect(t.mgr.heartbeat()).rejects.toThrow();
+      c.advance(120_000);
+      t.repo.offline = false;
+      t.driver.reloadRestores = false;
+      t.driver.screens = ['INBOX']; // el heartbeat aún ve la bandeja; luego aparece el login
+      t.driver.loggedIn = false;
+      await t.mgr.heartbeat();
+      expect(t.driver.logouts).toBe(0);
+      expect(t.driver.reloads).toBe(3);
+      expect(t.driver.loginCalls).toBe(2);
+      expect(t.mgr.status).toBe('ACTIVE');
+      await t.mgr.stop();
+    });
+
+    it('un corte corto (reinicio del servidor) no recarga la página', async () => {
+      const c = clock();
+      const t = setup({ now: c.now });
+      await t.mgr.start();
+      t.repo.offline = true;
+      await expect(t.mgr.heartbeat()).rejects.toThrow();
+      c.advance(20_000);
+      t.repo.offline = false;
+      await t.mgr.heartbeat();
+      expect(t.driver.reloads).toBe(0);
+      expect(t.recovered()).toBe(0);
+      await t.mgr.stop();
+    });
   });
 
   it('pausado en el panel: si el asesor hace «Salir», no vuelve a entrar hasta reanudar', async () => {

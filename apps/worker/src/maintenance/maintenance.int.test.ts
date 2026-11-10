@@ -85,6 +85,28 @@ describe('cierre por inactividad', () => {
     expect(await closeInactive(db.prisma, now, 120)).toBe(0);
   });
 
+  it('D-042: no cierra las de un robot sin conexión (corte de red); al volver, sí', async () => {
+    const now = new Date();
+    const c = await conv('CH-CORTE', new Date(now.getTime() - 3 * HOUR));
+    await db.prisma.rpaSession.create({
+      data: {
+        robotUser: 'robot',
+        status: 'ACTIVE',
+        lastHeartbeat: new Date(now.getTime() - 5 * 60_000),
+        consecutiveFails: 0,
+      },
+    });
+    expect(await closeInactive(db.prisma, now, 120)).toBe(0);
+    expect((await db.prisma.conversation.findUniqueOrThrow({ where: { id: c.id } })).status).toBe(
+      'ACTIVE',
+    );
+    await db.prisma.rpaSession.update({
+      where: { robotUser: 'robot' },
+      data: { lastHeartbeat: now },
+    });
+    expect(await closeInactive(db.prisma, now, 120)).toBe(1);
+  });
+
   it('D-025: la tipificación del modelo va en el cierre; sin ella, «Cliente abandona conversación»', async () => {
     const now = new Date();
     const tagged = await conv('CH-T1', new Date(now.getTime() - 3 * HOUR));

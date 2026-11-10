@@ -19,6 +19,10 @@ import type {
   TurnInput,
 } from './conversation.store.js';
 import { resolvePayload } from './memory.store.js';
+import { offlineRobots } from './robot-online.js';
+
+/** D-042: envíos que ya no están en curso (el tiempo de reactivación corre desde ellos). */
+const SETTLED: ReadonlySet<string> = new Set(['SENT_VERIFIED', 'UNCERTAIN', 'FAILED']);
 
 /** Store real: PostgreSQL + Prisma, campos sensibles cifrados (sección 8). */
 export class PrismaConversationStore implements ConversationStore {
@@ -283,6 +287,11 @@ ${t.saleDataNote}`,
    * enviado) y el cliente lleva `minutes` sin responder: se le encola la siguiente plantilla de
    * reactivación (máx. `max` desde su último mensaje). Las que ya agotaron la reactivación y
    * siguen en silencio se devuelven en `exhausted` para cerrarlas por inactividad.
+   *
+   * D-042: nada para los robots sin conexión (el cliente pudo escribir y no se ve). Y el último
+   * mensaje del robot cuenta aunque haya quedado incierto o fallido (p. ej. durante un corte de
+   * red): la reactivación sigue con la siguiente plantilla, no se detiene. Las fallidas (nunca
+   * se escribieron) no cuentan para agotarla.
    */
   async queueReactivations(
     now: Date,
@@ -298,7 +307,9 @@ ${t.saleDataNote}`,
       },
       select: { id: true, abayaChatId: true, robotUser: true },
     });
+    const offline = rows.length ? await offlineRobots(this.prisma, now) : new Set<string>();
     for (const c of rows) {
+      if (offline.has(c.robotUser)) continue;
       const [last, lastInbound] = await Promise.all([
         this.prisma.message.findFirst({
           where: { conversationId: c.id },
@@ -311,11 +322,19 @@ ${t.saleDataNote}`,
           select: { id: true },
         }),
       ]);
-      // Solo si el robot habló último y su mensaje ya salió (el tiempo corre desde el envío).
-      if (!last || last.direction !== 'OUTBOUND' || last.status !== 'SENT_VERIFIED') continue;
+      // Solo si el robot habló último y su mensaje ya no está en curso (el tiempo corre desde el
+      // envío). D-042: incierto o fallido también (Avaya trabado tras un corte de red).
+      if (!last || last.direction !== 'OUTBOUND' || !SETTLED.has(last.status ?? '')) continue;
       if ((last.sentAt ?? last.createdAt).getTime() > cutoff) continue;
       const prefix = `react:${lastInbound?.id ?? 'inicio'}:`;
-      const [done, usedBefore] = await Promise.all([
+      const [done, tried, usedBefore] = await Promise.all([
+        this.prisma.message.count({
+          where: {
+            conversationId: c.id,
+            idempotencyKey: { startsWith: prefix },
+            status: { not: 'FAILED' },
+          },
+        }),
         this.prisma.message.count({
           where: { conversationId: c.id, idempotencyKey: { startsWith: prefix } },
         }),
@@ -329,7 +348,7 @@ ${t.saleDataNote}`,
         result.exhausted.push(c.id);
         continue;
       }
-      const key = `${prefix}${done + 1}`;
+      const key = `${prefix}${tried + 1}`;
       const text = opts.texts[usedBefore % opts.texts.length]!;
       try {
         await this.prisma.$transaction(async (tx) => {

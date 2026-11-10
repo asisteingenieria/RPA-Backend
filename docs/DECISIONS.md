@@ -1,5 +1,81 @@
 # Decisiones de diseño
 
+## D-042 · Tras un corte, la conversación sigue (no se cierra ni se detiene) · APROBADA — implementada en local
+
+**Contexto (10/11/2026, producción).** Durante el corte de red la reactivación de las 14:47 quedó
+`UNCERTAIN` (Avaya trabado). Dos huecos en el worker:
+
+- La reactivación solo seguía si el último mensaje del robot era `SENT_VERIFIED`: tras un envío
+  incierto o fallido la conversación quedaba **sin reactivación** hasta el cierre de 120 min.
+- El worker no sabía que el robot estaba sin conexión: con un corte largo podía encolar el cierre
+  por inactividad (o por reactivación agotada) y el robot lo ejecutaba al volver, aunque el cliente
+  hubiera escrito durante el corte.
+
+**Decisión** (lo que pidió el usuario: al volver a entrar, si hay chats sigue la conversación; si no,
+queda Disponible y sigue atendiendo):
+
+1. Robot **sin conexión** = su `RpaSession` no está `ACTIVE` o no tiene heartbeat hace 2 min
+   (`ROBOT_OFFLINE_AFTER_MS`; el heartbeat se guarda cada 30 s). A sus conversaciones no se les
+   envía reactivación ni se cierran por inactividad, como con la pausa. Sin registro de sesión no
+   se bloquea.
+2. La reactivación cuenta el tiempo desde el último mensaje del robot que ya no esté en curso:
+   `SENT_VERIFIED`, `UNCERTAIN` o `FAILED`. Sigue con la **siguiente** plantilla (no reintenta
+   la incierta: regla 2). Las fallidas (nunca se escribieron) no cuentan para agotarla.
+3. Al volver a entrar (D-040), el login deja al robot Disponible; los chats siguen en su bandeja,
+   el barrido de no leídos recupera lo que escribió el cliente y, si no escribió, siguen las
+   reactivaciones y después el cierre normal.
+
+**Pruebas.** `prisma.store.int.test.ts` (incierta → sigue; sin heartbeat o reconectando → nada;
+fallida no cuenta y la clave no se repite) y `maintenance.int.test.ts` (no cierra con el robot sin
+conexión; al volver, sí).
+
+## D-041 · Tipificar en Avaya abre el grupo de la etiqueta · APROBADA — implementada en local
+
+**Contexto (10/11/2026, producción).** Al cerrar un chat sin venta el robot escribió la etiqueta en
+«Buscar etiqueta...» y se quedó ahí: no la marcó ni pulsó «Aceptar». En Avaya el árbol de etiquetas
+(E-COMMERCE MOVIL → No Venta / SAC / Venta) tiene los grupos cerrados y las etiquetas **no existen en
+la página** hasta abrir su grupo; buscar filtra y deja todo cerrado, **también la raíz** E-COMMERCE MOVIL (grabación del 09/10/2026
+y traza `CLOSE-a82fdc11` del 10/11/2026: `check` de «SAC - Ecommerce Movil - Facturacion» agotó los 10 s). El
+simulador mostraba las etiquetas sueltas, por eso las pruebas pasaban.
+
+**Decisión.**
+
+1. Tras buscar, el robot abre los grupos cerrados que quedan visibles (raíz y luego grupo) hasta que aparece la etiqueta
+   (nunca cierra uno abierto), la marca, comprueba que quedó marcada y pulsa «Aceptar».
+2. Si algo falla, pulsa «Cancelar»: el cuadro no queda tapando la pantalla (bloquearía los demás
+   chats). El caso sigue abierto y se reporta como `CLOSE_UNCERTAIN` (regla 2: no se reintenta solo).
+3. El simulador imita el árbol real (grupos cerrados, hojas solo al abrir, la búsqueda no abre).
+
+**Pruebas.** `page-objects.pw.ts` (etiqueta de SAC con el grupo cerrado; falla → cuadro cancelado) y
+`handoff.pw.ts`. Con el código anterior, el simulador nuevo reproduce la falla (espera la casilla y
+no llega a «Aceptar»).
+
+## D-040 · Al volver la red tras un corte, el robot recarga Avaya · APROBADA — implementada en local
+
+**Contexto (10/11/2026, producción).** El PC del robot se quedó sin internet ~2 min. Al volver, Avaya
+seguía mostrando la bandeja pero ya no hablaba bien con su servidor: «Ocurrió un error agrupando el
+mensaje» y los mensajes del cliente no llegaban. Hubo que recargar la página y volver a entrar a mano.
+
+**Decisión.**
+
+1. El heartbeat (30 s) ya falla al guardar cuando no hay red hacia la pasarela: se anota desde
+   cuándo. Cuando vuelve a guardar y el corte duró **60 s o más** (`OUTAGE_REFRESH_MS`), el robot
+   pausa sus acciones y hace lo que hacía la asesora a mano: **siempre sale y vuelve a entrar**
+   (recargar solo no basta: Avaya sigue trabado). Hace «Salir» primero, antes de recargar: con la
+   conexión trabada Avaya lo muestra aunque haya casos asignados; con la conexión estable lo esconde
+   (confirmado por el usuario, 10/11/2026). Si no lo ve, recarga e intenta otra vez. Luego recarga el
+   login **3 veces** (`OUTAGE_LOGIN_RELOADS`), vuelve a entrar en la misma página (D-038/D-039: sin
+   rendirse) y reencola los envíos pendientes. Si ya ve el login, solo recarga 3 veces y entra.
+2. Al volver a entrar, los casos siguen en su bandeja: el barrido de no leídos (cada 15 s) abre los
+   chats con mensajes que no llegaron durante el corte y los responde; si el cliente no escribió,
+   el flujo sigue (reactivaciones). Si no logra hacer «Salir», alerta `SESSION_STUCK` (ALTA) para
+   que alguien salga y entre a mano.
+3. Un corte corto (p. ej. reinicio del servidor) no toca la página.
+4. Lo que se envió durante el corte y Avaya no confirmó queda `UNCERTAIN` (regla 2), como siempre.
+
+**Pruebas.** `session-manager.test.ts` (corte largo → «Salir», 3 recargas del login, entra y reencola;
+sin «Salir» → recarga, reintenta y alerta `SESSION_STUCK`; login ya en pantalla; corte corto → nada).
+
 ## D-039 · El robot nunca tira una sesión viva de Avaya · APROBADA — implementada en local
 
 **Contexto (10/11/2026, producción).** A las 10:41, con el robot esperando chats, una lectura de la

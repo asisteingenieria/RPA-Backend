@@ -305,6 +305,35 @@ describe('trazabilidad: lista, detalle y exportación', () => {
     expect(byChat.id).toBe(c.id);
   });
 
+  it('un cierre incierto no cuenta como envío incierto (10/11/2026)', async () => {
+    const { cookie } = await ready('admin-inc', 'ADMIN');
+    const c = await seedConversation({ chat: 'AB-INC', status: 'NEEDS_REVIEW' });
+    let prev = GENESIS_HASH;
+    const action = async (name: string, result: string) => {
+      const hash = sha256(`${prev}|${name}|${result}`);
+      await db.prisma.rpaActionLog.create({
+        data: {
+          robotUser: 'robot-01',
+          action: name,
+          abayaChatId: 'AB-INC',
+          result,
+          durationMs: 1_000,
+          prevHash: prev,
+          hash,
+        },
+      });
+      prev = hash;
+    };
+    const flags = async () =>
+      ((await (await get(`/admin/conversations/${c.id}`, cookie)).json()) as { flags: string[] })
+        .flags;
+    await action('SEND', 'OK');
+    await action('CLOSE', 'UNCERTAIN');
+    expect(await flags()).not.toContain('UNCERTAIN_SEND');
+    await action('SEND', 'UNCERTAIN');
+    expect(await flags()).toContain('UNCERTAIN_SEND');
+  });
+
   it('el CSV no trae el texto de los mensajes y la exportación queda en Auditoría', async () => {
     const { cookie } = await ready('admin1', 'ADMIN');
     const c = await seedConversation({
