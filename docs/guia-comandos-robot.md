@@ -275,7 +275,7 @@ Panel → **Apagado de emergencia** (kill switch) o **Pausar**. El supervisor re
 | Qué se ve                              | Qué hacer                                                                                                                                                       |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ALREADY_CONNECTED` al arrancar        | La sesión de ySocial quedó abierta (se cerró con la X o con chats). Pedir al supervisor de ySocial que desconecte al agente y repetir `probar.cmd login --ver`. |
-| `ROBOT_DUPLICATE`                      | Otro proceso del mismo robot sigue vivo (también al correr `probar.cmd` con el robot instalado encendido). Cerrarlo con Ctrl+C y esperar 1 min (sección 5).      |
+| `ROBOT_DUPLICATE`                      | Otro proceso del mismo robot sigue vivo (también al correr `probar.cmd` con el robot instalado encendido). Cerrarlo con Ctrl+C y esperar 1 min (sección 5).     |
 | `SEND_UNCERTAIN`                       | El robot no pudo confirmar que el mensaje salió; no lo reenvía. Revisar el chat y, si falta, enviarlo a mano. Pasar el log a desarrollo.                        |
 | `SEND_STALE`                           | Respuesta de más de 5 min (por ejemplo, preparada durante una pausa): no se envía, a propósito.                                                                 |
 | El panel no muestra cambios            | Faltó el `rsync` (sección 1.b) o Ctrl+F5.                                                                                                                       |

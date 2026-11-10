@@ -232,6 +232,9 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   aplicación se llama **Avaya** en textos visibles (los identificadores `abaya` no cambian); si el
   cliente escribe mientras se arma la respuesta, `TurnService` la descarta y rehace el turno
   (`pendingInboundIds`, tope `SUPERSEDE_MAX_MS` 45 s).
+- Mensajes al bot yFlow (D-036): lo que el cliente escribió en el caso antes del paso a asesor
+  (última respuesta del bot, `ReplySource` 10, antes de la primera del asesor) no se guarda ni se
+  responde (`ParsedCase.beforeHandoff`, `InboundProcessor.markBeforeHandoff`).
 - Sentimiento (D-035, solo medición): campo `sentimiento` del turno (`SENTIMENTS`), guardado como
   `Profile.sentiment`/`sentimentWorst` y en claro en `Conversation`; no cambia el flujo.
 - Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso

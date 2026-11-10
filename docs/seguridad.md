@@ -15,13 +15,13 @@ Documentos relacionados:
 
 ## 1. Superficie expuesta
 
-| Componente                    | Expuesto a                         | Por dónde                                                       |
-| ----------------------------- | ---------------------------------- | --------------------------------------------------------------- |
-| nginx (servidor 10.255.255.194) | Red interna                      | 443 HTTPS: `/admin`, `/robot-api` (HTTP + WebSocket), `/health`, `/panel` y el panel `interfazRPA` |
-| API (`apps/api`)              | Solo nginx                         | `127.0.0.1:3000`                                                |
-| Worker (`apps/worker`)        | Nadie (no escucha)                 | Sale a Gemini por HTTPS                                         |
-| PostgreSQL y Redis            | Solo el servidor (verificar con `ss -tlnp`) | Puertos locales                                         |
-| Robot (`apps/rpa`, PC)        | Nadie                              | Sale a la pasarela (HTTPS/WSS) y a ySocial (HTTPS). `/health` solo en `127.0.0.1` |
+| Componente                      | Expuesto a                                  | Por dónde                                                                                          |
+| ------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| nginx (servidor 10.255.255.194) | Red interna                                 | 443 HTTPS: `/admin`, `/robot-api` (HTTP + WebSocket), `/health`, `/panel` y el panel `interfazRPA` |
+| API (`apps/api`)                | Solo nginx                                  | `127.0.0.1:3000`                                                                                   |
+| Worker (`apps/worker`)          | Nadie (no escucha)                          | Sale a Gemini por HTTPS                                                                            |
+| PostgreSQL y Redis              | Solo el servidor (verificar con `ss -tlnp`) | Puertos locales                                                                                    |
+| Robot (`apps/rpa`, PC)          | Nadie                                       | Sale a la pasarela (HTTPS/WSS) y a ySocial (HTTPS). `/health` solo en `127.0.0.1`                  |
 
 Rutas sin autenticación: solo `/health` (sin datos personales) y, en la pasarela, `enroll` y
 `token` (códigos de un solo uso y tokens de renovación, con bloqueo por intentos fallidos).
@@ -50,7 +50,7 @@ Rutas sin autenticación: solo `/health` (sin datos personales) y, en la pasarel
   agrega nginx al final de `X-Forwarded-For`; un valor falsificado por el cliente no gana. Sin
   esto, el bloqueo por IP era compartido por todos (H1).
 - Cabeceras: CSP estricta (`default-src 'self'`, `frame-ancestors 'none'`), `X-Frame-Options:
-  DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, HSTS y sin
+DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, HSTS y sin
   `x-powered-by` (`apps/api/src/security-headers.ts`).
 - Entradas validadas con zod; subidas con límite de tamaño y de archivos (`FileInterceptor`).
 - Sin SQL armado a mano: Prisma parametrizado (el único `$executeRaw` usa plantilla).
@@ -106,15 +106,15 @@ Rutas sin autenticación: solo `/health` (sin datos personales) y, en la pasarel
 
 ## 3. Variables de configuración de seguridad
 
-| Variable                          | Por defecto  | Para qué                                                                 |
-| --------------------------------- | ------------ | ------------------------------------------------------------------------ |
-| `TRUST_PROXY`                     | `loopback`   | Proxies de confianza para la IP real. `false` = ninguno; número = saltos; `true` se trata como 1 (nunca confiar en cualquiera) |
-| `RPA_LISTEN_HOST`                 | `127.0.0.1`  | Interfaz del `/health` del robot (`0.0.0.0` solo en Docker)               |
-| `ADMIN_COOKIE_SECURE`             | `true`       | Cookie de sesión solo por HTTPS (`false` solo en desarrollo por HTTP)     |
-| `FIELD_ENCRYPTION_KEY` / `_KEY_ID` / `_PREVIOUS_KEYS` | — | Cifrado de campos y rotación                                  |
-| `CONVERSATION_RETENTION_DAYS`     | vacío        | Borrado del contenido de conversaciones cerradas                          |
-| `ROBOT_ACCESS_TTL_MS`             | 1 h          | Vida del token de acceso del robot                                        |
-| `ROBOT_RELEASE_PUBLIC_KEY`        | —            | Verificación de la firma de los paquetes del robot                        |
+| Variable                                              | Por defecto | Para qué                                                                                                                       |
+| ----------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `TRUST_PROXY`                                         | `loopback`  | Proxies de confianza para la IP real. `false` = ninguno; número = saltos; `true` se trata como 1 (nunca confiar en cualquiera) |
+| `RPA_LISTEN_HOST`                                     | `127.0.0.1` | Interfaz del `/health` del robot (`0.0.0.0` solo en Docker)                                                                    |
+| `ADMIN_COOKIE_SECURE`                                 | `true`      | Cookie de sesión solo por HTTPS (`false` solo en desarrollo por HTTP)                                                          |
+| `FIELD_ENCRYPTION_KEY` / `_KEY_ID` / `_PREVIOUS_KEYS` | —           | Cifrado de campos y rotación                                                                                                   |
+| `CONVERSATION_RETENTION_DAYS`                         | vacío       | Borrado del contenido de conversaciones cerradas                                                                               |
+| `ROBOT_ACCESS_TTL_MS`                                 | 1 h         | Vida del token de acceso del robot                                                                                             |
+| `ROBOT_RELEASE_PUBLIC_KEY`                            | —           | Verificación de la firma de los paquetes del robot                                                                             |
 
 Los secretos (`FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `ALERT_WEBHOOK_URL`) hoy
 están en el `.env` del servidor (permisos 600). **Pendiente:** moverlos a una bóveda o al PAM de
@@ -135,17 +135,17 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 
 ## 5. Pendientes
 
-| Pendiente                                                    | Depende de          |
-| ------------------------------------------------------------ | ------------------- |
-| Secretos del servidor en bóveda o PAM (H6)                   | Claro / proveedor   |
-| Certificado de la CA de Claro y TLS 1.3 verificado (H7)      | Servidor / Claro    |
-| `X-Forwarded-For` en nginx (sin esto H1 no tiene efecto)     | Servidor            |
-| Doble factor (TOTP) para ADMIN (H8)                          | Nosotros            |
-| Plazo de retención de conversaciones                         | Claro               |
-| Redis con contraseña y PostgreSQL con SSL si salen de la máquina | Servidor        |
-| Llave de despliegue de GitHub de solo lectura                | Servidor            |
-| Certificado de firma de código para el instalador (SmartScreen) | Asiste           |
-| Pentest independiente, si Claro lo exige                     | Proveedor externo   |
+| Pendiente                                                        | Depende de        |
+| ---------------------------------------------------------------- | ----------------- |
+| Secretos del servidor en bóveda o PAM (H6)                       | Claro / proveedor |
+| Certificado de la CA de Claro y TLS 1.3 verificado (H7)          | Servidor / Claro  |
+| `X-Forwarded-For` en nginx (sin esto H1 no tiene efecto)         | Servidor          |
+| Doble factor (TOTP) para ADMIN (H8)                              | Nosotros          |
+| Plazo de retención de conversaciones                             | Claro             |
+| Redis con contraseña y PostgreSQL con SSL si salen de la máquina | Servidor          |
+| Llave de despliegue de GitHub de solo lectura                    | Servidor          |
+| Certificado de firma de código para el instalador (SmartScreen)  | Asiste            |
+| Pentest independiente, si Claro lo exige                         | Proveedor externo |
 
 ## 6. Registro de cambios
 

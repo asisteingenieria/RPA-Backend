@@ -2472,9 +2472,13 @@ describe('D-035: sentimiento del cliente (solo medición)', () => {
       out({ intent: 'PREGUNTA', reply: 'Claro, te cuento.', sentimiento: 'POSITIVO' }),
     ]);
     const offered: Profile = { process: 'PORTABILIDAD', currentOperator: 'Otro', usage: 'redes' };
-    const r1 = await e.runTurn(state({ stage: 'OFERTA', profile: offered }), ['qué caro, qué rabia']);
+    const r1 = await e.runTurn(state({ stage: 'OFERTA', profile: offered }), [
+      'qué caro, qué rabia',
+    ]);
     expect(r1.profile).toMatchObject({ sentiment: 'MOLESTO', sentimentWorst: 'MOLESTO' });
-    const r2 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r1.profile }), ['¿y qué incluye?']);
+    const r2 = await e.runTurn(state({ stage: 'OBJECIONES', profile: r1.profile }), [
+      '¿y qué incluye?',
+    ]);
     expect(r2.profile).toMatchObject({ sentiment: 'POSITIVO', sentimentWorst: 'MOLESTO' });
     expect(sent(r2)).toEqual(['Claro, te cuento.']);
   });

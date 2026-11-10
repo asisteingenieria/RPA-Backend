@@ -71,6 +71,9 @@ export class InboundWatcher {
     }
     const parsed = parseCaseResponse(body);
     if (!parsed.ok) return this.parseFailed('xhr', parsed.error);
+    // D-036: lo que el cliente le escribió al bot yFlow no se responde (antes de todo, también
+    // para el respaldo por DOM).
+    this.processor.markBeforeHandoff(parsed.value.abayaChatId, parsed.value.beforeHandoff);
     // La consola pide el caso al recibirlo y con cada mensaje nuevo: también es la señal de
     // caso asignado (crea la Conversation la primera vez).
     await this.processor.chatAssigned(parsed.value.abayaChatId);

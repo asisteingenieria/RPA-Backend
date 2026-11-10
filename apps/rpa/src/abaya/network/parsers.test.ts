@@ -47,6 +47,44 @@ describe('parseCaseResponse (ySocial)', () => {
     expect(r.value.messages[4]!.media).toBeUndefined();
   });
 
+  it('D-036: separa lo que el cliente le escribió al bot yFlow antes del paso a asesor', () => {
+    if (!r.ok) return;
+    // «Hablar con un asesor» (13:50:05) va antes de la respuesta del bot (13:50:06); «Tigo» y la
+    // nota de voz, después del primer mensaje del asesor.
+    expect(r.value.beforeHandoff).toEqual(['7000000001']);
+  });
+
+  it('D-036: una nota de voz al bot no cuenta; sin bot yFlow no se separa nada', () => {
+    const raw = fixture('ysocial-case.json') as {
+      Result: { Case: { Messages: Record<string, unknown>[] } };
+    };
+    const withAudio = structuredClone(raw);
+    const msgs = withAudio.Result.Case.Messages;
+    // El cliente mandó un audio al bot antes de pedir asesor.
+    msgs.unshift({ ...msgs[5]!, ID: 7000000000, Date: '2026-10-09T13:49:50Z' });
+    const a = parseCaseResponse(withAudio);
+    expect(a.ok && a.value.beforeHandoff).toEqual(['7000000000', '7000000001']);
+
+    const noBot = structuredClone(raw);
+    noBot.Result.Case.Messages = noBot.Result.Case.Messages.filter((m) => m.ReplySource !== 10);
+    const n = parseCaseResponse(noBot);
+    expect(n.ok && n.value.beforeHandoff).toEqual([]);
+  });
+
+  it('D-036: una respuesta del bot después del asesor no vuelve historial lo ya conversado', () => {
+    const raw = fixture('ysocial-case.json') as {
+      Result: { Case: { Messages: Record<string, unknown>[] } };
+    };
+    const late = structuredClone(raw);
+    late.Result.Case.Messages.push({
+      ...late.Result.Case.Messages[1]!,
+      ID: 7000000099,
+      Date: '2026-10-09T14:10:00Z',
+    });
+    const l = parseCaseResponse(late);
+    expect(l.ok && l.value.beforeHandoff).toEqual(['7000000001']);
+  });
+
   it('acepta ids de remitente más grandes que un entero seguro (ySocial real, 15/10/2026)', () => {
     const raw = fixture('ysocial-case.json') as {
       Result: { Case: { Messages: { PostedBy?: { ID: unknown } | null }[] } };

@@ -20,6 +20,7 @@ export const MESSAGE_URL_PATTERNS = {
 
 /** `ReplySource` de una respuesta: 3 = asesor (también el robot), 10 = bot yFlow. */
 export const REPLY_SOURCE_AGENT = 3;
+export const REPLY_SOURCE_BOT = 10;
 
 const id = z.union([z.number().int(), z.string().regex(/^\d+$/)]).transform(String);
 
@@ -97,6 +98,26 @@ export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string
 export interface ParsedCase {
   abayaChatId: string;
   messages: InboundMessage[];
+  /**
+   * D-036: ids de los mensajes del cliente al bot yFlow, ANTES de que el caso pasara a un asesor.
+   * Ya los atendió el bot: el robot abre con su saludo (D-017) y no los responde.
+   */
+  beforeHandoff: string[];
+}
+
+/**
+ * D-036: hora en que el bot yFlow pasó el caso a la cola de asesores: su última respuesta antes
+ * de la primera del asesor (o del robot). Sin respuestas del bot, no hay nada que separar.
+ */
+function handoffAt(messages: YMessage[]): number | null {
+  const firstAgent = messages
+    .filter((m) => m.IsReply && m.ReplySource === REPLY_SOURCE_AGENT)
+    .reduce((min, m) => Math.min(min, Date.parse(m.Date)), Infinity);
+  const bot = messages
+    .filter((m) => m.IsReply && m.ReplySource === REPLY_SOURCE_BOT)
+    .map((m) => Date.parse(m.Date))
+    .filter((d) => d <= firstAgent);
+  return bot.length ? Math.max(...bot) : null;
 }
 
 /** `GET /services/messaging/case`: el caso (abayaChatId = número del caso) y sus mensajes. */
@@ -104,9 +125,20 @@ export function parseCaseResponse(body: unknown): ParseResult<ParsedCase> {
   const r = caseResponseSchema.safeParse(body);
   if (!r.success) return { ok: false, error: summarize(r.error) };
   const c = r.data.Result.Case;
+  const cutoff = handoffAt(c.Messages);
+  const beforeHandoff =
+    cutoff === null
+      ? []
+      : c.Messages.filter((m) => sender(m) === 'CUSTOMER' && Date.parse(m.Date) <= cutoff).map(
+          (m) => m.ID,
+        );
   return {
     ok: true,
-    value: { abayaChatId: c.ID, messages: c.Messages.map((m, i) => toInbound(c.ID, m, i)) },
+    value: {
+      abayaChatId: c.ID,
+      messages: c.Messages.map((m, i) => toInbound(c.ID, m, i)),
+      beforeHandoff,
+    },
   };
 }
 

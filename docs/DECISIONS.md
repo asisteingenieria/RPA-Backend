@@ -1,5 +1,31 @@
 # Decisiones de diseño
 
+## D-036 · Mensajes del cliente al bot yFlow antes del paso a asesor · APROBADA — implementada en local
+
+**Contexto (09/11/2026).** En producción, en un caso nuevo, el robot saludó con el menú (D-017) y
+enseguida respondió «No pude escuchar bien tu nota de voz…» sin que el cliente escribiera nada en el
+chat del asesor. El caso de ySocial (`GET /services/messaging/case`) trae TODOS los mensajes del
+caso, también los que el cliente le mandó al bot yFlow antes de pedir asesor (botón «Hablar con un
+asesor», textos, notas de voz). El robot los guardaba como mensajes nuevos y los respondía después
+del saludo; la vista del asesor en Avaya no los muestra como pendientes.
+
+**Decisión.** El parser calcula el paso a asesor: la última respuesta del bot (`ReplySource` 10)
+antes de la primera del asesor o del robot (`ReplySource` 3). Los mensajes del cliente con fecha
+hasta ese momento van en `ParsedCase.beforeHandoff`; el `InboundWatcher` se los marca al
+`InboundProcessor` antes de procesar el caso y no se guardan ni se responden, ni por red ni por el
+respaldo del DOM (mismo id, misma huella; `stats.ignoredBeforeHandoff`). Lo que el cliente escribe
+después del paso a asesor (también mientras espera en la cola) se responde como siempre. Sin
+respuestas del bot en el caso no se separa nada (comportamiento anterior). Una respuesta del bot
+posterior al asesor no vuelve historial lo ya conversado.
+
+**Diagnóstico.** Cada nota de voz guardada deja en el log del robot su tipo de adjunto
+(`mimeType`, vía) y cada mensaje saltado su vía y si era audio; sin texto ni datos del cliente.
+Si vuelven a aparecer notas de voz que no se ven en Avaya, con eso se afina el filtro.
+
+**Pruebas.** `parsers.test.ts` (fixture real sanitizado: el botón va antes del paso; audio al bot;
+sin bot; respuesta tardía del bot), `inbound-processor.test.ts` (red y DOM) y `inbound.pw.ts`
+contra el Avaya simulado (`assignChat(..., { botHistory })`).
+
 ## D-035 · Sentimiento del cliente, solo para medición · APROBADA — implementada en local
 
 **Contexto (09/11/2026).** Las reglas de Claro piden evaluar el sentimiento del cliente. No había

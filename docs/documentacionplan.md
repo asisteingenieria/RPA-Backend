@@ -9,40 +9,40 @@
 
 Claro usa sus propios nombres. Así los leemos (confirmar con Claro, ver sección 11):
 
-| Nombre de Claro                 | Qué es en nuestra solución                                                                                                                               | De quién es              |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **Sofía**                       | Nuestro agente virtual: servidor (`apps/api` + `apps/worker`) con el motor de conversación, el panel, la base de datos y el LLM (Gemini) por API         | Asiste                   |
-| **RPA**                         | El robot instalado en el PC (`apps/rpa`): navegador Chromium que opera la consola de ySocial como asesor                                                | Asiste                   |
-| **WhatsApp**                    | WhatsApp Business del cliente, conectado a ySocial                                                                                                       | Claro / Meta / Yoizen    |
-| **Menú comercial**              | El bot yFlow de ySocial que atiende antes de que el caso llegue al robot (D-017)                                                                         | Claro / Yoizen           |
-| **BRE**                         | Motor de reglas / distribución de tráfico de Claro que asigna los casos                                                                                  | Claro                    |
-| **Back office**                 | La cola o los asesores de ySocial a los que el robot transfiere la venta con la nota interna                                                            | Claro (en ySocial)       |
-| **SMSC**                        | Centro de mensajes SMS de Claro. **No lo usamos**: hay que declararlo «no aplica» en el inventario                                                       | Claro                    |
+| Nombre de Claro    | Qué es en nuestra solución                                                                                                                       | De quién es           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| **Sofía**          | Nuestro agente virtual: servidor (`apps/api` + `apps/worker`) con el motor de conversación, el panel, la base de datos y el LLM (Gemini) por API | Asiste                |
+| **RPA**            | El robot instalado en el PC (`apps/rpa`): navegador Chromium que opera la consola de ySocial como asesor                                         | Asiste                |
+| **WhatsApp**       | WhatsApp Business del cliente, conectado a ySocial                                                                                               | Claro / Meta / Yoizen |
+| **Menú comercial** | El bot yFlow de ySocial que atiende antes de que el caso llegue al robot (D-017)                                                                 | Claro / Yoizen        |
+| **BRE**            | Motor de reglas / distribución de tráfico de Claro que asigna los casos                                                                          | Claro                 |
+| **Back office**    | La cola o los asesores de ySocial a los que el robot transfiere la venta con la nota interna                                                     | Claro (en ySocial)    |
+| **SMSC**           | Centro de mensajes SMS de Claro. **No lo usamos**: hay que declararlo «no aplica» en el inventario                                               | Claro                 |
 
 ## 1. Resumen: quién puede cumplir cada cosa
 
 ### Por requerimiento (7)
 
-| #   | Requerimiento                         | Responsable                                                | Estado hoy                                                                                     |
-| --- | ------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 1   | Arquitectura y flujo de datos         | **Nosotros** (con datos de Claro sobre WhatsApp, yFlow y BRE) | 70 %: diagramas en `docs/diagramas/`; falta la tabla de flujo de datos y el HLS con lo de Claro |
-| 2   | Pruebas de seguridad                  | **Nosotros + externo recomendado** (pentest independiente) | 50 %: revisión F8 hecha; faltan TLS 1.3, sacar los secretos del `.env` y los informes formales  |
-| 3   | Logs de auditoría                     | **Nosotros**                                               | 40 %: hay `RpaActionLog`, `LlmCall`, `AdminAuditLog`; falta el log por interacción con los campos de Claro |
-| 4   | Consentimiento en dos lecturas        | **Nosotros + Claro (Cumplimiento)**                        | 50 %: una lectura con evidencia encadenada; falta la segunda lectura y el texto aprobado        |
-| 5   | Gestión de incidentes                 | **Nosotros**                                               | 30 %: hay alertas y kill switch; falta el procedimiento escrito                                 |
-| 6   | Cuentas de servicio y PAM             | **Nosotros + externo** (PAM o bóveda aprobada) **+ Claro** (fichas y cartas) | 30 %: no hay credenciales en el código; los secretos del servidor están en `.env` en texto claro |
-| 7   | Entorno aislado y sin entrenamiento   | **Nosotros + área legal + proveedor del LLM (Google)**     | 20 %: falta todo lo contractual                                                                |
+| #   | Requerimiento                       | Responsable                                                                  | Estado hoy                                                                                                 |
+| --- | ----------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Arquitectura y flujo de datos       | **Nosotros** (con datos de Claro sobre WhatsApp, yFlow y BRE)                | 70 %: diagramas en `docs/diagramas/`; falta la tabla de flujo de datos y el HLS con lo de Claro            |
+| 2   | Pruebas de seguridad                | **Nosotros + externo recomendado** (pentest independiente)                   | 50 %: revisión F8 hecha; faltan TLS 1.3, sacar los secretos del `.env` y los informes formales             |
+| 3   | Logs de auditoría                   | **Nosotros**                                                                 | 40 %: hay `RpaActionLog`, `LlmCall`, `AdminAuditLog`; falta el log por interacción con los campos de Claro |
+| 4   | Consentimiento en dos lecturas      | **Nosotros + Claro (Cumplimiento)**                                          | 50 %: una lectura con evidencia encadenada; falta la segunda lectura y el texto aprobado                   |
+| 5   | Gestión de incidentes               | **Nosotros**                                                                 | 30 %: hay alertas y kill switch; falta el procedimiento escrito                                            |
+| 6   | Cuentas de servicio y PAM           | **Nosotros + externo** (PAM o bóveda aprobada) **+ Claro** (fichas y cartas) | 30 %: no hay credenciales en el código; los secretos del servidor están en `.env` en texto claro           |
+| 7   | Entorno aislado y sin entrenamiento | **Nosotros + área legal + proveedor del LLM (Google)**                       | 20 %: falta todo lo contractual                                                                            |
 
 - **3 requerimientos los cumplimos solos:** 1, 3 y 5 (en el 1 Claro nos da la información de sus componentes).
 - **4 requerimientos son mixtos:** 2, 4, 6 y 7.
 
 ### Por evidencia (17 entregables)
 
-| Quién entrega                         | Cantidad | Evidencias                                                       |
-| ------------------------------------- | -------- | ---------------------------------------------------------------- |
-| **Nosotros (Asiste, equipo técnico)** | **12**   | E1.1, E1.2, E2.1, E3.1, E3.2, E4.2, E4.3, E5.1, E6.1, E6.3, E7.1, E7.2 |
+| Quién entrega                         | Cantidad | Evidencias                                                                               |
+| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| **Nosotros (Asiste, equipo técnico)** | **12**   | E1.1, E1.2, E2.1, E3.1, E3.2, E4.2, E4.3, E5.1, E6.1, E6.3, E7.1, E7.2                   |
 | **Proveedor externo**                 | **3**    | E2.2 (pentest independiente), E6.2 (PAM o bóveda), E7.4 (términos del proveedor del LLM) |
-| **Claro o área legal**                | **2**    | E4.1 (texto aprobado por Cumplimiento), E7.3 (cláusula contractual) |
+| **Claro o área legal**                | **2**    | E4.1 (texto aprobado por Cumplimiento), E7.3 (cláusula contractual)                      |
 
 De las 12 nuestras, **5 necesitan desarrollo antes de poder evidenciarse** (E2.1, E3.1, E3.2, E4.2 y
 E4.3). Las demás son documentación sobre lo que ya existe.
@@ -69,17 +69,17 @@ componentes, con qué cifrado viaja, quién lo guarda y cuánto tiempo. Lo que q
 
 **Borrador de la tabla de flujo de datos** (las celdas «?» se confirman con Claro o con pruebas):
 
-| Paso | Dato                                         | De → a                              | Cifrado en tránsito                    | Quién lo guarda y cómo                                                     | Cuánto tiempo                                   |
-| ---- | -------------------------------------------- | ----------------------------------- | -------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------- |
-| 1    | Conversación, número de línea                | Cliente → WhatsApp → ySocial        | Cifrado de WhatsApp + HTTPS de Meta (?) | Claro/Yoizen en ySocial                                                     | Política de Claro (?)                           |
-| 2    | Conversación                                 | ySocial → RPA (pantalla del navegador) | HTTPS (TLS de ySocial: medir)        | No se guarda en el PC (trazas solo en error, cifradas, 7 días)              | 7 días (trazas)                                 |
-| 3    | Conversación, número (hash)                  | RPA → pasarela → API                | HTTPS/WSS (**objetivo TLS 1.3**)       | PostgreSQL: `Message.bodyEncrypted` (AES-256-GCM), `customerRefHash`        | `CONVERSATION_RETENTION_DAYS` (**hoy vacío = no se borra**) |
-| 4    | Conversación (teléfonos y cédulas enmascarados) | Worker → Gemini                  | HTTPS (TLS de Google)                  | Google, según sus términos (ver R7)                                         | Según el plan contratado (ver R7)               |
-| 5    | Nombre, cédula, correo (tras el «SÍ»)        | Cliente → … → worker                | Igual que 1–3                          | `Conversation.profileEncrypted`, `Sale.summaryEncrypted`                    | Igual que 3                                     |
-| 6    | Respuesta de consentimiento                  | Worker → PostgreSQL                 | Local                                  | `ConsentEvidence.customerReplyEncrypted` + cadena de hashes                 | Igual que 3 (hash permanente)                   |
-| 7    | Resumen de la venta (nota interna)           | Worker → RPA → ySocial (back office) | WSS + HTTPS de ySocial                | Claro/Yoizen en ySocial                                                     | Política de Claro (?)                           |
-| 8    | Pantalla del robot (monitor en vivo, D-032)  | RPA → pasarela → panel ADMIN        | WSS + SSE sobre HTTPS                  | Solo la última imagen, en Redis                                             | 10 s                                            |
-| 9    | Conversación completa (Trazabilidad)         | API → panel ADMIN                   | HTTPS                                  | Se descifra para mostrarla; queda `CONVERSATION_VIEWED` en Auditoría        | —                                               |
+| Paso | Dato                                            | De → a                                 | Cifrado en tránsito                     | Quién lo guarda y cómo                                               | Cuánto tiempo                                               |
+| ---- | ----------------------------------------------- | -------------------------------------- | --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1    | Conversación, número de línea                   | Cliente → WhatsApp → ySocial           | Cifrado de WhatsApp + HTTPS de Meta (?) | Claro/Yoizen en ySocial                                              | Política de Claro (?)                                       |
+| 2    | Conversación                                    | ySocial → RPA (pantalla del navegador) | HTTPS (TLS de ySocial: medir)           | No se guarda en el PC (trazas solo en error, cifradas, 7 días)       | 7 días (trazas)                                             |
+| 3    | Conversación, número (hash)                     | RPA → pasarela → API                   | HTTPS/WSS (**objetivo TLS 1.3**)        | PostgreSQL: `Message.bodyEncrypted` (AES-256-GCM), `customerRefHash` | `CONVERSATION_RETENTION_DAYS` (**hoy vacío = no se borra**) |
+| 4    | Conversación (teléfonos y cédulas enmascarados) | Worker → Gemini                        | HTTPS (TLS de Google)                   | Google, según sus términos (ver R7)                                  | Según el plan contratado (ver R7)                           |
+| 5    | Nombre, cédula, correo (tras el «SÍ»)           | Cliente → … → worker                   | Igual que 1–3                           | `Conversation.profileEncrypted`, `Sale.summaryEncrypted`             | Igual que 3                                                 |
+| 6    | Respuesta de consentimiento                     | Worker → PostgreSQL                    | Local                                   | `ConsentEvidence.customerReplyEncrypted` + cadena de hashes          | Igual que 3 (hash permanente)                               |
+| 7    | Resumen de la venta (nota interna)              | Worker → RPA → ySocial (back office)   | WSS + HTTPS de ySocial                  | Claro/Yoizen en ySocial                                              | Política de Claro (?)                                       |
+| 8    | Pantalla del robot (monitor en vivo, D-032)     | RPA → pasarela → panel ADMIN           | WSS + SSE sobre HTTPS                   | Solo la última imagen, en Redis                                      | 10 s                                                        |
+| 9    | Conversación completa (Trazabilidad)            | API → panel ADMIN                      | HTTPS                                   | Se descifra para mostrarla; queda `CONVERSATION_VIEWED` en Auditoría | —                                                           |
 
 **Evidencias.** `01-arquitectura/E1.1-HLS.pdf`, `01-arquitectura/E1.2-flujo-de-datos.pdf`.
 
@@ -102,13 +102,13 @@ verifica que los datos sean del robot del token; logs con redacción de pino; me
 
 **Brechas encontradas al preparar este plan (corregir antes de las pruebas):**
 
-| Id  | Brecha                                                                                                                                                                            | Arreglo                                                                                          |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Id  | Brecha                                                                                                                                                                                   | Arreglo                                                                                            |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | G1  | En el servidor, `~/rpa/backend/.env` guarda `FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY` y la contraseña de PostgreSQL **en texto claro** (con permisos 600). Claro lo prohíbe expresamente. | Leer los secretos de la bóveda o PAM al arrancar (R6); el `.env` queda solo con datos no secretos. |
-| G2  | nginx con certificado **autofirmado** y sin `ssl_protocols TLSv1.3` explícito.                                                                                                     | `ssl_protocols TLSv1.3;` y certificado de la CA corporativa de Claro (o interna aprobada).         |
-| G3  | `scrubText` enmascara teléfonos y documentos pero **no correos** antes de mandar el texto al LLM y a los logs.                                                                    | **Corregido 04/11/2026** (`[CORREO]`, H4 de `security-review.md`).                                                         |
-| G4  | Redis sin contraseña (local) y PostgreSQL sin `sslmode=require` (pendiente M5 de la revisión F8).                                                                                 | Contraseña en Redis; si salen de la máquina, TLS en ambos.                                        |
-| G5  | Logs del PC del robot: no hay evidencia escrita de que no tengan datos personales.                                                                                                | Escaneo automático de los logs (ver herramientas) y adjuntar el resultado.                        |
+| G2  | nginx con certificado **autofirmado** y sin `ssl_protocols TLSv1.3` explícito.                                                                                                           | `ssl_protocols TLSv1.3;` y certificado de la CA corporativa de Claro (o interna aprobada).         |
+| G3  | `scrubText` enmascara teléfonos y documentos pero **no correos** antes de mandar el texto al LLM y a los logs.                                                                           | **Corregido 04/11/2026** (`[CORREO]`, H4 de `security-review.md`).                                 |
+| G4  | Redis sin contraseña (local) y PostgreSQL sin `sslmode=require` (pendiente M5 de la revisión F8).                                                                                        | Contraseña en Redis; si salen de la máquina, TLS en ambos.                                         |
+| G5  | Logs del PC del robot: no hay evidencia escrita de que no tengan datos personales.                                                                                                       | Escaneo automático de los logs (ver herramientas) y adjuntar el resultado.                         |
 
 **Corregido el 04/11/2026** (`docs/security-review.md`, H1–H5): IP real detrás de nginx (el bloqueo por intentos ya no es compartido), dependencias sin vulnerabilidades conocidas, HSTS, correos enmascarados y `/health` del robot solo local. Pendiente en el servidor: runbook §12.7.
 
@@ -140,26 +140,26 @@ bastarle. Hay que preguntarle a Claro si acepta pruebas internas o exige un terc
 
 **Qué piden.** Un log **por interacción** con estos campos obligatorios:
 
-| Campo de Claro                         | Qué tenemos hoy                                                    | Falta                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Id único de sesión o conversación      | `Conversation.id`                                                  | —                                                                           |
-| Número de línea enmascarado            | `customerRefHash` (hash, no enmascarado)                           | Guardar el número enmascarado (`300****567`) si ySocial lo muestra (confirmar) |
-| Hora de inicio y fin                   | `Conversation` (apertura y cierre)                                 | Exponerlo en el log                                                         |
-| Paso del flujo                         | Etapas de la máquina de estados (MENU, PERFIL, OFERTA, AUTORIZACION, TRANSFERENCIA…) | Tabla de equivalencias con los nombres de Claro (abajo)        |
-| Resultado de cada paso                 | Parcial (`RpaActionLog.result`, `LlmCall.validationResult`, tipificación D-025) | Evento por paso: EXITOSO, ERROR o ABANDONO                   |
-| Id del asesor del back office          | No se guarda                                                       | Registrar la cola o el asesor al que se transfirió (confirmar qué muestra ySocial) |
+| Campo de Claro                    | Qué tenemos hoy                                                                      | Falta                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Id único de sesión o conversación | `Conversation.id`                                                                    | —                                                                                  |
+| Número de línea enmascarado       | `customerRefHash` (hash, no enmascarado)                                             | Guardar el número enmascarado (`300****567`) si ySocial lo muestra (confirmar)     |
+| Hora de inicio y fin              | `Conversation` (apertura y cierre)                                                   | Exponerlo en el log                                                                |
+| Paso del flujo                    | Etapas de la máquina de estados (MENU, PERFIL, OFERTA, AUTORIZACION, TRANSFERENCIA…) | Tabla de equivalencias con los nombres de Claro (abajo)                            |
+| Resultado de cada paso            | Parcial (`RpaActionLog.result`, `LlmCall.validationResult`, tipificación D-025)      | Evento por paso: EXITOSO, ERROR o ABANDONO                                         |
+| Id del asesor del back office     | No se guarda                                                                         | Registrar la cola o el asesor al que se transfirió (confirmar qué muestra ySocial) |
 
 **Equivalencia de pasos** (Claro → nuestras etapas):
 
-| Paso de Claro                  | Etapa o evento nuestro                                    |
-| ------------------------------ | --------------------------------------------------------- |
-| Saludo                         | Turno `opening` y MENU                                    |
-| Perfilamiento                  | PERFIL                                                    |
-| Oferta                         | OFERTA                                                    |
-| Objeciones                     | OFERTA con intención OBJECION                             |
-| Lectura de tratamiento de datos | AUTORIZACION (primera y segunda lectura, R4)             |
-| Captura de datos               | Datos tras el «SÍ» (`saleData`: documento, nombre, correo) |
-| Transferencia                  | TRANSFERENCIA (acción TRANSFER del robot)                 |
+| Paso de Claro                   | Etapa o evento nuestro                                     |
+| ------------------------------- | ---------------------------------------------------------- |
+| Saludo                          | Turno `opening` y MENU                                     |
+| Perfilamiento                   | PERFIL                                                     |
+| Oferta                          | OFERTA                                                     |
+| Objeciones                      | OFERTA con intención OBJECION                              |
+| Lectura de tratamiento de datos | AUTORIZACION (primera y segunda lectura, R4)               |
+| Captura de datos                | Datos tras el «SÍ» (`saleData`: documento, nombre, correo) |
+| Transferencia                   | TRANSFERENCIA (acción TRANSFER del robot)                  |
 
 **Desarrollo (nosotros).** Una tabla nueva de solo agregar, `InteractionAuditLog` (o una vista
 sobre las existentes), con un registro por cambio de paso: conversación, número enmascarado, paso,
@@ -246,18 +246,18 @@ RPA no tiene credenciales en el código.
 
 **Inventario inicial (nosotros):**
 
-| Cuenta                                 | Componente   | Sistema destino            | Tipo de credencial                                | Dónde está hoy                                          | Propietario (?)        |
-| -------------------------------------- | ------------ | -------------------------- | ------------------------------------------------- | ------------------------------------------------------- | ---------------------- |
-| Usuario robot de ySocial (46441856)    | RPA          | ySocial (Claro)            | Usuario y contraseña                              | PostgreSQL cifrada (`abayaPasswordEncrypted`)           | Claro (dueño de ySocial) |
-| Credencial del robot ante la pasarela  | RPA → Sofía  | `/robot-api/v1`            | Token de acceso (1 h) y de renovación             | PC: `robot.json` con DPAPI; servidor: solo el hash      | Asiste                 |
-| `GEMINI_API_KEY`                       | Sofía        | API de Google Gemini       | API key                                           | `.env` del servidor **en claro** (G1)                   | Asiste                 |
-| `FIELD_ENCRYPTION_KEY`                 | Sofía        | Cifrado de campos          | Clave AES                                         | `.env` del servidor **en claro** (G1)                   | Asiste                 |
-| Usuario de PostgreSQL                  | Sofía        | Base de datos              | Usuario y contraseña                              | `.env` del servidor (`DATABASE_URL`) **en claro** (G1)  | Asiste                 |
-| Clave de firma de paquetes (Ed25519)   | Despliegue   | Actualizaciones del robot  | Clave privada                                     | Equipo que arma los paquetes (`.secrets/`)              | Asiste                 |
-| Clave de despliegue de GitHub          | Despliegue   | Repositorios               | Llave SSH                                         | Servidor `~/.ssh` (la del backend aún de lectura y escritura) | Asiste           |
-| `ALERT_WEBHOOK_URL`                    | Sofía        | Slack o Teams              | URL con secreto                                   | `.env` del servidor                                     | Asiste                 |
-| Cuenta del BRE                         | BRE          | WhatsApp Business / distribución | ?                                           | Claro                                                   | Claro                  |
-| SMSC                                   | —            | —                          | **No aplica** (no usamos SMS)                     | —                                                       | —                      |
+| Cuenta                                | Componente  | Sistema destino                  | Tipo de credencial                    | Dónde está hoy                                                | Propietario (?)          |
+| ------------------------------------- | ----------- | -------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ------------------------ |
+| Usuario robot de ySocial (46441856)   | RPA         | ySocial (Claro)                  | Usuario y contraseña                  | PostgreSQL cifrada (`abayaPasswordEncrypted`)                 | Claro (dueño de ySocial) |
+| Credencial del robot ante la pasarela | RPA → Sofía | `/robot-api/v1`                  | Token de acceso (1 h) y de renovación | PC: `robot.json` con DPAPI; servidor: solo el hash            | Asiste                   |
+| `GEMINI_API_KEY`                      | Sofía       | API de Google Gemini             | API key                               | `.env` del servidor **en claro** (G1)                         | Asiste                   |
+| `FIELD_ENCRYPTION_KEY`                | Sofía       | Cifrado de campos                | Clave AES                             | `.env` del servidor **en claro** (G1)                         | Asiste                   |
+| Usuario de PostgreSQL                 | Sofía       | Base de datos                    | Usuario y contraseña                  | `.env` del servidor (`DATABASE_URL`) **en claro** (G1)        | Asiste                   |
+| Clave de firma de paquetes (Ed25519)  | Despliegue  | Actualizaciones del robot        | Clave privada                         | Equipo que arma los paquetes (`.secrets/`)                    | Asiste                   |
+| Clave de despliegue de GitHub         | Despliegue  | Repositorios                     | Llave SSH                             | Servidor `~/.ssh` (la del backend aún de lectura y escritura) | Asiste                   |
+| `ALERT_WEBHOOK_URL`                   | Sofía       | Slack o Teams                    | URL con secreto                       | `.env` del servidor                                           | Asiste                   |
+| Cuenta del BRE                        | BRE         | WhatsApp Business / distribución | ?                                     | Claro                                                         | Claro                    |
+| SMSC                                  | —           | —                                | **No aplica** (no usamos SMS)         | —                                                             | —                        |
 
 **Qué es externo.** El **PAM** (gestor de accesos privilegiados): normalmente el de Claro (por
 ejemplo CyberArk) o una bóveda que Claro apruebe (HashiCorp Vault, Azure Key Vault, AWS Secrets
@@ -311,32 +311,32 @@ representante legal), `07-aislamiento/E7.2-diagrama-aislamiento.pdf` (nosotros),
 
 ## 9. Tecnologías
 
-| Para qué                                | Herramienta                                                                                                    | Por qué                                                                                      |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Diagramas HLS, flujo de datos, aislamiento | **Archify** (ya en uso, `docs/diagramas/`) y Mermaid                                                        | Ya tenemos las fuentes; exporta a imagen y SVG para el PDF                                   |
-| Generar los PDF                         | Markdown → HTML → PDF con **Playwright** (`page.pdf()`), o Pandoc                                              | Playwright ya está en el proyecto: sin dependencias nuevas, con plantilla de portada común    |
-| Secretos en el código e historial       | **gitleaks** (o trufflehog)                                                                                    | Estándar para «credenciales hardcodeadas»; da un reporte para adjuntar                       |
-| Análisis estático                       | **Semgrep** (reglas OWASP y TypeScript)                                                                        | Gratis y con reporte                                                                          |
-| Dependencias                            | `pnpm audit --prod`, **OSV-Scanner**                                                                           | Vulnerabilidades conocidas                                                                   |
-| TLS                                     | **testssl.sh** o **sslyze**; nginx con `ssl_protocols TLSv1.3`                                                  | Prueba objetiva de la versión, los cifrados y el certificado                                  |
-| API (DAST)                              | **OWASP ZAP** + pruebas propias (Vitest, `*.int.test.ts`)                                                      | Autenticación, aislamiento de sesiones, CSRF                                                  |
-| Datos personales en logs                | Script propio (Node) que siembra datos sintéticos y los busca en los logs, más `scrubText` con correos           | Evidencia repetible de «0 apariciones»                                                       |
-| Bóveda de secretos                      | **PAM de Claro** (p. ej. CyberArk) o HashiCorp Vault / Azure Key Vault / AWS Secrets Manager; DPAPI ya usado en el PC | Lo exige el R6; el PC ya cumple con DPAPI                                             |
-| Certificado del servidor                | CA corporativa de Claro (o una interna aprobada), en lugar del autofirmado                                      | Necesario para que TLS 1.3 sea aceptable en la revisión                                       |
-| Log de auditoría                        | PostgreSQL (tabla de solo agregar con cadena de hashes, como `RpaActionLog`) y export del panel                 | Mismo patrón que ya pasó la revisión F8                                                       |
-| LLM sin entrenamiento                   | Gemini API de pago, o **Vertex AI**                                                                            | Compromiso contractual de no entrenar                                                         |
+| Para qué                                   | Herramienta                                                                                                           | Por qué                                                                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Diagramas HLS, flujo de datos, aislamiento | **Archify** (ya en uso, `docs/diagramas/`) y Mermaid                                                                  | Ya tenemos las fuentes; exporta a imagen y SVG para el PDF                                 |
+| Generar los PDF                            | Markdown → HTML → PDF con **Playwright** (`page.pdf()`), o Pandoc                                                     | Playwright ya está en el proyecto: sin dependencias nuevas, con plantilla de portada común |
+| Secretos en el código e historial          | **gitleaks** (o trufflehog)                                                                                           | Estándar para «credenciales hardcodeadas»; da un reporte para adjuntar                     |
+| Análisis estático                          | **Semgrep** (reglas OWASP y TypeScript)                                                                               | Gratis y con reporte                                                                       |
+| Dependencias                               | `pnpm audit --prod`, **OSV-Scanner**                                                                                  | Vulnerabilidades conocidas                                                                 |
+| TLS                                        | **testssl.sh** o **sslyze**; nginx con `ssl_protocols TLSv1.3`                                                        | Prueba objetiva de la versión, los cifrados y el certificado                               |
+| API (DAST)                                 | **OWASP ZAP** + pruebas propias (Vitest, `*.int.test.ts`)                                                             | Autenticación, aislamiento de sesiones, CSRF                                               |
+| Datos personales en logs                   | Script propio (Node) que siembra datos sintéticos y los busca en los logs, más `scrubText` con correos                | Evidencia repetible de «0 apariciones»                                                     |
+| Bóveda de secretos                         | **PAM de Claro** (p. ej. CyberArk) o HashiCorp Vault / Azure Key Vault / AWS Secrets Manager; DPAPI ya usado en el PC | Lo exige el R6; el PC ya cumple con DPAPI                                                  |
+| Certificado del servidor                   | CA corporativa de Claro (o una interna aprobada), en lugar del autofirmado                                            | Necesario para que TLS 1.3 sea aceptable en la revisión                                    |
+| Log de auditoría                           | PostgreSQL (tabla de solo agregar con cadena de hashes, como `RpaActionLog`) y export del panel                       | Mismo patrón que ya pasó la revisión F8                                                    |
+| LLM sin entrenamiento                      | Gemini API de pago, o **Vertex AI**                                                                                   | Compromiso contractual de no entrenar                                                      |
 
 ## 10. Orden de trabajo sugerido
 
-| Semana | Trabajo                                                                                                                                         | Responsable          |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| 1      | Enviar a Claro las preguntas de la sección 11. Inventario de cuentas (E6.1). Procedimiento de incidentes (E5.1). HLS y flujo de datos (E1.1, E1.2). | Nosotros             |
-| 1      | Pedir al área legal la cláusula y la certificación (E7.1, E7.3). Confirmar el plan de Gemini o pasar a Vertex AI (E7.4).                        | Gerencia, legal      |
-| 2      | Desarrollo: correos en `scrubText` (G3), TLS 1.3 y certificado (G2), log por interacción (E3.1), segunda lectura del consentimiento (R4).        | Nosotros             |
-| 2–3    | Bóveda o PAM y sacar los secretos del `.env` (G1); rotar las claves.                                                                             | Nosotros + PAM       |
-| 3      | Pruebas de seguridad internas (E2.1, E2.2, E6.3) con las herramientas de la sección 9; pentest externo si Claro lo exige.                        | Nosotros + externo   |
-| 3      | Corrida de prueba completa (conversación sintética) para sacar los logs de E3.2 y E4.3.                                                         | Nosotros             |
-| 4      | Armar las 7 carpetas en PDF, revisión interna y envío.                                                                                          | Nosotros             |
+| Semana | Trabajo                                                                                                                                             | Responsable        |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 1      | Enviar a Claro las preguntas de la sección 11. Inventario de cuentas (E6.1). Procedimiento de incidentes (E5.1). HLS y flujo de datos (E1.1, E1.2). | Nosotros           |
+| 1      | Pedir al área legal la cláusula y la certificación (E7.1, E7.3). Confirmar el plan de Gemini o pasar a Vertex AI (E7.4).                            | Gerencia, legal    |
+| 2      | Desarrollo: correos en `scrubText` (G3), TLS 1.3 y certificado (G2), log por interacción (E3.1), segunda lectura del consentimiento (R4).           | Nosotros           |
+| 2–3    | Bóveda o PAM y sacar los secretos del `.env` (G1); rotar las claves.                                                                                | Nosotros + PAM     |
+| 3      | Pruebas de seguridad internas (E2.1, E2.2, E6.3) con las herramientas de la sección 9; pentest externo si Claro lo exige.                           | Nosotros + externo |
+| 3      | Corrida de prueba completa (conversación sintética) para sacar los logs de E3.2 y E4.3.                                                             | Nosotros           |
+| 4      | Armar las 7 carpetas en PDF, revisión interna y envío.                                                                                              | Nosotros           |
 
 Cada cambio de código sigue la forma de trabajo: decisión primero en `docs/planRPA.md` y
 `docs/DECISIONS.md`, pruebas y suite de evaluación en verde, sin commit hasta que se pida.

@@ -13,6 +13,8 @@ export interface InboundStats {
   duplicates: number;
   ignoredOwn: number;
   ignoredSystem: number;
+  /** D-036: mensajes del cliente al bot yFlow, antes del paso a asesor. */
+  ignoredBeforeHandoff: number;
   newConversations: number;
 }
 
@@ -32,6 +34,7 @@ export class InboundProcessor {
     duplicates: 0,
     ignoredOwn: 0,
     ignoredSystem: 0,
+    ignoredBeforeHandoff: 0,
     newConversations: 0,
   };
   private readonly chains = new Map<string, Promise<unknown>>();
@@ -48,6 +51,9 @@ export class InboundProcessor {
       this.recent.delete(this.recent.values().next().value!);
     }
   }
+
+  /** D-036: huellas de los mensajes al bot yFlow (red y DOM traen el mismo id). */
+  private readonly beforeHandoff = new Set<string>();
 
   private readonly sink: InboundSink;
 
@@ -90,6 +96,28 @@ export class InboundProcessor {
     return settled;
   }
 
+  /**
+   * D-036: lo que el cliente le escribió al bot yFlow antes de pasar a un asesor ya lo atendió el
+   * bot: el robot saluda (D-017) y no lo responde. Se marca antes de procesar el caso, y el
+   * respaldo por DOM (mismo id de mensaje, misma huella) también lo salta.
+   */
+  markBeforeHandoff(abayaChatId: string, messageIds: string[]) {
+    for (const messageId of messageIds) {
+      this.beforeHandoff.add(
+        messageFingerprint({
+          abayaChatId,
+          messageId,
+          sender: 'CUSTOMER',
+          text: '',
+          occurredAt: new Date(0),
+        }),
+      );
+    }
+    while (this.beforeHandoff.size > InboundProcessor.RECENT_MAX) {
+      this.beforeHandoff.delete(this.beforeHandoff.values().next().value!);
+    }
+  }
+
   /** Chat nuevo asignado → crear Conversation (sección 6.2, paso 5). */
   async chatAssigned(abayaChatId: string): Promise<void> {
     const c = await this.sink.chatAssigned(abayaChatId);
@@ -112,6 +140,18 @@ export class InboundProcessor {
       return;
     }
     const fingerprint = messageFingerprint(m);
+    if (this.beforeHandoff.has(fingerprint)) {
+      if (!this.recent.has(fingerprint)) {
+        this.stats.ignoredBeforeHandoff++;
+        this.remember(fingerprint);
+        // Sin texto ni datos del cliente: solo el tipo, para revisar el filtro.
+        this.deps.logger.info(
+          { abayaChatId: m.abayaChatId, via, audio: !!m.media },
+          'mensaje al bot antes del paso a asesor: no se responde',
+        );
+      }
+      return;
+    }
     if (this.recent.has(fingerprint)) {
       this.stats.duplicates++;
       return;
@@ -132,6 +172,13 @@ export class InboundProcessor {
       return;
     }
     this.stats.stored++;
+    if (m.media) {
+      // D-036: tipo de adjunto de cada nota de voz (sin contenido) para revisar falsos positivos.
+      this.deps.logger.info(
+        { abayaChatId: m.abayaChatId, via, mimeType: m.media.mimeType ?? null },
+        'nota de voz del cliente',
+      );
+    }
     this.deps.onStored?.(m, via);
   }
 }

@@ -64,6 +64,23 @@ describe('InboundProcessor', () => {
     expect(p.stats.ignoredOwn).toBe(1);
   });
 
+  it('D-036: no guarda lo que el cliente le escribió al bot yFlow (ni por red ni por DOM)', async () => {
+    const { p, repo, queue } = setup();
+    p.markBeforeHandoff('CH-1', ['m-1']);
+    await p.handle(
+      msg({
+        text: '',
+        media: { kind: 'AUDIO', url: 'https://abaya.test/a.ogg', mimeType: 'audio/ogg' },
+      }),
+      'network',
+    );
+    await p.handle(msg({ text: '0:12' }), 'dom');
+    await p.handle(msg({ messageId: 'm-2', text: 'Hola, ¿sigues ahí?' }), 'network');
+    expect(repo.messages.size).toBe(1);
+    expect(queue.jobs).toHaveLength(1);
+    expect(p.stats).toMatchObject({ ignoredBeforeHandoff: 1, stored: 1 });
+  });
+
   it('ignora mensajes del sistema', async () => {
     const { p, repo } = setup();
     await p.handle(msg({ sender: 'SYSTEM' }), 'dom');
