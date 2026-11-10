@@ -480,6 +480,7 @@ dependencias al día y `/health` del robot solo en `127.0.0.1` (`docs/security-r
 
    Sin estas líneas todo sigue funcionando como antes (el bloqueo por intentos sigue siendo
    compartido). Comprobar y recargar **sin cortar conexiones**: `sudo nginx -t && sudo systemctl reload nginx`.
+
 3. **nginx: TLS.** En el bloque `server` de 443:
 
    ```
@@ -491,6 +492,7 @@ dependencias al día y `/health` del robot solo en `127.0.0.1` (`docs/security-r
    `openssl s_client -connect 10.255.255.194:443 -tls1_3 </dev/null 2>/dev/null | grep -E "Protocol|Cipher"`.
    Dejar solo `TLSv1.3` (lo que pide Claro) después de confirmar que el robot y el panel
    siguen conectados un día completo. `nginx -t` antes de cada `reload`.
+
 4. **Paquete del robot, después de las 22:00** (§12.5). Cambia `zod` y el `/health` local; nada
    del equipo usa ese puerto. El robot se actualiza solo cuando no tiene chats y vuelve a la
    versión anterior si la nueva no arranca (§10). Para no publicar en horario, subir el paquete

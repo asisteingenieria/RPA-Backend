@@ -4,3 +4,5 @@ coverage
 pnpm-lock.yaml
 **/generated/**
 docs/planRPA.md
+# Generados por Archify (se regeneran, no se formatean a mano)
+docs/diagramas/

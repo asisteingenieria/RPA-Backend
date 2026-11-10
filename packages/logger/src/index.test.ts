@@ -23,7 +23,9 @@ describe('logger', () => {
       'mi correo es [CORREO] gracias',
     );
     expect(scrubText('ana1020304050@gmail.com y 3001234567')).toBe('[CORREO] y [TEL]');
-    expect(scrubText('el plan de 52.900 sin @ no cambia')).toBe('el plan de 52.900 sin @ no cambia');
+    expect(scrubText('el plan de 52.900 sin @ no cambia')).toBe(
+      'el plan de 52.900 sin @ no cambia',
+    );
   });
 
   it('no deja correos en el mensaje del log', () => {
