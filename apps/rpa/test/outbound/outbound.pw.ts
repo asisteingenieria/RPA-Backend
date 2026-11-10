@@ -282,3 +282,16 @@ test('mensaje con emojis, letras del menú y *negrita*: se verifica (SENT_VERIFI
   expect(mock.agentPosts).toHaveLength(1);
   await t.mgr.stop();
 });
+
+test('D-037: chat que ya no está en la bandeja: CHAT_GONE, FAILED, sin escribir ni alerta', async () => {
+  const t = await boot(mock);
+  mock.unassignChat('2001');
+  await expect.poll(async () => (await t.actor.readTray())?.includes('2001')).toBe(false);
+  const id = t.queue('2001', '¿Sigues ahí?');
+  expect(await t.actor.sendMessage(id)).toBe('CHAT_GONE');
+  expect((await t.outbound.get(id))?.status).toBe('FAILED');
+  expect(mock.agentPosts).toHaveLength(0);
+  expect(t.alerts.raised).toEqual([]);
+  expect(t.actionLog.entries.at(-1)).toMatchObject({ action: 'SEND', result: 'SKIPPED' });
+  await t.mgr.stop();
+});

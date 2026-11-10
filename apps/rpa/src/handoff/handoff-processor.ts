@@ -62,6 +62,9 @@ export class HandoffProcessor {
         return 'BLOCKED';
       case 'UNCERTAIN':
         return this.review(job, outcome.reason);
+      case 'GONE':
+        // Transferir no lo devuelve; si pasara, una venta sin entregar va a revisión (regla 2).
+        return this.review(job, 'el caso ya no está en la bandeja');
       case 'FAILED':
         if (attemptsMade >= MAX_TRANSFER_RETRIES)
           return this.review(job, `${outcome.reason} (sin más reintentos)`);
@@ -77,6 +80,14 @@ export class HandoffProcessor {
       tag: (job.tag && sel.finish.closeTags[job.tag]) || sel.finish.tags[job.reason],
     });
     if (outcome.result === 'OK') return 'DONE';
+    if (outcome.result === 'GONE') {
+      // D-037: el caso ya no estaba en la bandeja (lo cerró o reasignó otro): no es un error.
+      this.d.logger.info(
+        { conversationId: job.conversationId },
+        'cierre: el caso ya no estaba en la bandeja',
+      );
+      return 'DONE';
+    }
     if (outcome.result === 'BLOCKED_KILL_SWITCH') return 'BLOCKED';
     // Un cierre fallido no pierde ventas: alerta alta y revisión.
     await this.d.repo.markNeedsReview(job.conversationId);

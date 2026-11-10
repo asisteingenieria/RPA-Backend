@@ -101,6 +101,7 @@ const CLOSED_STATUSES = [
   'CLOSED_NO_SALE',
   'CLOSED_SUPPORT',
   'CLOSED_INACTIVE',
+  'CLOSED_EXTERNALLY',
 ] as const;
 
 /**

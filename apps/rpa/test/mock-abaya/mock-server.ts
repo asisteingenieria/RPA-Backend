@@ -187,6 +187,11 @@ export class MockAbayaServer {
     return chat;
   }
 
+  /** D-037: Avaya cierra o reasigna el caso por fuera del robot (sale de su bandeja). */
+  unassignChat(chatId: string) {
+    this.removeChat(chatId);
+  }
+
   chat(chatId: string): MockChat | undefined {
     return this.chats.find((c) => c.id === chatId);
   }

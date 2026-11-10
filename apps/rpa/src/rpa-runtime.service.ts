@@ -18,6 +18,7 @@ import { RobotPresence } from './presence/robot-presence.js';
 import { ActivityReporter } from './live/activity-reporter.js';
 import { ScreenStreamer } from './live/screen-streamer.js';
 import { RecoveryService } from './recovery/recovery.service.js';
+import { TrayReconciler } from './recovery/tray-reconciler.js';
 import { ShiftEnd } from './schedule/shift-end.js';
 import { isWorkTime, parseWorkHours } from './schedule/work-hours.js';
 import { InstallLayout, RobotUpdater } from './update/updater.js';
@@ -171,9 +172,14 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
     this.recovery = new RecoveryService({
       robotUser: abaya.robotUser,
       repo: backend.recovery,
-      inboxChatIds: () => actor.readInboxChatIds(),
       enqueueOutbound: (messageId, abayaChatId) => backend.enqueueOutbound(messageId, abayaChatId),
-      alerts,
+      logger: createLogger('rpa.recovery'),
+    });
+    // D-037: la bandeja de Avaya manda (cerrar en la base lo que ya no está en ella).
+    const tray = new TrayReconciler({
+      robotUser: abaya.robotUser,
+      repo: backend.recovery,
+      readTray: () => actor.readTray(),
       logger: createLogger('rpa.recovery'),
     });
 
@@ -213,6 +219,14 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
     this.timers.push(
       setInterval(() => {
         if (manager.status !== 'ACTIVE') return;
+        tray
+          .run()
+          .catch((err: unknown) =>
+            this.logger.warn(
+              { err: err instanceof Error ? err.name : 'error' },
+              'no se pudo conciliar la bandeja',
+            ),
+          );
         sweeper
           .sweep()
           .catch((err: unknown) =>

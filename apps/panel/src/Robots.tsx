@@ -67,6 +67,7 @@ const CONV_LABEL: Record<string, string> = {
   CLOSED_SUPPORT: 'Soporte',
   CLOSED_INACTIVE: 'Inactividad',
   NEEDS_REVIEW: 'En revisión',
+  CLOSED_EXTERNALLY: 'Cerradas en Avaya',
 };
 
 function StatusPill({ r }: { r: { status: RobotStatus; paused: boolean } }) {

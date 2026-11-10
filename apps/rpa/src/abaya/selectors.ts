@@ -33,7 +33,11 @@ export const sel = {
      * «El agente ya se encuentra conectado, no puede ingresar nuevamente»). Por texto: no se vio
      * en qué elemento aparece.
      */
-    alreadyConnected: (p: Page) => p.getByText(/ya se encuentra conectado/i).first(),
+    alreadyConnected: (p: Page) =>
+      p
+        .getByText(/ya se encuentra conectado/i)
+        .filter({ visible: true })
+        .first(),
   },
 
   /** Estado del asesor (arriba a la derecha): «Login» al entrar, «Disponible», pausas… */

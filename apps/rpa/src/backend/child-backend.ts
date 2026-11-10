@@ -157,6 +157,8 @@ export async function createChildBackend(
       }[],
     markNeedsReview: async (conversationIds) =>
       void (await call('recovery.markNeedsReview', { conversationIds })),
+    closeMissing: async (_r, conversationIds) =>
+      (await call('recovery.closeMissing', { conversationIds })) as number,
   };
 
   const presence: PresenceStore = {

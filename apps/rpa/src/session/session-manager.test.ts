@@ -22,11 +22,28 @@ class FakeDriver implements SessionDriver {
 
   async open(state?: StorageState) {
     this.opens.push(state);
+    this.hasPage = true;
     // Un navegador nuevo solo tiene sesión si el storageState sigue siendo válido.
     this.loggedIn = !!state && this.stateValid;
   }
   async isInboxVisible() {
     return this.loggedIn;
+  }
+  /** D-039: lecturas forzadas de la pantalla (p. ej. 'UNKNOWN' mientras la página recarga). */
+  screens: ('INBOX' | 'LOGIN' | 'UNKNOWN')[] = [];
+  hasPage = false;
+  reloads = 0;
+  /** Si es true, recargar la página muestra la bandeja (la sesión seguía viva). */
+  reloadRestores = true;
+  async screen() {
+    const forced = this.screens.shift();
+    if (forced) return forced;
+    if (!this.hasPage) return 'UNKNOWN' as const;
+    return this.loggedIn ? ('INBOX' as const) : ('LOGIN' as const);
+  }
+  async reload() {
+    this.reloads++;
+    if (this.reloadRestores) this.loggedIn = true;
   }
   async login(_creds: LoginCredentials): Promise<LoginResult> {
     this.loginCalls++;
@@ -46,6 +63,7 @@ class FakeDriver implements SessionDriver {
   }
   async close() {
     this.loggedIn = false;
+    this.hasPage = false;
   }
 }
 
@@ -157,6 +175,47 @@ describe('SessionManager', () => {
     await t.mgr.stop();
   });
 
+  it('D-039: lecturas sin bandeja ni login (página cargando) no tiran la sesión', async () => {
+    const t = setup();
+    await t.mgr.start();
+    t.driver.screens = ['UNKNOWN', 'UNKNOWN'];
+    await t.mgr.heartbeat();
+    await t.mgr.heartbeat();
+    await t.mgr.heartbeat(); // vuelve a verse la bandeja
+    expect(t.driver.reloads).toBe(0);
+    expect(t.driver.opens).toHaveLength(1); // nunca abrió un navegador nuevo
+    expect(t.driver.loginCalls).toBe(1);
+    expect(t.mgr.status).toBe('ACTIVE');
+    await t.mgr.stop();
+  });
+
+  it('D-039: si no se ve nada 3 veces, recarga la MISMA página y sigue con la sesión viva', async () => {
+    const t = setup();
+    await t.mgr.start();
+    t.driver.loggedIn = false;
+    t.driver.screens = ['UNKNOWN', 'UNKNOWN', 'UNKNOWN'];
+    await t.mgr.heartbeat();
+    await t.mgr.heartbeat();
+    await t.mgr.heartbeat();
+    expect(t.driver.reloads).toBe(1);
+    expect(t.driver.opens).toHaveLength(1);
+    expect(t.driver.loginCalls).toBe(1);
+    expect(t.mgr.status).toBe('ACTIVE');
+    expect(t.gate.isOpen()).toBe(true);
+    await t.mgr.stop();
+  });
+
+  it('D-039: con el login en pantalla entra en la misma página (sin navegador nuevo)', async () => {
+    const t = setup();
+    await t.mgr.start();
+    t.driver.loggedIn = false; // Avaya cerró la sesión
+    await t.mgr.heartbeat();
+    expect(t.driver.opens).toHaveLength(1);
+    expect(t.driver.loginCalls).toBe(2);
+    expect(t.mgr.status).toBe('ACTIVE');
+    await t.mgr.stop();
+  });
+
   it('pausado en el panel: si el asesor hace «Salir», no vuelve a entrar hasta reanudar', async () => {
     // Pausado durante dos revisiones; a la tercera el panel ya lo reanudó.
     const polls = (sleeps: number[]) => sleeps.filter((ms) => ms === HALT_POLL_MS).length;
@@ -224,15 +283,56 @@ describe('SessionManager', () => {
     expect((await t.repo.get('robot-ventas-01'))?.status).toBe('DOWN');
   });
 
-  it('esperas progresivas 5 s, 15 s, 45 s cuando cae la sesión y no logra entrar', async () => {
+  it('D-038: si no logra entrar por fallos pasajeros no se rinde: espera hasta 5 min y vuelve', async () => {
     const t = setup();
     await t.mgr.start();
     t.driver.loggedIn = false;
-    t.driver.loginResults = ['TIMEOUT', 'TIMEOUT', 'TIMEOUT'];
+    t.driver.loginResults = [
+      'TIMEOUT',
+      'ALREADY_CONNECTED',
+      'TIMEOUT',
+      'ALREADY_CONNECTED',
+      'TIMEOUT',
+      'TIMEOUT',
+      'OK',
+    ];
     await t.mgr.heartbeat();
-    expect(t.sleeps).toEqual([5_000, 15_000, 45_000]);
-    expect(t.mgr.status).toBe('DOWN');
-    expect(t.recovered()).toBe(0);
+    expect(t.sleeps).toEqual([5_000, 15_000, 45_000, 120_000, 300_000, 300_000, 300_000]);
+    expect(t.mgr.status).toBe('ACTIVE');
+    expect(t.gate.isOpen()).toBe(true);
+    expect(t.recovered()).toBe(1);
+    // Una sola alerta (al tercer fallo), no SESSION_DOWN.
+    expect(t.alerts.raised).toEqual([
+      expect.objectContaining({ code: 'SESSION_RETRYING', severity: 'ALTA' }),
+    ]);
+  });
+
+  it('D-038: la alerta de reintento dice qué hacer si Avaya ve la sesión abierta', async () => {
+    const driver = new FakeDriver();
+    driver.loginResults = ['ALREADY_CONNECTED', 'ALREADY_CONNECTED', 'ALREADY_CONNECTED', 'OK'];
+    const t = setup({ driver });
+    expect(await t.mgr.start()).toBe('ACTIVE');
+    expect(t.alerts.raised[0]).toMatchObject({
+      code: 'SESSION_RETRYING',
+      detail: expect.objectContaining({
+        lastResult: 'ALREADY_CONNECTED',
+        hint: expect.any(String),
+      }),
+    });
+  });
+
+  it('D-038: credenciales inválidas en medio de fallos pasajeros: DOWN al tercer rechazo', async () => {
+    const driver = new FakeDriver();
+    driver.loginResults = [
+      'TIMEOUT',
+      'INVALID_CREDENTIALS',
+      'TIMEOUT',
+      'INVALID_CREDENTIALS',
+      'INVALID_CREDENTIALS',
+    ];
+    const t = setup({ driver });
+    expect(await t.mgr.start()).toBe('DOWN');
+    expect(driver.loginCalls).toBe(5);
   });
 
   it('se recupera si un reintento funciona antes del tercer fallo', async () => {

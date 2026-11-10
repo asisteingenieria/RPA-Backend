@@ -143,3 +143,38 @@ test('D-025: cierre sin venta con la tipificación que eligió el modelo', async
   ]);
   await t.mgr.stop();
 });
+
+test('D-037: cierre de un caso que ya no está en la bandeja: hecho, sin alerta ni revisión', async () => {
+  const t = await boot(mock);
+  mock.unassignChat('1002');
+  await expect.poll(async () => (await t.actor.readTray())?.includes('1002')).toBe(false);
+  expect(
+    await t.processor.close({
+      conversationId: 'conv-5',
+      abayaChatId: '1002',
+      reason: 'INACTIVE',
+      afterMessageIds: [],
+    }),
+  ).toBe('DONE');
+  expect(mock.closed).toEqual([]);
+  expect(t.repo.needsReview).toEqual([]);
+  expect(t.alerts.raised).toEqual([]);
+  expect(t.actionLog.entries.map((e) => `${e.action}:${e.result}`)).toEqual(['CLOSE:SKIPPED']);
+  await t.mgr.stop();
+});
+
+test('D-037: venta cuyo caso ya no está: sigue siendo revisión con alerta crítica', async () => {
+  const t = await boot(mock);
+  mock.unassignChat('1001');
+  await expect.poll(async () => (await t.actor.readTray())?.includes('1001')).toBe(false);
+  expect(
+    await t.processor.transfer(
+      { conversationId: 'conv-1', abayaChatId: '1001', target: 'BACKOFFICE', afterMessageIds: [] },
+      0,
+    ),
+  ).toBe('NEEDS_REVIEW');
+  expect(t.alerts.raised).toEqual([
+    expect.objectContaining({ code: 'SALE_NOT_TRANSFERRED', severity: 'CRITICA' }),
+  ]);
+  await t.mgr.stop();
+});

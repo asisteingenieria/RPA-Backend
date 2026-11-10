@@ -149,6 +149,13 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 
 ## 6. Registro de cambios
 
+### 10/11/2026 — D-037: método `recovery.closeMissing` en la pasarela
+
+El robot pide cerrar en la base las conversaciones que ya no están en su bandeja de Avaya. Mismo
+esquema que `recovery.markNeedsReview` (máximo 500 ids, zod) y el repositorio solo cambia
+conversaciones del robot del token que sigan abiertas (`robotUser` en el `where`): un robot no
+puede cerrar conversaciones de otro. Sin datos personales en el log (solo el número de chats).
+
 ### 04/11/2026 — Preparación para un hacking ético básico
 
 Hallazgos H1–H5 de `docs/security-review.md`, corregidos en código:
