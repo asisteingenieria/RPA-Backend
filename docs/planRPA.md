@@ -684,6 +684,17 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   Avaya trae también los mensajes del cliente al bot yFlow antes de pasar a asesor (p. ej. una nota
   de voz). El robot ya abre con su saludo (D-017): esos mensajes no se guardan ni se responden.
   Detalle en `docs/DECISIONS.md` (D-036).
+- **D-037 (10/11/2026): la bandeja de Avaya manda.** Una conversación abierta que no aparece en la
+  bandeja del robot durante 60 s pasa a «Cerrada en Avaya» (`CLOSED_EXTERNALLY`), sin alerta ni
+  reactivaciones; enviar o cerrar en un chat que ya no está no es incierto. Si el caso vuelve y el
+  cliente escribe, se reabre. Detalle en `docs/DECISIONS.md` (D-037).
+- **D-038 (10/11/2026): en horario el robot no se rinde.** Solo credenciales inválidas o doble
+  factor llevan a `SESSION_DOWN`; si Avaya no responde o dice «ya se encuentra conectado», el robot
+  reintenta cada vez más espaciado (hasta 5 min) sin límite y avisa una vez (`SESSION_RETRYING`).
+  Detalle en `docs/DECISIONS.md` (D-038).
+- **D-039 (10/11/2026): el robot nunca tira una sesión viva.** Solo con el login de Avaya en pantalla
+  se da la sesión por perdida; si la página no muestra nada, espera y recarga la misma página; el
+  relogin entra en la misma página. Detalle en `docs/DECISIONS.md` (D-039).
 
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 

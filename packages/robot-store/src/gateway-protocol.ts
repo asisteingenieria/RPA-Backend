@@ -58,6 +58,8 @@ export const rpcParams = {
   'recovery.pendingOutbound': z.object({}),
   'recovery.openConversations': z.object({}),
   'recovery.markNeedsReview': z.object({ conversationIds: z.array(id).max(500) }),
+  /** D-037: conversaciones que ya no están en la bandeja de Avaya. */
+  'recovery.closeMissing': z.object({ conversationIds: z.array(id).max(500) }),
   'recovery.enqueueOutbound': z.object({ messageId: id, abayaChatId: id }),
   'presence.claim': z.object({
     instanceId: z.string().uuid(),

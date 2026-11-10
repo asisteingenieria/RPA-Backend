@@ -23,6 +23,8 @@ export const CONVERSATION_STATUSES = [
   'CLOSED_SUPPORT',
   'CLOSED_INACTIVE',
   'NEEDS_REVIEW',
+  /** D-037: ya no está en la bandeja de Avaya (la cerró o la reasignó otro). */
+  'CLOSED_EXTERNALLY',
 ] as const;
 export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number];
 

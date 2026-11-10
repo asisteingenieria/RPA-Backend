@@ -90,6 +90,39 @@ export class PlaywrightSessionDriver implements SessionDriver {
       .catch(() => false);
   }
 
+  async screen(): Promise<'INBOX' | 'LOGIN' | 'UNKNOWN'> {
+    const page = this._page;
+    if (!page || page.isClosed()) return 'UNKNOWN';
+    if (
+      await sel.session
+        .inboxMarker(page)
+        .isVisible()
+        .catch(() => false)
+    )
+      return 'INBOX';
+    if (
+      await sel.login
+        .submit(page)
+        .isVisible()
+        .catch(() => false)
+    )
+      return 'LOGIN';
+    return 'UNKNOWN';
+  }
+
+  async reload(): Promise<void> {
+    const page = this._page;
+    if (!page || page.isClosed()) return;
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => undefined);
+    await sel.session
+      .inboxMarker(page)
+      .or(sel.login.submit(page))
+      .filter({ visible: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 30_000 })
+      .catch(() => undefined);
+  }
+
   /**
    * Tras entrar, ySocial deja al asesor en «Login» (sin casos): el robot se pone «Disponible».
    * Si no lo logra, el login no sirve para trabajar y se informa como TIMEOUT.

@@ -235,6 +235,17 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
 - Mensajes al bot yFlow (D-036): lo que el cliente escribió en el caso antes del paso a asesor
   (última respuesta del bot, `ReplySource` 10, antes de la primera del asesor) no se guarda ni se
   responde (`ParsedCase.beforeHandoff`, `InboundProcessor.markBeforeHandoff`).
+- La bandeja de Avaya manda (D-037): una conversación abierta que falta 60 s de la bandeja del
+  robot pasa a `CLOSED_EXTERNALLY` («Cerrada en Avaya», `TrayReconciler`, cada 15 s, solo con
+  lecturas fiables `ChatListPage.trayChatIds`), sin alerta; enviar o cerrar en un chat que ya no
+  está da `CHAT_GONE`/`GONE` (no incierto); la venta sin entregar sigue en revisión. Si el
+  cliente vuelve a escribir en el caso, se reabre (`insertInbound`).
+- Login sin rendirse (D-038): solo `INVALID_CREDENTIALS`/`MFA_REQUIRED` cuentan para `DOWN`;
+  `TIMEOUT`, `ALREADY_CONNECTED` y `ERROR` se reintentan sin límite (espera hasta 5 min) con una
+  alerta `SESSION_RETRYING`; el login solo mira elementos visibles.
+- Sesión viva (D-039): el heartbeat usa `SessionDriver.screen()` (INBOX/LOGIN/UNKNOWN); solo
+  LOGIN es sesión perdida; 3 UNKNOWN seguidos → `reload()` de la misma página; `tryLogin` entra en
+  la página actual si muestra el login (no abre contexto nuevo).
 - Sentimiento (D-035, solo medición): campo `sentimiento` del turno (`SENTIMENTS`), guardado como
   `Profile.sentiment`/`sentimentWorst` y en claro en `Conversation`; no cambia el flujo.
 - Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso

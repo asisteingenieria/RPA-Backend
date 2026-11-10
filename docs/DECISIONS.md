@@ -1,5 +1,86 @@
 # Decisiones de diseño
 
+## D-039 · El robot nunca tira una sesión viva de Avaya · APROBADA — implementada en local
+
+**Contexto (10/11/2026, producción).** A las 10:41, con el robot esperando chats, una lectura de la
+pantalla no encontró el avatar de Avaya (la página estaba ocupada o recargando). El heartbeat lo tomó
+como sesión perdida y el relogin abrió un navegador limpio: la sesión que seguía viva en Avaya quedó
+huérfana y cada intento siguiente respondió «El agente ya se encuentra conectado». Lo tumbó el robot,
+no Avaya.
+
+**Decisión.** Esperar sin chats nunca saca al robot. La sesión solo se da por perdida cuando Avaya
+muestra el formulario de login.
+
+1. El heartbeat (cada 30 s) lee qué hay en pantalla: bandeja (sesión viva), login (Avaya la cerró) o
+   nada (cargando). Con «nada» espera; a la tercera lectura seguida (~1,5 min) recarga la **misma**
+   página, como el F5 de la asesora, y sigue con la sesión.
+2. Con el login en pantalla, el robot entra **en esa misma página**; solo abre un navegador nuevo si
+   no hay página o no se ve el login.
+3. Sigue igual: «Salir» al detenerse, el reciclaje del navegador cada 6 h solo con la bandeja vacía
+   (hace «Salir» antes) y el fin de turno (D-026).
+
+**Pruebas.** `session-manager.test.ts` (lecturas vacías sin tirar la sesión, recarga en la misma
+página, login en la misma página) y `session.pw.ts` contra el Avaya simulado.
+
+## D-038 · En horario el robot no se rinde por fallos pasajeros de login · APROBADA — implementada en local
+
+**Contexto (10/11/2026, producción).** El robot llevaba casi 2 h activo con pocos chats; a las 10:41
+vio la sesión cerrada, intentó entrar 3 veces (Avaya respondía «El agente ya se encuentra
+conectado, no puede ingresar nuevamente») y quedó en `SESSION_DOWN`: dejó de intentar en pleno
+horario. Además lo registró como `TIMEOUT`: el login esperaba al primer elemento que coincidía,
+aunque estuviera oculto, y no veía el aviso.
+
+**Decisión.**
+
+1. Solo los fallos que pueden bloquear la cuenta (usuario o contraseña inválidos, doble factor)
+   cuentan para `DOWN` (3 seguidos). `TIMEOUT`, `ALREADY_CONNECTED` y errores del navegador se
+   reintentan **sin límite**, con espera creciente hasta 5 min (5 s, 15 s, 45 s, 2 min, 5 min, 5 min…),
+   mientras el robot esté encendido (fuera de horario lo apaga el fin de turno, D-026).
+2. Al tercer fallo pasajero, **una** alerta `SESSION_RETRYING` (ALTA); con `ALREADY_CONNECTED` dice
+   qué hacer: pedir al supervisor de Avaya que desconecte al agente. Cuando Avaya libera la sesión,
+   el robot entra solo en máximo 5 min.
+3. El login solo mira elementos visibles (`filter({ visible: true })`): el aviso de sesión abierta
+   se reconoce como `ALREADY_CONNECTED`.
+
+Un `DOWN` guardado de antes (p. ej. el del 10/11) se quita una vez con «Habilitar reintento».
+
+**Pruebas.** `session-manager.test.ts` (reintentos sin límite y vuelta a ACTIVE, alerta única con
+indicación, credenciales inválidas mezcladas con fallos pasajeros → DOWN).
+
+## D-037 · La bandeja de Avaya manda: chats que ya no están se cierran en la base · APROBADA — implementada en local
+
+**Contexto (10/11/2026).** En pruebas el robot se pausa y la sesión de Avaya se cierra a la fuerza;
+mientras el robot está apagado Avaya cierra o reasigna sus casos. En la base esas conversaciones
+seguían abiertas: «En vivo» mostraba chats que no existían, el temporizador les mandaba
+reactivaciones (el robot no encontraba el chat y quedaba «envío incierto», `SEND_UNCERTAIN`) y el
+cierre pendiente terminaba en `CLOSE_UNCERTAIN`. Al arrancar, la reconciliación no marcaba nada si
+la bandeja estaba vacía (para no confundir «no cargó» con «vacía»).
+
+**Decisión.** Lo que muestra la bandeja de Avaya es la verdad.
+
+1. **Reconciliación continua** (`TrayReconciler`, cada 15 s con la sesión activa): una
+   conversación abierta en la base (`ACTIVE`, `WAITING_CONSENT`) que no aparece en la bandeja
+   durante **60 s seguidos** pasa al estado nuevo `CLOSED_EXTERNALLY` («Cerrada en Avaya») y sus
+   respuestas por enviar quedan `FAILED`. Sin alerta: no es un error. Solo cuenta una lectura
+   fiable de la bandeja (pantalla de la bandeja visible y todos los casos con número); si no, no se
+   decide nada.
+2. **Al arrancar** ya no se marcan chats para revisión (`CHATS_MISSING_FROM_INBOX`): lo hace la
+   reconciliación continua con la regla de los 60 s.
+3. **Envío o cierre a un chat que no está en la bandeja** (dos lecturas fiables, 2 s aparte): no se
+   escribió nada, así que no es incierto. El envío queda `FAILED` (resultado `CHAT_GONE`) y el
+   cierre se da por hecho (`GONE`); sin alerta. La transferencia de una venta NO cambia: si el caso
+   no está, sigue siendo revisión humana con alerta crítica (puede ser una venta perdida).
+4. **Si el caso vuelve** (Avaya se lo reasigna al robot y el cliente escribe), el mensaje nuevo
+   reabre la conversación (`CLOSED_EXTERNALLY` → `ACTIVE`) y sigue donde iba.
+
+`NEEDS_REVIEW` no se toca: lo que quedó en revisión humana sigue ahí. Reglas 1 y 2 intactas: no se
+escribe en un chat sin verificar su identidad ni se reintenta un envío incierto.
+
+**Pruebas.** `recovery.int.test.ts` (PostgreSQL: reconciliación con los 60 s, lectura no fiable,
+vuelta a la bandeja, reapertura con un mensaje nuevo, SENDING intacto, otro robot y NEEDS_REVIEW sin
+tocar); `outbound.pw.ts` y `handoff.pw.ts` contra el Avaya simulado (chat quitado de la bandeja:
+envío `CHAT_GONE`, cierre hecho sin alerta, venta en revisión con alerta crítica).
+
 ## D-036 · Mensajes del cliente al bot yFlow antes del paso a asesor · APROBADA — implementada en local
 
 **Contexto (09/11/2026).** En producción, en un caso nuevo, el robot saludó con el menú (D-017) y

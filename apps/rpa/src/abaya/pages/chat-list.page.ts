@@ -33,6 +33,17 @@ export class ChatListPage {
   }
 
   /**
+   * D-037: casos de la bandeja solo si la lectura es fiable (la bandeja está en pantalla y todos
+   * los botones traen su número); si no, null y nadie decide nada con ella. Lectura sin clics.
+   */
+  async trayChatIds(): Promise<string[] | null> {
+    if (!(await this.isVisible().catch(() => false))) return null;
+    const rows = await this.buttons().catch(() => null);
+    if (!rows || rows.some((r) => !r.id)) return null;
+    return rows.map((r) => r.id!);
+  }
+
+  /**
    * @mutating Solo desde BrowserActor (regla 4). Cierra antes el aviso de caso nuevo
    * («ACEPTAR (N)»), que tapa la pantalla. Devuelve false si el caso no está en la bandeja.
    */

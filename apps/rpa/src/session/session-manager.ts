@@ -8,8 +8,20 @@ import type { StorageStateStore } from './storage-state.store.js';
 
 export const DEFAULT_BACKOFF_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 export const MAX_CONSECUTIVE_FAILS = 3;
+/**
+ * D-038: fallos que no bloquean el usuario de Avaya (no responde a tiempo, la sesión anterior
+ * sigue abierta en ySocial, error del navegador). Con ellos el robot NO se rinde: reintenta cada
+ * vez más espaciado (hasta 5 min) mientras esté encendido. Solo usuario o contraseña inválidos y
+ * el doble factor llevan a DOWN, porque insistir podría bloquear la cuenta.
+ */
+const TRANSIENT: ReadonlySet<string> = new Set(['TIMEOUT', 'ALREADY_CONNECTED', 'ERROR']);
 /** Cada cuánto se revisa si el panel quitó la pausa o el kill switch antes de volver a entrar. */
 export const HALT_POLL_MS = 5_000;
+/**
+ * D-039: lecturas seguidas sin la bandeja ni el login en pantalla (página cargando o recargando)
+ * antes de intentar recuperarla. Con el heartbeat de 30 s, ~1,5 min de tolerancia.
+ */
+export const UNKNOWN_SCREEN_TOLERANCE = 3;
 const GATE_REASON = 'session';
 const RECYCLE_REASON = 'browser-recycle';
 
@@ -40,13 +52,16 @@ export interface SessionManagerDeps {
 /**
  * Sesión del usuario robot en Abaya (sección 6.1):
  * storageState cifrado → login si hace falta → heartbeat → relogin con espera progresiva →
- * DOWN tras 3 fallos seguidos, con alerta crítica y sin insistir.
+ * DOWN tras 3 fallos seguidos de credenciales, con alerta crítica y sin insistir. Los fallos
+ * pasajeros (D-038) se reintentan sin límite, con una alerta al tercero.
  */
 export class SessionManager {
   private record: SessionRecord;
   private timer?: NodeJS.Timeout;
   private busy = false;
   private stopped = false;
+  /** D-039: heartbeats seguidos sin ver ni la bandeja ni el login. */
+  private unknownScreens = 0;
   private readonly backoff: number[];
   private readonly maxFails: number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -157,12 +172,31 @@ export class SessionManager {
     if (this.busy || this.stopped || this.record.status !== 'ACTIVE') return;
     this.busy = true;
     try {
-      if (await this.d.driver.isInboxVisible().catch(() => false)) {
+      // D-039: una sola lectura fallida NO es una sesión perdida. Solo el formulario de login en
+      // pantalla lo es; si no se ve nada (cargando), se espera y luego se recarga la MISMA página.
+      // Abrir un navegador nuevo tiraría la sesión viva y Avaya diría «ya se encuentra conectado».
+      let screen = await this.d.driver.screen().catch(() => 'UNKNOWN' as const);
+      if (screen === 'UNKNOWN' && ++this.unknownScreens >= UNKNOWN_SCREEN_TOLERANCE) {
+        this.d.logger.warn(
+          { robotUser: this.d.robotUser },
+          'no se ve la bandeja ni el login: se recarga la página (misma sesión)',
+        );
+        await this.d.driver.reload().catch(() => undefined);
+        screen = await this.d.driver.screen().catch(() => 'UNKNOWN' as const);
+        if (screen === 'UNKNOWN') return; // sigue sin verse: se reintenta en el próximo heartbeat
+      }
+      if (screen === 'INBOX') {
+        this.unknownScreens = 0;
         this.record.lastHeartbeat = this.now();
         await this.persist();
         return;
       }
-      this.d.logger.warn({ robotUser: this.d.robotUser }, 'sesión perdida; iniciando relogin');
+      if (screen === 'UNKNOWN') return;
+      this.unknownScreens = 0;
+      this.d.logger.warn(
+        { robotUser: this.d.robotUser },
+        'Avaya cerró la sesión (login en pantalla); iniciando relogin',
+      );
       await this.relogin('lost');
       if (this.record.status === 'ACTIVE') await this.d.onRecovered?.();
     } finally {
@@ -186,6 +220,8 @@ export class SessionManager {
     await this.persist();
 
     let noticed = false;
+    let credentialFails = 0;
+    let warned = false;
     while (!this.stopped) {
       // Pausado (p. ej. el asesor terminó los chats e hizo «Salir»): espera a que lo reanuden.
       if (await this.isHalted()) {
@@ -216,7 +252,22 @@ export class SessionManager {
         { robotUser: this.d.robotUser, result, consecutiveFails: this.record.consecutiveFails },
         'login fallido',
       );
-      if (this.record.consecutiveFails >= this.maxFails) {
+      if (TRANSIENT.has(result)) {
+        // D-038: no se rinde; avisa una vez para que alguien mire (p. ej. liberar la sesión).
+        if (!warned && this.record.consecutiveFails >= this.maxFails) {
+          warned = true;
+          await this.d.alerts.raise('SESSION_RETRYING', 'ALTA', {
+            robotUser: this.d.robotUser,
+            consecutiveFails: this.record.consecutiveFails,
+            lastResult: result,
+            ...(result === 'ALREADY_CONNECTED'
+              ? {
+                  hint: 'Avaya ve la sesión anterior abierta: pedir al supervisor que desconecte al agente',
+                }
+              : {}),
+          });
+        }
+      } else if (++credentialFails >= this.maxFails) {
         await this.markDown(result);
         return;
       }
@@ -232,7 +283,10 @@ export class SessionManager {
 
   private async tryLogin(): Promise<LoginResult | 'ERROR'> {
     try {
-      await this.d.driver.open(undefined);
+      // D-039: si la página ya muestra el login, se entra ahí mismo (no se descarta el contexto).
+      const screen = await this.d.driver.screen().catch(() => 'UNKNOWN' as const);
+      if (screen === 'INBOX') return 'OK';
+      if (screen !== 'LOGIN') await this.d.driver.open(undefined);
       if (await this.d.driver.isInboxVisible()) return 'OK';
       return await this.d.driver.login(this.d.credentials());
     } catch (err) {
@@ -243,6 +297,7 @@ export class SessionManager {
 
   private async markActive(freshLogin: boolean) {
     const now = this.now();
+    this.unknownScreens = 0;
     this.record = {
       ...this.record,
       status: 'ACTIVE',

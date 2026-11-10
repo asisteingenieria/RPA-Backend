@@ -72,6 +72,11 @@ export class PrismaInboundRepository implements InboundRepository {
           where: { id: conversationId },
           data: { lastInboundAt: msg.occurredAt },
         }),
+        // D-037: el caso volvió a la bandeja del robot y el cliente escribe: se retoma.
+        this.prisma.conversation.updateMany({
+          where: { id: conversationId, status: 'CLOSED_EXTERNALLY' },
+          data: { status: 'ACTIVE' },
+        }),
       ]);
       return { inserted: true, id: m.id };
     } catch (err) {

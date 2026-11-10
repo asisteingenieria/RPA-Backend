@@ -60,7 +60,14 @@ export class LoginPage {
     const error = sel.login.error(p);
     const already = sel.login.alreadyConnected(p);
     try {
-      await inbox.or(error).or(already).first().waitFor({ state: 'visible', timeout: timeoutMs });
+      // D-038: solo lo que está en pantalla. Con `.first()` a secas podía tocar un elemento oculto
+      // (plantillas de la consola) y esperar 45 s aunque el aviso estuviera a la vista (TIMEOUT).
+      await inbox
+        .or(error)
+        .or(already)
+        .filter({ visible: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: timeoutMs });
     } catch {
       return 'TIMEOUT';
     }

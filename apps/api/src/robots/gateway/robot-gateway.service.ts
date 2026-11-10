@@ -142,6 +142,8 @@ export class RobotGateway {
         for (const c of p.conversationIds) await this.ownConversation(r, c);
         await this.recovery.markNeedsReview(p.conversationIds);
       },
+      // D-037: el repositorio solo cierra las de este robot (filtra por robotUser).
+      'recovery.closeMissing': async (r, p) => this.recovery.closeMissing(r, p.conversationIds),
       'recovery.enqueueOutbound': async (r, p) => {
         const chat = await this.ownMessage(r, p.messageId);
         if (chat !== p.abayaChatId) throw new ServiceError(403, 'El mensaje no es de ese chat');

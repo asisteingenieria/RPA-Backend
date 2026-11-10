@@ -28,7 +28,9 @@ export type SendOutcome =
   /** D-014 fase 2: la imagen del mensaje ya no existe (nada se envió). */
   | 'FAILED'
   /** Respuesta vieja (se preparó durante una pausa o un apagado): no se envía. */
-  | 'STALE';
+  | 'STALE'
+  /** D-037: el chat ya no está en la bandeja de Avaya: nada se escribió (no es incierto). */
+  | 'CHAT_GONE';
 
 /**
  * Una respuesta que lleva más que esto sin salir ya no corresponde a la conversación (15/10/2026:
@@ -37,12 +39,17 @@ export type SendOutcome =
  */
 export const STALE_AFTER_MS = 5 * 60_000;
 
+/** D-037: segunda lectura de la bandeja antes de dar un chat por desaparecido. */
+const GONE_RECHECK_MS = 2_000;
+
 /** Resultado de transferir o cerrar. UNCERTAIN nunca se reintenta a ciegas (regla 2). */
 export type HandoffOutcome =
   | { result: 'OK' }
   | { result: 'BLOCKED_KILL_SWITCH' }
   | { result: 'FAILED'; reason: string }
-  | { result: 'UNCERTAIN'; reason: string };
+  | { result: 'UNCERTAIN'; reason: string }
+  /** D-037: el caso ya no estaba en la bandeja de Avaya (solo cierres): nada se hizo. */
+  | { result: 'GONE' };
 
 export interface TransferRequest {
   abayaChatId: string;
@@ -158,6 +165,13 @@ export class BrowserActor {
   readInboxChatIds(): Promise<string[]> {
     return this.run('READ_INBOX', null, PRIORITY.READ_INBOX, async () =>
       (await new ChatListPage(this.d.page()).listChats()).map((c) => c.abayaChatId),
+    );
+  }
+
+  /** D-037: bandeja solo si la lectura es fiable (si no, null). Sin clics. */
+  readTray(): Promise<string[] | null> {
+    return this.run('READ_INBOX', null, PRIORITY.READ_INBOX, () =>
+      new ChatListPage(this.d.page()).trayChatIds(),
     );
   }
 
@@ -292,7 +306,13 @@ export class BrowserActor {
       if (!(await this.preflight('CLOSE', abayaChatId, start)))
         return { result: 'BLOCKED_KILL_SWITCH' };
       const chat = new ChatPage(this.d.page());
-      if (!(await this.open(abayaChatId)) || !(await this.identityOk(chat, abayaChatId, 'close'))) {
+      const opened = await this.open(abayaChatId);
+      if (!opened && (await this.chatGone(abayaChatId))) {
+        // D-037: otro ya cerró o reasignó el caso: lo que se quería (que salga) ya pasó.
+        await this.log('CLOSE', abayaChatId, 'SKIPPED', start);
+        return { result: 'GONE' };
+      }
+      if (!opened || !(await this.identityOk(chat, abayaChatId, 'close'))) {
         await this.log('CLOSE', abayaChatId, 'UNCERTAIN', start);
         return { result: 'UNCERTAIN', reason: 'caso no verificado' };
       }
@@ -353,6 +373,12 @@ export class BrowserActor {
 
     // 2–3. Abrir el chat y verificar identidad.
     const opened = await this.open(chatId);
+    if (!opened && (await this.chatGone(chatId))) {
+      // D-037: el chat ya no está en la bandeja: no se escribió nada, no es un envío incierto.
+      await this.d.outbound.setStatus(messageId, 'FAILED');
+      await this.log('SEND', chatId, 'SKIPPED', start);
+      return 'CHAT_GONE';
+    }
     if (!opened || !(await this.identityOk(chat, chatId, messageId))) {
       return this.uncertain(messageId, chatId, start, 'identidad del chat no verificada');
     }
@@ -518,6 +544,20 @@ export class BrowserActor {
       await this.log(action, chatId, 'BLOCKED', start);
       this.d.logger.warn({ action, abayaChatId: chatId }, 'acción bloqueada por KillSwitch');
       return false;
+    }
+    return true;
+  }
+
+  /**
+   * D-037: ¿el chat ya no está en la bandeja? Solo con dos lecturas fiables seguidas que no lo
+   * traen; ante la duda, no (y el caso sigue como incierto).
+   */
+  private async chatGone(chatId: string): Promise<boolean> {
+    const list = new ChatListPage(this.d.page());
+    for (let i = 0; i < 2; i++) {
+      if (i) await this.d.page().waitForTimeout(GONE_RECHECK_MS);
+      const tray = await list.trayChatIds();
+      if (!tray || tray.includes(chatId)) return false;
     }
     return true;
   }

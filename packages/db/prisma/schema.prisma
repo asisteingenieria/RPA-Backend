@@ -21,6 +21,7 @@ enum ConversationStatus {
   CLOSED_SUPPORT
   CLOSED_INACTIVE
   NEEDS_REVIEW // algo quedó incierto: requiere humano
+  CLOSED_EXTERNALLY // D-037: ya no está en la bandeja de Avaya (la cerró o reasignó otro)
 }
 
 model Conversation {
