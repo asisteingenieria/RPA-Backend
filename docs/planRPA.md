@@ -680,6 +680,10 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   turno (positivo, neutro, negativo, molesto); se guardan el último y el peor en la conversación y
   se ven en Trazabilidad y En vivo. No cambia lo que hace el robot. Detalle en `docs/DECISIONS.md`
   (D-035).
+- **D-036 (09/11/2026): lo que el cliente le escribió al bot de Claro no se responde.** El caso de
+  Avaya trae también los mensajes del cliente al bot yFlow antes de pasar a asesor (p. ej. una nota
+  de voz). El robot ya abre con su saludo (D-017): esos mensajes no se guardan ni se responden.
+  Detalle en `docs/DECISIONS.md` (D-036).
 
 #### 6.3.9 Brains: catálogo versionado *(cambio v1.9)*
 

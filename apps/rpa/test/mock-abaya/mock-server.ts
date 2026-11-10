@@ -152,8 +152,37 @@ export class MockAbayaServer {
     return m;
   }
 
-  assignChat(chatId: string, alias = `Cliente ${chatId}`): MockChat {
+  /**
+   * `botHistory` (D-036): lo que el cliente le escribió al bot yFlow antes de pedir asesor
+   * (`audio` = nota de voz), seguido de la respuesta del bot que pasa el caso a la cola.
+   */
+  assignChat(
+    chatId: string,
+    alias = `Cliente ${chatId}`,
+    opts: { botHistory?: { text?: string; audio?: boolean }[] } = {},
+  ): MockChat {
     const chat: MockChat = { id: chatId, alias, unread: 0, messages: [] };
+    const history = opts.botHistory ?? [];
+    const start = Date.now() - 60_000;
+    history.forEach((h, i) =>
+      chat.messages.push({
+        id: String(++this.seq),
+        sender: 'customer',
+        text: h.text ?? '',
+        sentAt: new Date(start + i * 1_000).toISOString(),
+        ...(h.audio
+          ? { attachment: { mime: 'audio/ogg', fileName: 'audio.ogg', size: 1000 } }
+          : {}),
+      }),
+    );
+    if (history.length) {
+      chat.messages.push({
+        id: String(++this.seq),
+        sender: 'system',
+        text: 'Voy a comunicarte con uno de nuestros asesores',
+        sentAt: new Date(start + history.length * 1_000).toISOString(),
+      });
+    }
     this.chats.push(chat);
     return chat;
   }
@@ -402,6 +431,7 @@ function yCase(chat: MockChat) {
                   MimeType: m.attachment.mime,
                   FileName: m.attachment.fileName,
                   FileSize: m.attachment.size,
+                  Url: `https://abaya.test/blob/${m.id}/0/${m.attachment.fileName}`,
                 },
               ]
             : null,

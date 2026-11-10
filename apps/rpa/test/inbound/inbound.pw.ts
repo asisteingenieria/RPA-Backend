@@ -131,3 +131,22 @@ test('chat nuevo asignado crea Conversation', async () => {
   await expect.poll(() => t.repo.conversations.has('3001'), { timeout: 5_000 }).toBe(true);
   await t.mgr.stop();
 });
+
+test('D-036: lo que el cliente le escribió al bot yFlow (texto o audio) no se guarda; lo de después sí', async () => {
+  mock.assignChat('4001', 'Cliente 4001', {
+    botHistory: [{ audio: true }, { text: 'Hablar con un asesor' }],
+  });
+  const t = await boot(mock, '4001');
+  await expect.poll(() => t.processor.stats.ignoredBeforeHandoff, { timeout: 5_000 }).toBe(2);
+  const m = mock.addCustomerMessage('4001', 'Hola, quiero un plan');
+  await expect.poll(() => t.storedAt.has(m.id), { timeout: 5_000 }).toBe(true);
+  await t.processor.drain();
+  const texts = [...t.repo.messages.values()].map((x) =>
+    cipher.decryptString(x.bodyEncrypted, `msg:${x.fingerprint}`),
+  );
+  expect(texts).toContain('Hola, quiero un plan');
+  expect(texts).not.toContain('Hablar con un asesor');
+  expect(texts).not.toContain('[audio]');
+  expect(t.processor.stats.ignoredBeforeHandoff).toBe(2);
+  await t.mgr.stop();
+});
