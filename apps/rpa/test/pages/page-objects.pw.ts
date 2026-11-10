@@ -128,4 +128,25 @@ test.describe('FinishPage', () => {
     const ids = (await new ChatListPage(page).listChats()).map((c) => c.abayaChatId);
     expect(ids).toEqual(['1002']);
   });
+
+  test('10/11/2026: abre el grupo cerrado (SAC) para llegar a la etiqueta', async ({ page }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
+    await expect.poll(() => new ChatPage(page).currentChatId()).toBe('1001');
+    await new FinishPage(page).finishCloseCase('SAC - Ecommerce Movil - Facturacion');
+    const ids = (await new ChatListPage(page).listChats()).map((c) => c.abayaChatId);
+    expect(ids).toEqual(['1002']);
+  });
+
+  test('sin poder marcar la etiqueta: cancela el cuadro (no tapa la pantalla) y falla', async ({
+    page,
+  }) => {
+    await page.setContent(inboxHtml(sampleChats(), '1001'));
+    await expect.poll(() => new ChatPage(page).currentChatId()).toBe('1001');
+    await expect(
+      new FinishPage(page).finishCloseCase('Etiqueta que no existe', undefined, 1_500),
+    ).rejects.toThrow();
+    await expect(page.getByText(/Detalles del caso #/)).toBeHidden();
+    const ids = (await new ChatListPage(page).listChats()).map((c) => c.abayaChatId);
+    expect(ids).toContain('1001'); // el caso sigue abierto: lo reporta quien invoca
+  });
 });

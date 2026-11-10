@@ -495,18 +495,16 @@ function consoleScript(data: string): string {
       $('[data-case-title]', dlg).textContent = shownCase;
       $('textarea', dlg).value = '';
       $('input[placeholder="Buscar etiqueta..."]', dlg).value = '';
-      $('.ivh-treeview', dlg).innerHTML = DATA.tags.map((tag) =>
-        '<li class="ivh-treeview-node ivh-treeview-node-leaf"><label><input type="checkbox" class="ivh-treeview-checkbox">' +
-        '<span class="ivh-treeview-node-label">' + esc(tag) + '</span></label></li>').join('');
+      dlg.__openGroups = new Set([ROOT_GROUP]);
+      dlg.__checked = new Set();
+      renderTagTree(dlg);
       dlg.hidden = false;
       return;
     }
     if (ng === 'no()') { $('[data-modal="confirm"]').hidden = true; finishing = null; return; }
     if (ng === 'updateCase()') {
       const dlg = $('[data-modal="case"]');
-      const tags = [...dlg.querySelectorAll('.ivh-treeview-node')]
-        .filter((li) => li.querySelector('input').checked)
-        .map((li) => li.textContent.trim());
+      const tags = [...dlg.__checked]; // seleccionadas, aunque su grupo esté cerrado
       if (!tags.length) return; // ySocial exige etiqueta
       dlg.hidden = true;
       finishing = null;
@@ -515,12 +513,57 @@ function consoleScript(data: string): string {
     if (ng === 'cancel()') { $('[data-modal="case"]').hidden = true; finishing = null; return; }
   });
 
+  // Árbol de etiquetas como el real (ivh-treeview, grabación del 09/10/2026): E-COMMERCE MOVIL
+  // abierto y sus grupos (No Venta, SAC, Venta) CERRADOS; las hojas no existen en la página hasta
+  // abrir el grupo (ng-if). Buscar filtra y deja TODO cerrado, también la raíz (traza del
+  // 10/11/2026): hay que abrir E-COMMERCE MOVIL y luego el grupo.
+  const ROOT_GROUP = 'E-COMMERCE MOVIL';
+  const TAG_GROUPS = ['No Venta', 'SAC', 'Venta'];
+  const groupOf = (tag) => (/^no venta/i.test(tag) ? 'No Venta' : /^sac/i.test(tag) ? 'SAC' : 'Venta');
+  function tagQuery(dlg) { return $('input[placeholder="Buscar etiqueta..."]', dlg).value.toLowerCase(); }
+  function renderTagTree(dlg) {
+    const q = tagQuery(dlg);
+    const open = dlg.__openGroups || (dlg.__openGroups = new Set());
+    const checked = dlg.__checked || (dlg.__checked = new Set());
+    const groups = TAG_GROUPS.map((g) => {
+      const leaves = DATA.tags.filter((t) => groupOf(t) === g && (!q || t.toLowerCase().includes(q)));
+      if (q && !leaves.length) return '';
+      const isOpen = open.has(g);
+      const children = isOpen
+        ? '<ul class="ivh-treeview">' + leaves.map((tag) =>
+            '<li class="ivh-treeview-node ivh-treeview-node-leaf"><div class="ivh-treeview-node-container"><label>' +
+            '<input type="checkbox" class="ivh-treeview-checkbox" data-tag="' + esc(tag) + '"' + (checked.has(tag) ? ' checked' : '') + '>' +
+            '<span class="ivh-treeview-node-label ivh-treeview-toggle">' + esc(tag) + '</span></label></div></li>').join('') + '</ul>'
+        : '';
+      return '<li class="ivh-treeview-node' + (isOpen ? '' : ' ivh-treeview-node-collapsed') + '" data-group="' + esc(g) + '">' +
+        '<div class="ivh-treeview-node-container"><span class="ivh-treeview-toggle"><span class="ivh-treeview-twistie"></span></span>' +
+        '<span class="ivh-treeview-node-label ivh-treeview-toggle">' + esc(g) + '</span></div>' + children + '</li>';
+    }).join('');
+    const rootOpen = open.has(ROOT_GROUP);
+    $('.ivh-treeview', dlg).innerHTML =
+      '<li class="ivh-treeview-node' + (rootOpen ? '' : ' ivh-treeview-node-collapsed') + '" data-group="' + ROOT_GROUP + '">' +
+      '<div class="ivh-treeview-node-container"><span class="ivh-treeview-toggle"><span class="ivh-treeview-twistie"></span></span>' +
+      '<span class="ivh-treeview-node-label ivh-treeview-toggle">' + ROOT_GROUP + '</span></div>' +
+      (rootOpen ? '<ul class="ivh-treeview">' + groups + '</ul>' : '') + '</li>';
+  }
+  document.addEventListener('click', (e) => {
+    const dlg = e.target.closest('[data-modal="case"]');
+    if (!dlg) return;
+    const cb = e.target.closest('input.ivh-treeview-checkbox');
+    if (cb) { const s = dlg.__checked; cb.checked ? s.add(cb.dataset.tag) : s.delete(cb.dataset.tag); return; }
+    const group = e.target.closest('li[data-group]');
+    if (!group || e.target.closest('li.ivh-treeview-node-leaf') || !e.target.closest('.ivh-treeview-toggle')) return;
+    const g = group.dataset.group;
+    dlg.__openGroups.has(g) ? dlg.__openGroups.delete(g) : dlg.__openGroups.add(g);
+    renderTagTree(dlg);
+  });
+
   // Buscador de etiquetas.
   document.addEventListener('input', (e) => {
     if (e.target.placeholder !== 'Buscar etiqueta...') return;
-    const q = e.target.value.toLowerCase();
-    for (const li of document.querySelectorAll('[data-modal="case"] .ivh-treeview-node'))
-      li.hidden = !li.textContent.toLowerCase().includes(q);
+    const dlg = e.target.closest('[data-modal="case"]');
+    dlg.__openGroups = new Set(); // como ySocial: al buscar todo queda cerrado
+    renderTagTree(dlg);
   });
 
   // Aviso de caso nuevo con cuenta regresiva.

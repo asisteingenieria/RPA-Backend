@@ -369,6 +369,7 @@ export class ConversationsService {
         by: ['abayaChatId'],
         where: {
           abayaChatId: { in: convs.map((c) => c.abayaChatId) },
+          action: 'SEND',
           result: 'UNCERTAIN',
         },
         _count: { _all: true },
@@ -677,8 +678,9 @@ export class ConversationsService {
     const firstReply = messages.find(
       (m) => m.direction === 'OUTBOUND' && m.respondsToAt && m.sentAt,
     );
+    // Solo envíos: un cierre o una transferencia incierta no es un envío incierto.
     const uncertainSends = Math.max(
-      actions.filter((a) => a.result === 'UNCERTAIN').length,
+      actions.filter((a) => a.action === 'SEND' && a.result === 'UNCERTAIN').length,
       messages.filter((m) => m.status === 'UNCERTAIN').length,
     );
     const regenerations = llmCalls.filter((l) =>

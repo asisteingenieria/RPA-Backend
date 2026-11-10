@@ -22,6 +22,18 @@ export const HALT_POLL_MS = 5_000;
  * antes de intentar recuperarla. Con el heartbeat de 30 s, ~1,5 min de tolerancia.
  */
 export const UNKNOWN_SCREEN_TOLERANCE = 3;
+/**
+ * D-040: corte de red del PC de al menos este tiempo (el heartbeat no pudo guardar en la pasarela).
+ * Al volver la red, Avaya puede quedar con la bandeja pintada pero sin conexión con su servidor
+ * («Ocurrió un error agrupando el mensaje», mensajes del cliente que no llegan): se recarga.
+ */
+export const OUTAGE_REFRESH_MS = 60_000;
+/**
+ * D-040: recargas del login tras el «Salir» posterior al corte, antes de volver a entrar (así
+ * retomaba la asesora una sesión pegada: Avaya vuelve a conectar y entrega lo que no llegó).
+ */
+export const OUTAGE_LOGIN_RELOADS = 3;
+const OUTAGE_REASON = 'network-outage';
 const GATE_REASON = 'session';
 const RECYCLE_REASON = 'browser-recycle';
 
@@ -62,6 +74,8 @@ export class SessionManager {
   private stopped = false;
   /** D-039: heartbeats seguidos sin ver ni la bandeja ni el login. */
   private unknownScreens = 0;
+  /** D-040: desde cuándo el heartbeat no logra guardar (sin red hacia la pasarela). */
+  private offlineSince?: Date;
   private readonly backoff: number[];
   private readonly maxFails: number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -188,7 +202,13 @@ export class SessionManager {
       if (screen === 'INBOX') {
         this.unknownScreens = 0;
         this.record.lastHeartbeat = this.now();
-        await this.persist();
+        try {
+          await this.persist();
+        } catch (err) {
+          this.offlineSince ??= this.now();
+          throw err;
+        }
+        if (this.offlineSince) await this.afterOutage(this.offlineSince);
         return;
       }
       if (screen === 'UNKNOWN') return;
@@ -202,6 +222,52 @@ export class SessionManager {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * D-040: volvió la red tras un corte largo. Avaya queda trabado (bandeja pintada, pero sin recibir
+   * mensajes) y solo se arregla saliendo y volviendo a entrar, como hacía la asesora. Con sus
+   * acciones en pausa, el robot hace «Salir» (con la conexión trabada Avaya lo muestra aunque haya
+   * casos; si no lo ve, recarga e intenta otra vez), recarga el login 3 veces y vuelve a entrar.
+   * Al entrar, los casos siguen en su bandeja: el barrido de no leídos recupera lo que el cliente
+   * escribió durante el corte y, si no escribió nada, el flujo sigue (reactivaciones). Si no logra
+   * salir, alerta para que alguien lo haga a mano. Un corte corto no toca la página.
+   */
+  private async afterOutage(since: Date): Promise<void> {
+    this.offlineSince = undefined;
+    const ms = this.now().getTime() - since.getTime();
+    if (ms < OUTAGE_REFRESH_MS) return;
+    const log = { robotUser: this.d.robotUser, offlineSec: Math.round(ms / 1000) };
+    this.d.logger.warn(log, 'volvió la red tras un corte: se reconecta Avaya (Salir y entrar)');
+    this.d.gate.pause(OUTAGE_REASON);
+    try {
+      const logout = () => this.d.driver.logout().catch(() => false);
+      const onLogin = async () =>
+        (await this.d.driver.screen().catch(() => 'UNKNOWN' as const)) === 'LOGIN';
+      let out = (await onLogin()) || (await logout());
+      if (!out) {
+        await this.d.driver.reload().catch(() => undefined);
+        out = (await onLogin()) || (await logout());
+      }
+      if (out) {
+        for (let i = 0; i < OUTAGE_LOGIN_RELOADS; i++)
+          await this.d.driver.reload().catch(() => undefined);
+        if (await onLogin()) await this.relogin('lost');
+        // UNKNOWN: lo retoma el heartbeat (D-039: recarga tras 3 lecturas sin bandeja ni login).
+      } else {
+        this.d.logger.warn(
+          log,
+          'no se pudo hacer «Salir» tras el corte: Avaya puede seguir trabado',
+        );
+        await this.d.alerts.raise('SESSION_STUCK', 'ALTA', {
+          robotUser: this.d.robotUser,
+          hint: 'Tras un corte de red el robot no pudo hacer «Salir» en Avaya: salir y entrar a mano',
+        });
+      }
+    } finally {
+      this.d.gate.resume(OUTAGE_REASON);
+    }
+    if (this.record.status === 'ACTIVE') await this.d.onRecovered?.();
   }
 
   private scheduleHeartbeat() {

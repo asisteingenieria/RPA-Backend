@@ -1,6 +1,7 @@
 import { openChatsByRobot, responseTimeByRobot, utcParam, type PrismaClient } from '@abaya/db';
 import { isCloseTag, type AlertPort, type AlertSeverity } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
+import { offlineRobots } from '../conversation/robot-online.js';
 
 const OPEN_STATUSES = ['ACTIVE', 'WAITING_CONSENT'] as const;
 
@@ -23,6 +24,9 @@ export async function conversationsWithPendingInbound(prisma: PrismaClient): Pro
  *
  * D-013: si el cliente ya autorizó (hay venta) y se quedó callado al pedirle los datos, la
  * venta NO se cierra: se finaliza y pasa al backoffice, que lo contacta.
+ *
+ * D-042: las de robots sin conexión no se cierran (corte de red: el cliente pudo escribir y el
+ * robot no lo ve); se revisan cuando el robot vuelve.
  */
 export async function closeInactive(
   prisma: PrismaClient,
@@ -53,7 +57,9 @@ export async function closeInactive(
     },
   });
   let closed = 0;
+  const offline = candidates.length ? await offlineRobots(prisma, now) : new Set<string>();
   for (const c of candidates) {
+    if (offline.has(c.robotUser)) continue;
     const sold = !!c.sale;
     await prisma.$transaction(async (tx) => {
       // Condición repetida: si entró un mensaje o cambió el estado mientras tanto, no cerrar.

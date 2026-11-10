@@ -126,7 +126,17 @@ export const sel = {
     observations: (d: Locator) => d.getByPlaceholder('Observaciones'),
     tagSearch: (d: Locator) => d.getByPlaceholder('Buscar etiqueta...'),
     tag: (d: Locator, label: string) => d.getByRole('checkbox', { name: label, exact: true }),
+    /**
+     * Grupos cerrados del árbol (ivh-treeview: «No Venta», «SAC», «Venta»). Sus etiquetas no existen
+     * en la página hasta abrirlos (ng-if), y buscar NO los abre (10/11/2026: el cierre quedaba sin
+     * etiqueta ni «Aceptar»). Visibles: el filtro esconde los grupos sin coincidencias.
+     */
+    collapsedGroups: (d: Locator) =>
+      d
+        .locator('li.ivh-treeview-node-collapsed .ivh-treeview-node-label')
+        .filter({ visible: true }),
     accept: (d: Locator) => d.locator('button[ng-click="updateCase()"]'),
+    cancel: (d: Locator) => d.getByRole('button', { name: /^cancelar$/i }),
     /**
      * Etiqueta con que el robot cierra cada caso que no es venta (cola 147). PROVISIONAL: la
      * elección por motivo falta confirmarla con Claro (mapa de pantallas, pregunta 2).

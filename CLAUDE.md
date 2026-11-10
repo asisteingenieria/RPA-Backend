@@ -246,6 +246,16 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
 - Sesión viva (D-039): el heartbeat usa `SessionDriver.screen()` (INBOX/LOGIN/UNKNOWN); solo
   LOGIN es sesión perdida; 3 UNKNOWN seguidos → `reload()` de la misma página; `tryLogin` entra en
   la página actual si muestra el login (no abre contexto nuevo).
+- Corte de red (D-040): si el heartbeat no pudo guardar ≥ 60 s (`OUTAGE_REFRESH_MS`), al volver
+  la red (acciones en pausa) hace «Salir» (si no lo ve, recarga y reintenta; si no, alerta
+  `SESSION_STUCK`), recarga el login 3 veces
+  (`OUTAGE_LOGIN_RELOADS`) y vuelve a entrar; el barrido de no leídos recupera lo que no llegó.
+- Tras el corte (D-042, worker): robot sin heartbeat hace 2 min o sesión no `ACTIVE`
+  (`offlineRobots`, `conversation/robot-online.ts`) → sin reactivación ni cierre por inactividad; la
+  reactivación sigue aunque el último envío quedó `UNCERTAIN`/`FAILED` (las fallidas no la agotan).
+- Tipificar (D-041): en Avaya los grupos del árbol de etiquetas están cerrados y buscar no los abre:
+  `FinishPage` abre los grupos (`sel.finish.collapsedGroups`) hasta ver la etiqueta; si falla,
+  «Cancelar» y `CLOSE_UNCERTAIN`.
 - Sentimiento (D-035, solo medición): campo `sentimiento` del turno (`SENTIMENTS`), guardado como
   `Profile.sentiment`/`sentimentWorst` y en claro en `Conversation`; no cambia el flujo.
 - Insultos y amenazas (D-018): no son fuera de alcance; el modelo pone un límite y retoma el paso
