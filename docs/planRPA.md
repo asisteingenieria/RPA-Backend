@@ -699,6 +699,9 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   hace «Salir» (si no lo ve, recarga y reintenta; si no puede, alerta `SESSION_STUCK`), recarga el
   login 3 veces y vuelve a entrar; el barrido de no leídos
   recupera lo que el cliente escribió durante el corte. Detalle en `docs/DECISIONS.md`.
+- **D-043 (11/11/2026): En vivo ordenado y revisión que se cierra.** La tarjeta del robot muestra
+  en curso, recién cerrados y aparte «En revisión», lo más reciente arriba; un ADMIN da por revisada
+  una `NEEDS_REVIEW` ya resuelta en Avaya desde Trazabilidad (→ `CLOSED_EXTERNALLY`, auditado).
 - **D-042 (10/11/2026): tras un corte la conversación sigue.** Sin heartbeat del robot hace 2 min (o
   sesión no activa) no hay reactivación ni cierre por inactividad; la reactivación continúa aunque el
   último envío haya quedado incierto o fallido.

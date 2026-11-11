@@ -3,6 +3,7 @@ import {
   Get,
   Inject,
   Param,
+  Post,
   Query,
   Req,
   Res,
@@ -63,6 +64,15 @@ export class ConversationsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="trazabilidad-${day}.csv"`);
     return new StreamableFile(Buffer.from(csv, 'utf8'));
+  }
+
+  /**
+   * Cierra la revisión de una conversación `NEEDS_REVIEW` que ya se resolvió a mano en Avaya:
+   * pasa a «Cerrada en Avaya» (`CLOSED_EXTERNALLY`) y queda en Auditoría (REVIEW_RESOLVED).
+   */
+  @Post(':id/resolve-review')
+  resolveReview(@Param('id') id: string, @Req() req: AdminRequest) {
+    return toHttp(this.conversations.resolveReview(id, req.adminUser));
   }
 
   /** Detalle completo. Con los filtros de la lista (`range`, …) devuelve también `nav`. */

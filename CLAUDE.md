@@ -250,6 +250,10 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   la red (acciones en pausa) hace «Salir» (si no lo ve, recarga y reintenta; si no, alerta
   `SESSION_STUCK`), recarga el login 3 veces
   (`OUTAGE_LOGIN_RELOADS`) y vuelve a entrar; el barrido de no leídos recupera lo que no llegó.
+- En vivo y revisión (D-043): la tarjeta del robot va en curso → recién cerrados → «En revisión»,
+  lo más reciente arriba (`byBoardOrder`); «Marcar como revisada» (ADMIN, Trazabilidad,
+  `POST /admin/conversations/:id/resolve-review`) pasa `NEEDS_REVIEW` → `CLOSED_EXTERNALLY`,
+  PENDING → `FAILED`, auditoría `REVIEW_RESOLVED`.
 - Tras el corte (D-042, worker): robot sin heartbeat hace 2 min o sesión no `ACTIVE`
   (`offlineRobots`, `conversation/robot-online.ts`) → sin reactivación ni cierre por inactividad; la
   reactivación sigue aunque el último envío quedó `UNCERTAIN`/`FAILED` (las fallidas no la agotan).
