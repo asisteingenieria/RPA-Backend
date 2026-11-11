@@ -44,6 +44,18 @@ export interface LiveChatCard {
   uncertainSends: number;
 }
 
+/**
+ * Orden de la tarjeta del robot: en curso, recién cerrados y al final los que esperan revisión
+ * humana (`NEEDS_REVIEW`: ya no los atiende el robot); en cada grupo, la actividad más reciente
+ * arriba (último mensaje o, sin mensajes, el último cambio).
+ */
+export const boardGroup = (c: Pick<LiveChatCard, 'status' | 'closed'>) =>
+  c.status === 'NEEDS_REVIEW' ? 2 : c.closed ? 1 : 0;
+const lastActivity = (c: LiveChatCard) => Date.parse(c.lastMessage?.at ?? c.updatedAt);
+export function byBoardOrder(a: LiveChatCard, b: LiveChatCard): number {
+  return boardGroup(a) - boardGroup(b) || lastActivity(b) - lastActivity(a);
+}
+
 export interface LiveRobot {
   robotUser: string;
   status: RobotStatus;
@@ -224,8 +236,7 @@ export class LiveService {
           paused: r?.paused ?? false,
           host: r?.host ?? null,
           activity: activities.get(robotUser) ?? null,
-          // Abiertos primero (los más antiguos arriba), después los recién cerrados.
-          chats: (cards.get(robotUser) ?? []).sort((a, b) => Number(a.closed) - Number(b.closed)),
+          chats: (cards.get(robotUser) ?? []).sort(byBoardOrder),
         };
       }),
     };

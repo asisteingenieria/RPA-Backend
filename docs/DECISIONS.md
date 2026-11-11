@@ -1,5 +1,28 @@
 # Decisiones de diseño
 
+## D-043 · En vivo ordenado y revisión que se puede cerrar · APROBADA — implementada en local
+
+**Contexto (11/11/2026, producción).** En «En vivo» el robot libre (0/3) mostraba arriba chats de
+días anteriores: las conversaciones `NEEDS_REVIEW` (envío incierto, regla 2) cuentan como abiertas,
+la tarjeta las ordenaba de la más antigua a la más nueva y no salían nunca: el reconciliador de
+bandeja (D-037) no las toca a propósito y el panel no tenía cómo darlas por revisadas.
+
+**Decisión** (pedida por el usuario):
+
+1. Tarjeta del robot en «En vivo»: en curso, recién cerrados (10 min) y al final **En revisión**,
+   aparte; en cada grupo lo más reciente arriba (último mensaje o, sin mensajes, el último cambio).
+   Orden en el servidor (`byBoardOrder`, `live.service.ts`); el contador de chats abiertos no cuenta
+   los que están en revisión.
+2. **Marcar como revisada** (solo ADMIN, en el detalle de Trazabilidad):
+   `POST /admin/conversations/:id/resolve-review` pasa `NEEDS_REVIEW` → `CLOSED_EXTERNALLY`
+   («Cerrada en Avaya»), las respuestas PENDING → `FAILED` (nunca se escribieron) y deja
+   `REVIEW_RESOLVED` en Auditoría. Los envíos inciertos quedan como estaban (historial, regla 2:
+   no se reintenta nada). Si el cliente vuelve a escribir en el caso, se reabre (D-037). Una que no
+   está en revisión → 409.
+
+**Pruebas.** `conversations.int.test.ts` (OPERADOR 403, sin cabecera del panel 403, no en revisión
+409, no existe 404, cambio de estado, PENDING → FAILED y auditoría) y `live.int.test.ts` (orden).
+
 ## D-042 · Tras un corte, la conversación sigue (no se cierra ni se detiene) · APROBADA — implementada en local
 
 **Contexto (10/11/2026, producción).** Durante el corte de red la reactivación de las 14:47 quedó

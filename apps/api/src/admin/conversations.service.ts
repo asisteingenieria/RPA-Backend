@@ -918,6 +918,47 @@ export class ConversationsService {
     return out;
   }
 
+  // ---------------------------------------------------------------- revisión
+
+  /**
+   * Revisión resuelta (11/11/2026): una conversación `NEEDS_REVIEW` que un ADMIN ya revisó y cerró
+   * a mano en Avaya pasa a `CLOSED_EXTERNALLY` («Cerrada en Avaya»). Las respuestas que seguían
+   * PENDING → FAILED (nada se escribió); los envíos inciertos quedan como estaban (historial). Si
+   * el cliente vuelve a escribir en el caso, se reabre como cualquier cerrada en Avaya (D-037).
+   */
+  async resolveReview(id: string, actor: string) {
+    const c = await this.prisma.conversation.findUnique({
+      where: { id },
+      select: { id: true, abayaChatId: true, status: true },
+    });
+    if (!c) throw new ConversationsError(404, 'Conversación no encontrada');
+    const [moved] = await this.prisma.$transaction([
+      this.prisma.conversation.updateMany({
+        where: { id, status: 'NEEDS_REVIEW' },
+        data: { status: 'CLOSED_EXTERNALLY' },
+      }),
+      this.prisma.message.updateMany({
+        where: {
+          conversationId: id,
+          conversation: { status: 'CLOSED_EXTERNALLY' },
+          direction: 'OUTBOUND',
+          status: 'PENDING',
+        },
+        data: { status: 'FAILED' },
+      }),
+    ]);
+    if (!moved.count) throw new ConversationsError(409, 'La conversación no está en revisión');
+    await this.prisma.adminAuditLog.create({
+      data: {
+        actor: actor.slice(0, 60),
+        action: 'REVIEW_RESOLVED',
+        target: c.abayaChatId,
+        detail: { conversationId: id },
+      },
+    });
+    return { id, status: 'CLOSED_EXTERNALLY' as const };
+  }
+
   /** También la usa el monitor en vivo (D-032) al abrir un chat. */
   async auditView(actor: string, chatId: string, id: string) {
     const since = new Date(this.now().getTime() - VIEW_AUDIT_WINDOW_MS);

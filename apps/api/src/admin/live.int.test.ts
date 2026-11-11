@@ -11,7 +11,7 @@ import { AdminAuthGuard } from './admin-auth.guard.js';
 import { AuthController, COOKIE_SECURE } from './auth.controller.js';
 import { ConversationsService } from './conversations.service.js';
 import { LIVE_BUS, LiveController } from './live.controller.js';
-import { LiveService } from './live.service.js';
+import { byBoardOrder, LiveService, type LiveChatCard } from './live.service.js';
 import { UsersService } from './users.service.js';
 
 // Monitor en vivo (D-032) contra PostgreSQL real (temporal): solo ADMIN, contenido descifrado
@@ -302,5 +302,38 @@ describe('pantalla en vivo', () => {
       target: 'robot-01',
       detail: { seconds: expect.any(Number) },
     });
+  });
+});
+
+describe('orden de la tarjeta del robot (11/11/2026)', () => {
+  const card = (id: string, status: string, minAgo: number, lastMsgMinAgo?: number) =>
+    ({
+      id,
+      status,
+      closed: !['ACTIVE', 'WAITING_CONSENT', 'TRANSFERRING', 'NEEDS_REVIEW'].includes(status),
+      updatedAt: new Date(Date.now() - minAgo * 60_000).toISOString(),
+      lastMessage:
+        lastMsgMinAgo === undefined
+          ? null
+          : { at: new Date(Date.now() - lastMsgMinAgo * 60_000).toISOString() },
+    }) as LiveChatCard;
+
+  it('en curso, recién cerrados y en revisión al final; lo más reciente arriba en cada grupo', () => {
+    const chats = [
+      card('rev-viejo', 'NEEDS_REVIEW', 2_000, 2_000),
+      card('activo-viejo', 'ACTIVE', 1, 30),
+      card('cerrado', 'CLOSED_SUPPORT', 3, 4),
+      card('rev-nuevo', 'NEEDS_REVIEW', 60, 60),
+      card('activo-nuevo', 'ACTIVE', 1, 2),
+      card('activo-sin-mensajes', 'ACTIVE', 10),
+    ];
+    expect(chats.sort(byBoardOrder).map((c) => c.id)).toEqual([
+      'activo-nuevo',
+      'activo-sin-mensajes',
+      'activo-viejo',
+      'cerrado',
+      'rev-nuevo',
+      'rev-viejo',
+    ]);
   });
 });

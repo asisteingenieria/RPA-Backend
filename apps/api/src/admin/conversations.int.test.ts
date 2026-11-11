@@ -334,6 +334,48 @@ describe('trazabilidad: lista, detalle y exportación', () => {
     expect(await flags()).toContain('UNCERTAIN_SEND');
   });
 
+  it('marcar como revisada: NEEDS_REVIEW → Cerrada en Avaya, auditado (11/11/2026)', async () => {
+    const op = await ready('operador-rev', 'OPERADOR');
+    const { cookie } = await ready('admin-rev', 'ADMIN');
+    const c = await seedConversation({ chat: 'AB-REV', status: 'NEEDS_REVIEW' });
+    const active = await seedConversation({ chat: 'AB-ACT' });
+    await db.prisma.message.create({
+      data: {
+        conversationId: c.id,
+        direction: 'OUTBOUND',
+        idempotencyKey: 'rev-pending',
+        bodyEncrypted: new Uint8Array(cipher.encrypt('por enviar', outboundAad('rev-pending'))),
+        status: 'PENDING',
+        occurredAt: new Date(),
+      },
+    });
+    const resolve = (id: string, ck: string, headers: Record<string, string> = PANEL) =>
+      fetch(`${base}/admin/conversations/${id}/resolve-review`, {
+        method: 'POST',
+        headers: { ...headers, cookie: ck },
+      });
+
+    expect((await resolve(c.id, op.cookie)).status).toBe(403);
+    expect((await resolve(c.id, cookie, {})).status).toBe(403); // sin cabecera del panel
+    expect((await resolve(active.id, cookie)).status).toBe(409);
+    expect((await resolve('no-existe', cookie)).status).toBe(404);
+
+    const r = await resolve(c.id, cookie);
+    expect(r.status).toBe(201);
+    expect(await r.json()).toEqual({ id: c.id, status: 'CLOSED_EXTERNALLY' });
+    expect((await db.prisma.conversation.findUniqueOrThrow({ where: { id: c.id } })).status).toBe(
+      'CLOSED_EXTERNALLY',
+    );
+    expect(
+      (await db.prisma.message.findUniqueOrThrow({ where: { idempotencyKey: 'rev-pending' } }))
+        .status,
+    ).toBe('FAILED');
+    expect(
+      await db.prisma.adminAuditLog.findMany({ where: { action: 'REVIEW_RESOLVED' } }),
+    ).toMatchObject([{ actor: 'admin-rev', target: 'AB-REV' }]);
+    expect((await resolve(c.id, cookie)).status).toBe(409); // ya no está en revisión
+  });
+
   it('el CSV no trae el texto de los mensajes y la exportación queda en Auditoría', async () => {
     const { cookie } = await ready('admin1', 'ADMIN');
     const c = await seedConversation({
