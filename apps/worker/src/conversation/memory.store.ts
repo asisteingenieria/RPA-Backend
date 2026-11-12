@@ -44,6 +44,8 @@ export class MemoryConversationStore implements ConversationStore {
   readonly serviceCases: NonNullable<TurnCommit['serviceCase']>[] = [];
   readonly knowledge: NonNullable<TurnCommit['knowledge']> = [];
   readonly consents: NonNullable<TurnCommit['consent']>[] = [];
+  /** D-045: pasos del flujo registrados, por conversación. */
+  readonly steps: (NonNullable<TurnCommit['steps']>[number] & { conversationId: string })[] = [];
   private seq = 0;
 
   create(id: string, abayaChatId = `CH-${id}`): void {
@@ -180,6 +182,7 @@ ${t.saleDataNote}`;
     }
     this.knowledge.push(...(t.knowledge ?? []));
     if (t.consent) this.consents.push(t.consent);
+    for (const st of t.steps ?? []) this.steps.push({ ...st, conversationId: t.conversationId });
     for (const e of t.events)
       this.events.push({ type: e.type, payload: resolvePayload(e.payload, ids) });
     return { outboundMessageIds: ids };

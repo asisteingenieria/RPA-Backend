@@ -2483,3 +2483,95 @@ describe('D-035: sentimiento del cliente (solo medición)', () => {
     expect(sent(r2)).toEqual(['Claro, te cuento.']);
   });
 });
+
+describe('D-044: segunda lectura del tratamiento de datos (flow.consentReadings = 2)', () => {
+  const agent: AgentConfig = {
+    ...DEFAULT_AGENT_CONFIG,
+    flow: { ...DEFAULT_AGENT_CONFIG.flow, consentReadings: 2 },
+  };
+  const make = () => {
+    const llm = new ScriptedLlmAdapter([]);
+    return {
+      llm,
+      e: new ConversationEngine({ llm, catalog, now: () => NOW, agentConfig: async () => agent }),
+    };
+  };
+  const READING2 = T.secondReadingFor(agent, 'Ana', NOW);
+  const auth = state({
+    stage: 'AUTORIZACION',
+    profile: {
+      process: 'PORTABILIDAD',
+      name: 'Ana',
+      planCode: 'P1',
+      authorizationShownAt: NOW.toISOString(),
+      authorizationTextHash: sha256(AUTH.text),
+      authorizationTemplateVersion: AUTH.version,
+    },
+  });
+  const afterFirst = (p: Profile = {}) =>
+    state({
+      stage: 'AUTORIZACION',
+      profile: {
+        ...auth.profile,
+        secondReadingShownAt: NOW.toISOString(),
+        secondReadingTextHash: sha256(READING2.text),
+        secondReadingTemplateVersion: READING2.version,
+        ...p,
+      },
+    });
+
+  it('el primer «SÍ» guarda la lectura 1 y muestra la segunda; aún no pide datos ni hay venta', async () => {
+    const { e, llm } = make();
+    const r = await e.runTurn(auth, ['Sí autorizo']);
+    expect(r.stage).toBe('AUTORIZACION');
+    expect(llm.requests).toHaveLength(0);
+    expect(r.actions[0]).toMatchObject({
+      type: 'RECORD_CONSENT',
+      reading: 1,
+      completes: false,
+      textShownHash: sha256(AUTH.text),
+      customerReply: 'Sí autorizo',
+    });
+    expect(sent(r)).toEqual([READING2.text]);
+    expect(READING2.text).toContain('Para confirmar, Ana');
+    expect(r.profile.dataRequested).toBeUndefined();
+    expect(r.profile.secondReadingTextHash).toBe(sha256(READING2.text));
+    expect(READING2.version).toBe('agente-codigo-v1:segunda-lectura');
+  });
+
+  it('el «SÍ» a la segunda guarda la lectura 2 (completa) y solo entonces pide los datos', async () => {
+    const { e } = make();
+    const r = await e.runTurn(afterFirst(), ['si']);
+    expect(r.actions[0]).toMatchObject({
+      type: 'RECORD_CONSENT',
+      reading: 2,
+      completes: true,
+      textShownHash: sha256(READING2.text),
+      templateVersion: READING2.version,
+    });
+    expect(r.profile.dataRequested).toBe(true);
+    expect(sent(r)[0]).toContain('número de documento de identidad');
+  });
+
+  it('un «NO» a la segunda lectura no captura datos: se le ofrece un asesor', async () => {
+    const { e } = make();
+    const r = await e.runTurn(afterFirst(), ['no']);
+    expect(r.profile.authorizationDeclined).toBe(true);
+    expect(r.profile.dataRequested).toBeUndefined();
+    expect(r.actions.some((a) => a.type === 'RECORD_CONSENT')).toBe(false);
+  });
+
+  it('una nota de voz con «sí» en la segunda lectura no cuenta: pide escribirla', async () => {
+    const { e } = make();
+    const r = await e.runTurn(afterFirst(), ['[audio] sí claro']);
+    expect(r.actions.some((a) => a.type === 'RECORD_CONSENT')).toBe(false);
+    expect(r.profile.dataRequested).toBeUndefined();
+  });
+
+  it('con una lectura (versiones anteriores) el primer «SÍ» completa la autorización', async () => {
+    const { e } = engine([]);
+    const r = await e.runTurn(auth, ['Sí autorizo']);
+    expect(r.actions[0]).toMatchObject({ type: 'RECORD_CONSENT', reading: 1, completes: true });
+    expect(r.profile.dataRequested).toBe(true);
+  });
+});

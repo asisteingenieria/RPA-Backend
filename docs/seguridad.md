@@ -30,8 +30,8 @@ Rutas sin autenticación: solo `/health` (sin datos personales) y, en la pasarel
 
 ### Red y transporte
 
-- HTTPS en nginx. **Pendiente:** certificado de la CA de Claro (hoy autofirmado) y TLS 1.3
-  verificado (runbook §12.7).
+- HTTPS en nginx. **Pendiente:** certificado de la CA de Claro (hoy autofirmado) y dejar solo
+  TLS 1.3 con `ssl_protocols TLSv1.3` y `server_tokens off` (runbook §12.8; hoy acepta 1.2 y 1.3).
 - `Strict-Transport-Security: max-age=31536000` (sin `includeSubDomains`). Los navegadores lo
   ignoran para hosts IP: aplica cuando el servidor tenga nombre.
 - El robot confía en el certificado del servidor por `NODE_EXTRA_CA_CERTS`.
@@ -98,6 +98,15 @@ DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, HST
   **números de documento** (`[NUM]`), en ese orden. Se aplica a los mensajes de log y a todo lo que
   se manda al LLM. Los datos de la venta los lee el código del mensaje original
   (`sale-data.ts`), no el modelo.
+- D-046: también enmascara el **nombre** que da el cliente («me llamo…», «mi nombre (completo)
+  es…», «nombre: …» → `[NOMBRE]`), y la clave `name` del objeto de una llamada al logger sale
+  como `nameRedacted: [REDACTED]` (el nombre del logger no se toca). La prueba estática
+  `packages/logger/src/no-pii-logs.test.ts` falla si una llamada al logger del código de
+  producción lleva campos del cliente (`text`, `body`, `profile`, `sale*`, `customerReply`,
+  `summary`…).
+- D-045: el log de auditoría por interacción (`InteractionStep`, exportación
+  `GET /admin/conversations/audit-log`, solo ADMIN, auditada como `INTERACTION_LOG_EXPORTED`) no
+  lleva nombre, documento ni correo; la línea del cliente va enmascarada (`300****567`).
 
 ### Dependencias
 
@@ -138,7 +147,7 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 | Pendiente                                                        | Depende de        |
 | ---------------------------------------------------------------- | ----------------- |
 | Secretos del servidor en bóveda o PAM (H6)                       | Claro / proveedor |
-| Certificado de la CA de Claro y TLS 1.3 verificado (H7)          | Servidor / Claro  |
+| Certificado de la CA de Claro y solo TLS 1.3 (H7, runbook §12.8) | Servidor / Claro  |
 | `X-Forwarded-For` en nginx (sin esto H1 no tiene efecto)         | Servidor          |
 | Doble factor (TOTP) para ADMIN (H8)                              | Nosotros          |
 | Plazo de retención de conversaciones                             | Claro             |
@@ -148,6 +157,20 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 | Pentest independiente, si Claro lo exige                         | Proveedor externo |
 
 ## 6. Registro de cambios
+
+### 12/11/2026 — D-044 a D-046: evidencias para Claro
+
+- **Logs (D-046):** `name` del objeto redactado en `formatters.log`, nombres en texto libre
+  enmascarados por `scrubText`, prueba estática contra campos del cliente en las llamadas al
+  logger.
+- **Log por interacción (D-045):** tabla `InteractionStep` (paso, resultado, lectura; sin texto
+  del cliente), escrita en la misma transacción del turno. Exportación CSV solo ADMIN con los
+  mismos filtros y el mismo límite que Trazabilidad, auditada; el celular sale del perfil
+  descifrado solo para enmascararlo.
+- **Consentimiento (D-044):** `ConsentEvidence.reading`; el hash incluye `reading` solo cuando es 2,
+  así las evidencias anteriores siguen verificando. La venta se crea con la última lectura.
+- **TLS:** procedimiento para dejar solo TLS 1.3 y ocultar la versión de nginx (runbook §12.8),
+  con vuelta atrás.
 
 ### 10/11/2026 — D-037: método `recovery.closeMissing` en la pasarela
 

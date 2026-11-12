@@ -180,6 +180,18 @@ export class PrismaConversationStore implements ConversationStore {
             });
             ids.push(m.id);
           }
+          if (t.steps?.length) {
+            // D-045: en orden, con la hora del turno (log de auditoría por interacción).
+            await tx.interactionStep.createMany({
+              data: t.steps.map((st) => ({
+                conversationId: id,
+                step: st.step,
+                result: st.result ?? null,
+                detail: st.detail ?? null,
+                at: now,
+              })),
+            });
+          }
           if (t.llmCalls.length) {
             await tx.llmCall.createMany({
               data: t.llmCalls.map((c) => ({ ...c, conversationId: id })),
@@ -253,12 +265,15 @@ ${t.saleDataNote}`,
               templateVersion,
               customerReplyHash: sha256(t.consent.customerReply),
               acceptedAt: t.consent.acceptedAt.toISOString(),
+              // D-044: solo la segunda lectura lo lleva (los registros anteriores no cambian).
+              ...(t.consent.reading === 2 ? { reading: 2 } : {}),
             });
             await tx.consentEvidence.create({
               data: {
                 conversationId: id,
                 textShownHash,
                 templateVersion,
+                reading: t.consent.reading,
                 customerReplyEncrypted: new Uint8Array(replyEnc),
                 acceptedAt: t.consent.acceptedAt,
                 prevHash,

@@ -13,6 +13,7 @@ export * from './queues.js';
 export * from './speech.js';
 export * from './work-hours.js';
 export * from './usage.js';
+export * from './interaction-log.js';
 
 export const CONVERSATION_STATUSES = [
   'ACTIVE',

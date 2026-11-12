@@ -1,4 +1,4 @@
-import type { ConversationStatus, TranscriptStatus } from '@abaya/domain';
+import type { ConversationStatus, StepEntry, TranscriptStatus } from '@abaya/domain';
 import type { KnowledgeUsageRecord } from '@abaya/knowledge';
 import type { ConversationState, LlmCallRecord, Profile } from '../engine/types.js';
 
@@ -48,6 +48,8 @@ export interface TurnCommit {
   respondsToAt?: Date;
   llmCalls: LlmCallRecord[];
   consent?: {
+    /** D-044: lectura del tratamiento de datos (1 o 2). */
+    reading: 1 | 2;
     textShownHash: string;
     templateVersion: string;
     customerReply: string;
@@ -62,6 +64,8 @@ export interface TurnCommit {
   knowledge?: KnowledgeUsageRecord[];
   /** Eventos de outbox. `{{OUTBOUND_IDS}}` en payload.afterMessageIds se resuelve al guardar. */
   events: OutboxEventInput[];
+  /** D-045: pasos del flujo a los que entró la conversación en este turno (sin datos personales). */
+  steps?: StepEntry[];
   /** D-004: versión del agente del turno; se fija en la conversación si aún no tenía. */
   agentVersionId?: string;
 }

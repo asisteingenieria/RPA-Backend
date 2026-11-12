@@ -84,12 +84,16 @@ async function publishedCatalog() {
   return c;
 }
 
-async function setup(abayaChatId = 'CH-77') {
+async function setup(abayaChatId = 'CH-77', agent = DEFAULT_AGENT_CONFIG) {
   const catalog = await publishedCatalog();
   const store = new PrismaConversationStore(db.prisma, cipher);
   const svc = new TurnService({
     store,
-    engine: new ConversationEngine({ llm: new ScriptedLlmAdapter(brain), catalog }),
+    engine: new ConversationEngine({
+      llm: new ScriptedLlmAdapter(brain),
+      catalog,
+      ...(agent === DEFAULT_AGENT_CONFIG ? {} : { agentConfig: async () => agent }),
+    }),
     catalog,
     alerts: { raise: async () => undefined },
     logger: createLogger('t', { level: 'silent' }),
@@ -342,6 +346,77 @@ describe('PrismaConversationStore + TurnService', () => {
       where: { type: 'TransferRequested' },
     });
     expect(transfer.payload).toMatchObject({ target: 'BACKOFFICE' });
+  });
+
+  it('D-045: deja los pasos del flujo de la venta, sin datos del cliente', async () => {
+    const { conv, say } = await setup();
+    for (const t of [
+      'Hola',
+      'B',
+      'Ana, uso redes',
+      'lo quiero',
+      'SÍ AUTORIZO',
+      '1000000000 Ana Demo ana@ejemplo.test',
+    ])
+      await say(t);
+    const steps = await db.prisma.interactionStep.findMany({
+      where: { conversationId: conv.id },
+      orderBy: { seq: 'asc' },
+    });
+    expect(steps.map((s) => [s.step, s.detail])).toEqual([
+      ['PERFILAMIENTO', null],
+      ['OFERTA', null],
+      ['LECTURA_DATOS', '1'],
+      ['CAPTURA_DATOS', null],
+      ['TRANSFERENCIA', null],
+    ]);
+    expect(JSON.stringify(steps)).not.toMatch(/Ana|1000000000|ana@/);
+  });
+
+  it('D-044: con dos lecturas, dos evidencias encadenadas y una sola venta (con la segunda)', async () => {
+    const agent = {
+      ...DEFAULT_AGENT_CONFIG,
+      flow: { ...DEFAULT_AGENT_CONFIG.flow, consentReadings: 2 as const },
+    };
+    const { conv, say } = await setup('CH-2L', agent);
+    for (const t of ['Hola', 'B', 'Ana, uso redes', 'lo quiero', 'SÍ AUTORIZO']) await say(t);
+    expect(await db.prisma.sale.count()).toBe(0);
+    await say('sí');
+    const [r1, r2] = await db.prisma.consentEvidence.findMany({ orderBy: { seq: 'asc' } });
+    expect([r1!.reading, r2!.reading]).toEqual([1, 2]);
+    expect(r2!.prevHash).toBe(r1!.hash);
+    expect(r1!.hash).toBe(
+      chainHash(GENESIS_HASH, {
+        conversationId: conv.id,
+        textShownHash: r1!.textShownHash,
+        templateVersion: r1!.templateVersion,
+        customerReplyHash: sha256('SÍ AUTORIZO'),
+        acceptedAt: r1!.acceptedAt.toISOString(),
+      }),
+    );
+    expect(r2!.hash).toBe(
+      chainHash(r1!.hash, {
+        conversationId: conv.id,
+        textShownHash: r2!.textShownHash,
+        templateVersion: r2!.templateVersion,
+        customerReplyHash: sha256('sí'),
+        acceptedAt: r2!.acceptedAt.toISOString(),
+        reading: 2,
+      }),
+    );
+    expect(r2!.textShownHash).not.toBe(r1!.textShownHash);
+    expect(await db.prisma.sale.count()).toBe(1);
+    const steps = await db.prisma.interactionStep.findMany({
+      where: { conversationId: conv.id },
+      orderBy: { seq: 'asc' },
+    });
+    expect(steps.map((s) => [s.step, s.detail])).toEqual([
+      ['PERFILAMIENTO', null],
+      ['OFERTA', null],
+      ['LECTURA_DATOS', '1'],
+      ['LECTURA_DATOS', '2'],
+      ['CAPTURA_DATOS', null],
+    ]);
   });
 
   it('la cadena de consentimientos enlaza conversaciones distintas', async () => {

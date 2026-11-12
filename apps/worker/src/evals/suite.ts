@@ -36,6 +36,12 @@ export const VOICE_TURN = '🎤';
 const caseSchema = z.object({
   id: z.string(),
   turns: z.array(z.string()).min(1),
+  /** D-044: perillas del flujo para este caso (sobre las del agente evaluado). */
+  flow: z
+    .object({ consentReadings: z.union([z.literal(1), z.literal(2)]) })
+    .partial()
+    .strict()
+    .optional(),
   expect: z
     .object({
       finalStage: z.enum(STAGES).optional(),
@@ -237,7 +243,8 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
   const now = new Date();
   const store = new MemoryConversationStore();
   const catalog = new MemoryCatalog(o.plans);
-  const agent = o.agent;
+  const base = o.agent ?? (c.flow ? DEFAULT_AGENT_CONFIG : undefined);
+  const agent = base && c.flow ? { ...base, flow: { ...base.flow, ...c.flow } } : base;
   const engine = new ConversationEngine({
     llm: o.llm(),
     catalog,

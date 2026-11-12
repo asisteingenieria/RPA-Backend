@@ -398,6 +398,108 @@ describe('trazabilidad: lista, detalle y exportación', () => {
     ).toBe(2);
   });
 
+  it('D-045: log de auditoría por interacción: una fila por paso, línea enmascarada y sin nombre', async () => {
+    const { cookie } = await ready('admin1', 'ADMIN');
+    const c = await seedConversation({
+      chat: 'AB-LOG',
+      name: 'Laura',
+      status: 'TRANSFERRED_BACKOFFICE',
+      sale: true,
+      texts: [['me llamo Laura, cc 1020304050', 'respuesta']],
+    });
+    // El celular que dio tras el «SÍ» (va cifrado en el perfil).
+    await db.prisma.conversation.update({
+      where: { id: c.id },
+      data: {
+        profileEncrypted: new Uint8Array(
+          cipher.encrypt(
+            JSON.stringify({ name: 'Laura', salePhone: '3001234567' }),
+            profileAad(c.id),
+          ),
+        ),
+      },
+    });
+    const at = (m: number) => new Date(c.createdAt.getTime() + m * 60_000);
+    await db.prisma.interactionStep.createMany({
+      data: [
+        { conversationId: c.id, step: 'PERFILAMIENTO', at: at(1) },
+        { conversationId: c.id, step: 'OFERTA', at: at(2) },
+        { conversationId: c.id, step: 'LECTURA_DATOS', detail: '1', at: at(3) },
+        { conversationId: c.id, step: 'LECTURA_DATOS', detail: '2', at: at(4) },
+        { conversationId: c.id, step: 'CAPTURA_DATOS', at: at(5) },
+        { conversationId: c.id, step: 'TRANSFERENCIA', at: at(6) },
+      ],
+    });
+    // OPERADOR no puede exportarlo.
+    const op = await ready('oper1', 'OPERADOR');
+    expect((await get('/admin/conversations/audit-log?range=7d', op.cookie)).status).toBe(403);
+
+    const r = await get('/admin/conversations/audit-log?range=7d', cookie);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-disposition')).toContain('log-auditoria-');
+    const lines = (await r.text()).trim().split('\r\n');
+    expect(lines[0]).toContain('linea_cliente_enmascarada');
+    const rows = lines.slice(1).filter((l) => l.includes('AB-LOG'));
+    expect(rows.map((l) => l.split(',')[6])).toEqual([
+      'Saludo',
+      'Perfilamiento',
+      'Oferta',
+      'Lectura de tratamiento de datos',
+      'Lectura de tratamiento de datos',
+      'Captura de datos',
+      'Transferencia',
+    ]);
+    expect(rows.every((l) => l.includes('300****567') && l.includes(',EXITOSO,'))).toBe(true);
+    const all = lines.join('\n');
+    expect(all).not.toContain('Laura');
+    expect(all).not.toContain('3001234567');
+    expect(all).not.toContain('1020304050');
+    expect(
+      await db.prisma.adminAuditLog.count({ where: { action: 'INTERACTION_LOG_EXPORTED' } }),
+    ).toBe(1);
+  });
+
+  it('D-044: el detalle muestra las dos lecturas del consentimiento verificadas', async () => {
+    const { cookie } = await ready('admin1', 'ADMIN');
+    const c = await seedConversation({
+      chat: 'AB-2L',
+      sale: true,
+      status: 'TRANSFERRED_BACKOFFICE',
+    });
+    const first = await db.prisma.consentEvidence.findFirstOrThrow({
+      where: { conversationId: c.id },
+    });
+    const acceptedAt = new Date(first.acceptedAt.getTime() + 30_000);
+    await db.prisma.consentEvidence.create({
+      data: {
+        conversationId: c.id,
+        reading: 2,
+        textShownHash: 'h2',
+        templateVersion: 'sistema:segunda-lectura',
+        customerReplyEncrypted: new Uint8Array(cipher.encrypt('sí', consentAad(c.id))),
+        acceptedAt,
+        prevHash: first.hash,
+        hash: chainHash(first.hash, {
+          conversationId: c.id,
+          textShownHash: 'h2',
+          templateVersion: 'sistema:segunda-lectura',
+          customerReplyHash: sha256('sí'),
+          acceptedAt: acceptedAt.toISOString(),
+          reading: 2,
+        }),
+      },
+    });
+    const d = (await (await get(`/admin/conversations/${c.id}`, cookie)).json()) as {
+      consentReadings: { reading: number; answer: string; chainVerified: boolean }[];
+      consent: { reading: number };
+    };
+    expect(d.consentReadings.map((x) => [x.reading, x.answer, x.chainVerified])).toEqual([
+      [1, 'SÍ AUTORIZO', true],
+      [2, 'sí', true],
+    ]);
+    expect(d.consent.reading).toBe(2);
+  });
+
   it('rendimiento por robot', async () => {
     const { cookie } = await ready('admin1', 'ADMIN');
     await seedConversation({ chat: 'AB-1', status: 'TRANSFERRED_BACKOFFICE', sale: true });

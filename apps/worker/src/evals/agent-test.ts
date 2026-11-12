@@ -188,6 +188,9 @@ export async function runAgentTest(d: AgentTestDeps, job: AgentTestJob): Promise
       events.push('Alerta a supervisores: el cliente escribió una amenaza (la conversación sigue)');
     else if (a.type === 'LLM_OUTAGE')
       events.push(`El modelo no respondió: en producción se pausarían los robots (${a.reason})`);
+    else if (a.type === 'RECORD_CONSENT')
+      // D-044: con dos lecturas se ve cuál se registró.
+      events.push(`${EVENT_LABEL.RECORD_CONSENT} — lectura ${a.reading}`);
     else events.push(EVENT_LABEL[a.type] ?? a.type);
   }
   return {

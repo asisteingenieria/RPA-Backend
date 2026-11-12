@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AUDIO_PLACEHOLDER,
   LlmProviderError,
+  stepsForTurn,
   type AlertPort,
   type ConversationStatus,
   type SpeechToTextPort,
@@ -183,6 +184,19 @@ export class TurnService {
       events: [],
       ...(agentVersionId ? { agentVersionId } : {}),
     };
+    // D-045: pasos del flujo para el log de auditoría por interacción (sin datos personales).
+    const before = input.state.profile;
+    const after = result.profile;
+    const steps = stepsForTurn({
+      from: input.state.stage,
+      to: result.stage,
+      secondReadingShown: !before.secondReadingShownAt && !!after.secondReadingShownAt,
+      dataRequested: !before.dataRequested && !!after.dataRequested,
+      ...(!before.authorizationDeclined && after.authorizationDeclined
+        ? { declinedReading: after.secondReadingShownAt ? (2 as const) : (1 as const) }
+        : {}),
+    });
+    if (steps.length) commit.steps = steps;
     if (result.catalogEmpty) {
       // El catálogo publicado no tiene planes para el proceso: se escaló sin ofrecer nada.
       await this.d.alerts.raise('CATALOG_EMPTY_FOR_PROCESS', 'ALTA', {
@@ -208,11 +222,14 @@ export class TurnService {
           break;
         case 'RECORD_CONSENT': {
           commit.consent = {
+            reading: a.reading,
             textShownHash: a.textShownHash,
             templateVersion: a.templateVersion,
             customerReply: a.customerReply,
             acceptedAt: now,
           };
+          // D-044: con dos lecturas, la venta queda autorizada con la segunda.
+          if (!a.completes) break;
           const p = result.profile;
           if (p.process && p.planCode) {
             commit.sale = {

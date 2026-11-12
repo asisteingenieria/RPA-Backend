@@ -50,6 +50,8 @@ export const TEMPLATE_ROLES = [
   'PORTABILIDAD_CONFIRMADA',
   'PORTABILIDAD_VALIDAR',
   'PORTABILIDAD_TRANSFERENCIA',
+  // D-044: segunda lectura del tratamiento de datos.
+  'SEGUNDA_LECTURA',
 ] as const;
 export type TemplateRole = (typeof TEMPLATE_ROLES)[number];
 
@@ -79,6 +81,8 @@ export const SYSTEM_TEMPLATE_ROLES = [
   'PORTABILIDAD_CONFIRMADA',
   'PORTABILIDAD_VALIDAR',
   'PORTABILIDAD_TRANSFERENCIA',
+  // D-044: segunda lectura del tratamiento de datos.
+  'SEGUNDA_LECTURA',
 ] as const satisfies readonly TemplateRole[];
 export type SystemTemplateRole = (typeof SYSTEM_TEMPLATE_ROLES)[number];
 
@@ -627,6 +631,15 @@ export const DEFAULT_TEMPLATES: AgentTemplate[] = [
     'PIE_IMAGEN',
     'La envía el sistema como texto de cada imagen de planes después de la primera del mismo turno: ySocial no deja enviar una imagen sin texto y cada mensaje lleva una sola imagen.',
     'Te comparto también esta opción de planes 👇',
+  ),
+  // D-044: BORRADOR hasta tener el texto aprobado por Cumplimiento de Claro.
+  t(
+    'segunda-lectura',
+    'Sistema',
+    'Segunda lectura del tratamiento de datos',
+    'SEGUNDA_LECTURA',
+    'La envía el sistema después del primer «SÍ» si el flujo pide dos lecturas (D-044). Solo con el «SÍ» a esta segunda lectura se piden los datos. El texto debe ser el aprobado por Cumplimiento de Claro.',
+    'Para confirmar, {nombre_cliente}: ¿autorizas a CLARO a recolectar y tratar tus datos personales (número de documento, nombre completo, correo electrónico y celular) para gestionar esta solicitud, según la Ley 1581 de 2012 y la política de tratamiento de datos de Claro? Responde *SÍ* para confirmar o *NO* si prefieres no autorizar.',
   ),
 ];
 
