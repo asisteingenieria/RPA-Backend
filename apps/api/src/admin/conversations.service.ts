@@ -12,6 +12,8 @@ import {
   serviceCaseAad,
   CONVERSATION_STATUSES,
   STAGES,
+  interactionRows,
+  stepsFromStages,
 } from '@abaya/domain';
 import { startOfBogotaDay } from './admin.service.js';
 import { ServiceError } from './errors.js';
@@ -88,6 +90,8 @@ export interface Profile {
   name?: string;
   currentOperator?: string;
   usage?: string;
+  /** Celular que dio el cliente tras el «SÍ» (D-045: el log de auditoría lo muestra enmascarado). */
+  salePhone?: string;
 }
 
 /** Fila enriquecida: lo que necesitan la lista, los KPIs, el rendimiento y la navegación. */
@@ -626,9 +630,8 @@ export class ConversationsService {
       kind: 'PLAN_OFFERED',
       detail: u.rendered.join(', '),
     }));
-    const consent = consentRows.at(-1) ?? null;
-    let consentOut = null;
-    if (consent) {
+    // D-044: una evidencia por lectura del tratamiento de datos (1 y, si el flujo la pide, 2).
+    const consentReadings = consentRows.map((consent) => {
       const answer = this.decrypt(consent.customerReplyEncrypted, consentAad(id));
       const expected =
         answer === null
@@ -639,16 +642,24 @@ export class ConversationsService {
               templateVersion: consent.templateVersion,
               customerReplyHash: sha256(answer),
               acceptedAt: consent.acceptedAt.toISOString(),
+              ...(consent.reading === 2 ? { reading: 2 } : {}),
             });
-      consentOut = {
+      events.push({
+        at: consent.acceptedAt.toISOString(),
+        kind: 'CONSENT_RECORDED',
+        detail: `lectura ${consent.reading}`,
+      });
+      return {
+        reading: consent.reading,
         answer,
         at: consent.acceptedAt.toISOString(),
         legalTemplateVersion: consent.templateVersion,
+        textShownHash: consent.textShownHash,
         hash: consent.hash,
         chainVerified: expected !== null && expected === consent.hash,
       };
-      events.push({ at: consent.acceptedAt.toISOString(), kind: 'CONSENT_RECORDED' });
-    }
+    });
+    const consentOut = consentReadings.at(-1) ?? null;
     for (const e of outbox) {
       const at = e.createdAt.toISOString();
       if (e.type === 'NeedsReview') {
@@ -770,6 +781,7 @@ export class ConversationsService {
           }
         : null,
       consent: consentOut,
+      consentReadings,
       brainVersion: lastUsage ? `v${lastUsage.brainVersion}` : null,
       knowledgeUsage,
       llmCalls: llmCalls.map((l) => ({
@@ -846,6 +858,106 @@ export class ConversationsService {
       data: {
         actor: actor.slice(0, 60),
         action: 'CONVERSATIONS_EXPORTED',
+        target: `${rows.length} conversaciones`,
+        detail: filtersDetail(f) as Prisma.InputJsonValue,
+      },
+    });
+    return '﻿' + [header.join(','), ...lines].join('\r\n') + '\r\n';
+  }
+
+  /**
+   * D-045: log de auditoría por interacción con los campos que pide Claro (requerimiento 3): una
+   * fila por paso del flujo. Sin cédula, nombre ni correo; la línea del cliente, enmascarada.
+   * Queda en Auditoría con los filtros.
+   */
+  async interactionLogCsv(f: ConversationFilters, actor: string): Promise<string> {
+    const rows = await this.filtered(f);
+    const ids = rows.map((r) => r.id);
+    const [convs, steps, llm] = ids.length
+      ? await Promise.all([
+          this.prisma.conversation.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, closeTag: true, profileEncrypted: true },
+          }),
+          this.prisma.interactionStep.findMany({
+            where: { conversationId: { in: ids } },
+            orderBy: { seq: 'asc' },
+          }),
+          this.prisma.llmCall.findMany({
+            where: { conversationId: { in: ids } },
+            orderBy: { createdAt: 'asc' },
+            select: { conversationId: true, stage: true, createdAt: true },
+          }),
+        ])
+      : [[], [], []];
+    const conv = new Map(convs.map((c) => [c.id, c]));
+    const group = <T extends { conversationId: string }>(xs: T[]) => {
+      const m = new Map<string, T[]>();
+      for (const x of xs) m.set(x.conversationId, [...(m.get(x.conversationId) ?? []), x]);
+      return m;
+    };
+    const stepsOf = group(steps);
+    const llmOf = group(llm);
+    const header = [
+      'id_conversacion',
+      'id_caso_avaya',
+      'robot',
+      'linea_cliente_enmascarada',
+      'inicio',
+      'fin',
+      'paso',
+      'lectura',
+      'resultado_paso',
+      'hora_paso',
+      'estado_final',
+      'tipificacion',
+      'asesor_destino',
+    ];
+    const lines: string[] = [];
+    for (const r of [...rows].reverse()) {
+      const c = conv.get(r.id);
+      const own = stepsOf.get(r.id);
+      const out = interactionRows({
+        id: r.id,
+        abayaChatId: r.abayaChatId,
+        robotUser: r.robotUser,
+        startedAt: new Date(r.createdAt),
+        endedAt: r.updatedAt ? new Date(r.updatedAt) : null,
+        status: r.status,
+        closeTag: c?.closeTag ?? null,
+        phone: c ? this.profile(r.id, c.profileEncrypted).salePhone : null,
+        // Conversaciones anteriores a InteractionStep: los pasos salen de las llamadas al modelo.
+        steps: own?.length
+          ? own
+          : stepsFromStages(
+              (llmOf.get(r.id) ?? []).map((l) => ({ stage: l.stage, at: l.createdAt })),
+            ),
+      });
+      for (const x of out)
+        lines.push(
+          [
+            x.conversationId,
+            x.abayaChatId,
+            x.robotUser,
+            x.maskedLine,
+            x.startedAt.toISOString(),
+            x.endedAt?.toISOString() ?? '',
+            x.stepLabel,
+            x.reading,
+            x.result,
+            x.stepAt.toISOString(),
+            x.finalStatus,
+            x.closeTag,
+            x.destination,
+          ]
+            .map(csvCell)
+            .join(','),
+        );
+    }
+    await this.prisma.adminAuditLog.create({
+      data: {
+        actor: actor.slice(0, 60),
+        action: 'INTERACTION_LOG_EXPORTED',
         target: `${rows.length} conversaciones`,
         detail: filtersDetail(f) as Prisma.InputJsonValue,
       },

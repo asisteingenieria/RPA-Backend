@@ -77,6 +77,14 @@ export const SALE_DATA_LABEL: Record<SaleDataField, string> = {
 export const OPENING_MODES = ['MENU_LETRAS', 'SIN_MENU'] as const;
 export type OpeningMode = (typeof OPENING_MODES)[number];
 
+/**
+ * D-044: lecturas del tratamiento de datos antes de capturar los datos del cliente. 1 = la
+ * plantilla AUTORIZACION y su «SÍ»; 2 = además la plantilla del sistema SEGUNDA_LECTURA y un
+ * segundo «SÍ» (lo pide Claro, requerimiento 4).
+ */
+export const CONSENT_READINGS = [1, 2] as const;
+export type ConsentReadings = (typeof CONSENT_READINGS)[number];
+
 /** Tipo de línea del cliente con su operador actual (lo extrae el modelo; decide el código). */
 export const LINE_TYPES = ['PREPAGO', 'POSPAGO'] as const;
 export type LineType = (typeof LINE_TYPES)[number];
@@ -175,6 +183,8 @@ export interface AgentFlow {
    * Avaya sin decir nada (la acción ya lo pasa a la cola del backoffice).
    */
   transferMessage: boolean;
+  /** D-044: una o dos lecturas del tratamiento de datos antes de pedir los datos. */
+  consentReadings: ConsentReadings;
 }
 
 export const FLOW_LIMITS = {
@@ -251,6 +261,8 @@ export const DEFAULT_FLOW: AgentFlow = {
   opening: 'MENU_LETRAS',
   objectionRebates: 0,
   transferMessage: true,
+  // D-044: versiones anteriores, una lectura; la segunda se activa en el panel con su texto aprobado.
+  consentReadings: 1,
 };
 
 /**
@@ -494,6 +506,10 @@ export function storedFlow(raw: unknown): AgentFlow {
     // D-034: versiones anteriores no lo tienen → como antes (con mensaje).
     transferMessage:
       typeof r.transferMessage === 'boolean' ? r.transferMessage : DEFAULT_FLOW.transferMessage,
+    // D-044: versiones anteriores no lo tienen → una lectura (como antes).
+    consentReadings: (CONSENT_READINGS as readonly unknown[]).includes(r.consentReadings)
+      ? (r.consentReadings as ConsentReadings)
+      : DEFAULT_FLOW.consentReadings,
   };
 }
 

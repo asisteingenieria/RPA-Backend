@@ -322,6 +322,23 @@ export function stripImageMarkers(reply: string): string {
  * Texto de autorización que se muestra (D-013: la plantilla AUTORIZACION del agente, con la fecha
  * del día) y su versión para la evidencia. Sin plantilla, el texto anterior (D-007).
  */
+/**
+ * D-044: segunda lectura del tratamiento de datos (plantilla del sistema SEGUNDA_LECTURA del
+ * agente o, si no la tiene, la de la campaña) con su versión, para la evidencia.
+ */
+export function secondReadingFor(
+  agent: AgentConfig,
+  name: string | undefined,
+  now: Date,
+): { text: string; version: string } {
+  const own = templateByRole(agent.templates, 'SEGUNDA_LECTURA');
+  const tpl = own ?? systemTemplates(agent.templates, 'SEGUNDA_LECTURA')[0]!;
+  return {
+    text: systemText(agent, 'SEGUNDA_LECTURA', name, now),
+    version: own ? `agente-${agent.id}:${own.id}` : `sistema:${tpl.id}`,
+  };
+}
+
 export function authorizationFor(
   agent: AgentConfig,
   now: Date,

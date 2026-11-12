@@ -499,3 +499,44 @@ dependencias al día y `/health` del robot solo en `127.0.0.1` (`docs/security-r
    del equipo usa ese puerto. El robot se actualiza solo cuando no tiene chats y vuelve a la
    versión anterior si la nueva no arranca (§10). Para no publicar en horario, subir el paquete
    después del cierre.
+
+### 12.8 Evidencias de Claro (12/11/2026): dos lecturas, log por interacción, logs y TLS 1.3
+
+Cambios de código (D-044 a D-046): segunda lectura del tratamiento de datos (perilla del flujo,
+apagada por defecto), tabla `InteractionStep` y exportación del log de auditoría por interacción,
+y logs sin nombres. **Nada cambia la conversación en producción hasta que se active la perilla.**
+
+**Orden, todo después de las 22:00:**
+
+1. **Servidor (API y worker)** como en §12.2. Trae la migración `20261112000000_evidencias_claro`
+   (columna `ConsentEvidence.reading` con valor 1 y tabla nueva `InteractionStep`; no reescribe
+   filas): `pnpm --filter @abaya/db run migrate:deploy`. Las cadenas de consentimiento anteriores
+   siguen verificando (el hash solo incluye `reading` cuando es 2).
+2. **Panel** (`interfazRPA`) como en §12.4.b: botón «Log de auditoría» en Trazabilidad, las dos
+   lecturas en el detalle, la plantilla «Segunda lectura (datos)» y la casilla del flujo.
+3. **nginx: solo TLS 1.3.** Antes, confirmar en los logs de acceso que el robot y el panel ya
+   negocian 1.3 (§12.7 paso 3). En el bloque `server` de 443:
+
+   ```
+   ssl_protocols TLSv1.3;
+   server_tokens off;
+   ```
+
+   `sudo nginx -t && sudo systemctl reload nginx` (recarga sin cortar conexiones). Verificar:
+
+   ```
+   openssl s_client -connect 10.255.255.194:443 -tls1_3 </dev/null 2>/dev/null | grep -E "Protocol|Cipher"   # TLSv1.3
+   openssl s_client -connect 10.255.255.194:443 -tls1_2 </dev/null 2>&1 | grep -iE "alert|error"           # debe fallar
+   curl -skI https://10.255.255.194/health | grep -i '^server:'                                             # sin versión
+   ```
+
+   **Si el robot no se reconecta** (estado `DOWN` o sin heartbeat en el panel): volver a
+   `ssl_protocols TLSv1.2 TLSv1.3;`, `nginx -t` y `reload`. Node 20+ habla TLS 1.3, así que no
+   debería pasar.
+
+4. **Activar las dos lecturas** solo cuando Cumplimiento de Claro apruebe el texto: en el panel,
+   editar la plantilla «Segunda lectura (datos)» con el texto aprobado, marcar «Flujo →
+   Lecturas del tratamiento de datos → Pedir una segunda confirmación» y publicar (corre la suite).
+   Llevarlo a producción por importación (§8.c, D-019).
+5. **Comprobar:** Trazabilidad → «Log de auditoría» descarga el CSV (una fila por paso, la línea
+   como `300****567`) y la descarga aparece en Auditoría (`INTERACTION_LOG_EXPORTED`).

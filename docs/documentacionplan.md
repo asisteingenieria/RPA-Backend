@@ -102,13 +102,13 @@ verifica que los datos sean del robot del token; logs con redacción de pino; me
 
 **Brechas encontradas al preparar este plan (corregir antes de las pruebas):**
 
-| Id  | Brecha                                                                                                                                                                                   | Arreglo                                                                                            |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| G1  | En el servidor, `~/rpa/backend/.env` guarda `FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY` y la contraseña de PostgreSQL **en texto claro** (con permisos 600). Claro lo prohíbe expresamente. | Leer los secretos de la bóveda o PAM al arrancar (R6); el `.env` queda solo con datos no secretos. |
-| G2  | nginx con certificado **autofirmado** y sin `ssl_protocols TLSv1.3` explícito.                                                                                                           | `ssl_protocols TLSv1.3;` y certificado de la CA corporativa de Claro (o interna aprobada).         |
-| G3  | `scrubText` enmascara teléfonos y documentos pero **no correos** antes de mandar el texto al LLM y a los logs.                                                                           | **Corregido 04/11/2026** (`[CORREO]`, H4 de `security-review.md`).                                 |
-| G4  | Redis sin contraseña (local) y PostgreSQL sin `sslmode=require` (pendiente M5 de la revisión F8).                                                                                        | Contraseña en Redis; si salen de la máquina, TLS en ambos.                                         |
-| G5  | Logs del PC del robot: no hay evidencia escrita de que no tengan datos personales.                                                                                                       | Escaneo automático de los logs (ver herramientas) y adjuntar el resultado.                         |
+| Id  | Brecha                                                                                                                                                                                   | Arreglo                                                                                                    |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| G1  | En el servidor, `~/rpa/backend/.env` guarda `FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY` y la contraseña de PostgreSQL **en texto claro** (con permisos 600). Claro lo prohíbe expresamente. | Leer los secretos de la bóveda o PAM al arrancar (R6); el `.env` queda solo con datos no secretos.         |
+| G2  | nginx con certificado **autofirmado** y sin `ssl_protocols TLSv1.3` explícito.                                                                                                           | `ssl_protocols TLSv1.3;` (runbook §12.8) y certificado de la CA corporativa de Claro (o interna aprobada). |
+| G3  | `scrubText` enmascara teléfonos y documentos pero **no correos** antes de mandar el texto al LLM y a los logs.                                                                           | **Corregido 04/11/2026** (`[CORREO]`, H4 de `security-review.md`).                                         |
+| G4  | Redis sin contraseña (local) y PostgreSQL sin `sslmode=require` (pendiente M5 de la revisión F8).                                                                                        | Contraseña en Redis; si salen de la máquina, TLS en ambos.                                                 |
+| G5  | Logs del PC del robot: no hay evidencia escrita de que no tengan datos personales.                                                                                                       | Escaneo automático de los logs (ver herramientas) y adjuntar el resultado.                                 |
 
 **Corregido el 04/11/2026** (`docs/security-review.md`, H1–H5): IP real detrás de nginx (el bloqueo por intentos ya no es compartido), dependencias sin vulnerabilidades conocidas, HSTS, correos enmascarados y `/health` del robot solo local. Pendiente en el servidor: runbook §12.7.
 
@@ -167,6 +167,16 @@ resultado, hora, robot y asesor destino. Sin cédula, nombre ni correo; si hace 
 como hash o referencia cifrada. Exportación a CSV y PDF desde el panel (solo ADMIN, auditada).
 Antes, registrar la decisión en `docs/planRPA.md` y `docs/DECISIONS.md` (D-033).
 
+**Estado (12/11/2026, D-045): hecho.** Tabla `InteractionStep` (un registro por paso, en la misma
+transacción del turno) y exportación «Log de auditoría» en Trazabilidad
+(`GET /admin/conversations/audit-log`, solo ADMIN, auditada como `INTERACTION_LOG_EXPORTED`): una
+fila por paso con id de conversación y de caso, robot, línea enmascarada (`300****567`, del celular
+que da el cliente tras el «SÍ»), inicio, fin, paso, lectura, resultado (EXITOSO, ERROR, ABANDONO,
+RECHAZO, CERRADA_EN_AVAYA, EN_CURSO), hora del paso, estado final, tipificación y destino (cola de
+backoffice o asesor humano). Las conversaciones anteriores salen con los pasos de `LlmCall`.
+**Sigue abierto:** el id del asesor del backoffice (ySocial no lo muestra al robot; va la cola) y el
+número enmascarado antes del «SÍ» (si ySocial lo mostrara).
+
 **Evidencias.** `03-logs-auditoria/E3.1-estructura-log.pdf` (diccionario de campos y ejemplo con
 datos enmascarados), `03-logs-auditoria/E3.2-logs-RPA.pdf` (muestra de `RpaActionLog` y logs del RPA
 de una prueba, enmascarados, con la verificación de la cadena de hashes).
@@ -198,6 +208,12 @@ del «SÍ». El texto legal actual es nuestro, **no aprobado por Claro**.
 3. `ConsentEvidence` con el número de lectura (1 o 2): dos registros por sesión, ambos en la cadena.
 4. Pruebas y casos en la suite de evaluación (regla 13).
 5. Decisión D-033 o D-034 en `docs/planRPA.md` antes del código.
+
+**Estado (12/11/2026, D-044): desarrollo hecho.** Perilla del flujo «Lecturas del tratamiento de
+datos» (1 o 2; por defecto 1, así producción no cambia), plantilla del sistema `SEGUNDA_LECTURA`
+(borrador hasta tener el texto de Claro), `ConsentEvidence.reading` con dos registros encadenados
+por sesión, venta creada solo con la segunda, pruebas unitarias, de integración y dos casos de la
+suite. Trazabilidad muestra las dos lecturas verificadas.
 
 **De Claro.** Los dos textos aprobados por Cumplimiento. Sin ellos no hay evidencia E4.1 (es el
 mismo bloqueante A4 de la revisión F8).

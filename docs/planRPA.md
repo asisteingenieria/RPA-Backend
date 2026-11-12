@@ -838,10 +838,12 @@ El robot lee y escribe datos personales. Aplican la Ley 1581 de 2012 (protecció
 | Trazas y capturas | Solo en error, cifradas, retención máxima 7 días, acceso auditado. |
 | Pantalla en vivo | Solo ADMIN y solo mientras alguien mira; las imágenes no se guardan (solo la última, 10 s en Redis); cada vista queda en `AdminAuditLog` con su duración. *(v1.12, D-032)* |
 | Datos en reposo | Cifrado de campos para mensajes, resúmenes y respuestas de consentimiento. |
-| Logs | Redacción automática de teléfonos, nombres, documentos y contenido. |
+| Logs | Redacción automática de teléfonos, nombres, documentos y contenido. *(v1.13, D-046)* También la clave `name` del objeto de log (no el nombre del logger) y los nombres que el cliente da con «me llamo…», «mi nombre es…» o «nombre: …»; una prueba estática impide registrar campos del cliente. |
+| Auditoría por interacción | *(v1.13, D-045)* `InteractionStep` (solo inserción, sin datos personales): cada paso del flujo con su hora; el panel exporta (solo ADMIN, auditado) el log con los campos que pide Claro: conversación, caso, robot, línea enmascarada (`300****567`), inicio y fin, paso, resultado (EXITOSO, ERROR, ABANDONO, RECHAZO) y destino de la transferencia. |
+| TLS | *(v1.13)* nginx solo con TLS 1.3 (`ssl_protocols TLSv1.3`) y `server_tokens off` (runbook §12.8). |
 | Red | Robot en máquina con acceso a Abaya; salida a Internet solo hacia el proveedor de LLM. |
 | Datos al LLM | Enviar solo lo necesario; preferir el proveedor vía la nube contratada por Claro; verificar que el proveedor no use los datos para entrenar; evaluar transferencia internacional (Ley 1581). |
-| Consentimiento | Texto mostrado (hash), respuesta del cliente, fecha y hora de Bogotá, cadena de hashes. |
+| Consentimiento | Texto mostrado (hash), respuesta del cliente, fecha y hora de Bogotá, cadena de hashes. *(v1.13, D-044)* Una o dos lecturas según el flujo (`consentReadings`): con dos, la segunda (plantilla del sistema `SEGUNDA_LECTURA`) va después del primer «SÍ» y la captura de datos solo empieza con el segundo; un registro de `ConsentEvidence` por lectura (`reading` 1 y 2) en la misma cadena. |
 | Derechos de titulares | Procedimiento para consulta, rectificación y supresión. |
 | Retención | Política de borrado de conversaciones definida con Claro. |
 | Usuarios del panel | Cuentas nominales con contraseña (scrypt con sal, mínimo 12 caracteres), roles `ADMIN` y `OPERADOR`, contraseña temporal generada por el sistema y cambio obligatorio en el primer ingreso, bloqueo de 15 min tras 5 intentos fallidos, sesión en el servidor con cookie `httpOnly`/`SameSite=Strict` (8 h máximo, 30 min de inactividad). El primer administrador se crea por consola. Todo queda en `AdminAuditLog` con el usuario autenticado. *(Cambio v1.3: reemplaza el token compartido `ADMIN_TOKEN`.)* |

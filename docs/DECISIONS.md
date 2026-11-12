@@ -1,5 +1,61 @@
 # Decisiones de diseño
 
+## D-046 · Logs: nombres del cliente enmascarados y prueba estática · APROBADA — implementada en local
+
+**Contexto (12/11/2026, evidencias de la POC).** La prueba de datos personales en los logs (E2.1)
+encontró dos huecos del logger, sin uso en el código: la clave `name` en la raíz del objeto de log
+salía en claro (pino la reserva para el nombre del logger, por eso no se redactaba) y `scrubText`
+no reconoce nombres dentro de texto libre.
+
+**Decisión.** (1) `formatters.log` redacta `name` del objeto de cada llamada; el nombre del logger
+(bindings) sigue igual. (2) `scrubText` enmascara como `[NOMBRE]` lo que sigue a «me llamo»,
+«mi nombre (completo) es» y «nombre (completo):». (3) Prueba estática (`no-pii-logs.test.ts`): una
+llamada al logger en el código de producción no puede llevar campos del cliente (`text`, `body`,
+`profile`, `saleFullName`, `saleDocument`, `saleEmail`, `salePhone`, `customerReply`, `summary`).
+
+## D-045 · Log de auditoría por interacción con los campos de Claro · APROBADA — implementada en local
+
+**Contexto (12/11/2026).** Claro pide (requerimiento 3) un log por interacción: id de la sesión,
+número de línea enmascarado, inicio y fin, paso del flujo (saludo, perfilamiento, oferta,
+objeciones, lectura de tratamiento de datos, captura de datos, transferencia), resultado de cada
+paso y asesor al que se transfirió. Hasta hoy se armaba con una consulta sobre `LlmCall` (los
+turnos sin modelo no dejaban paso).
+
+**Decisión.**
+
+1. Tabla `InteractionStep` (solo inserción, sin datos personales): el worker escribe, en la misma
+   transacción del turno, cada paso al que entra la conversación (`stepsForTurn`, función pura en
+   `@abaya/domain`): PERFILAMIENTO, OFERTA, OBJECIONES, LECTURA_DATOS (una por lectura),
+   CAPTURA_DATOS, TRANSFERENCIA, CIERRE_SIN_VENTA, SOPORTE, ESCALAMIENTO, y RECHAZO cuando el
+   cliente no autoriza. El SALUDO es el inicio de la conversación.
+2. Resultado de cada paso: EXITOSO si la conversación avanzó a otro; el último según el estado
+   final (transferida → EXITOSO, en revisión → ERROR, cierre por inactividad o tipificación
+   «abandona» → ABANDONO, no autorizó → RECHAZO, abierta → EN_CURSO).
+3. Número de línea: el robot no lo lee de Avaya; si el cliente da su celular tras el «SÍ», el log
+   lo muestra enmascarado (`300****567`). Asesor destino: la cola de backoffice de Avaya
+   («Finalizar»: el caso aún no tiene asesor) o «ASESOR» si se escaló.
+4. Exportación `GET /admin/conversations/audit-log.csv` (solo ADMIN, mismos filtros que
+   Trazabilidad, `INTERACTION_LOG_EXPORTED` en Auditoría), una fila por paso. Conversaciones
+   anteriores a la tabla: pasos tomados de `LlmCall`.
+
+## D-044 · Segunda lectura del tratamiento de datos · APROBADA — implementada en local
+
+**Contexto (12/11/2026).** Claro pide (requerimiento 4) dos lecturas de tratamiento de datos
+antes de capturar cédula, nombre y correo, con log de consentimiento de ambas. Sofía hacía una
+sola lectura (con confirmación si la respuesta era ambigua).
+
+**Decisión.**
+
+1. Flujo `consentReadings` (1 | 2, en el panel; versiones anteriores: 1, sin cambio). Con 2: al
+   primer «SÍ» explícito se guarda la evidencia de la lectura 1 y se envía la plantilla del
+   sistema `SEGUNDA_LECTURA`; solo el «SÍ» a la segunda guarda la lectura 2 y pide los datos. Un
+   «NO» en cualquiera de las dos sigue el camino de no autorizar (asesor o despedida). Las reglas
+   de siempre aplican a las dos: solo vale escrito, ambiguo → `CONFIRMAR_AUTORIZACION`.
+2. `ConsentEvidence.reading` (1 o 2). El hash incluye `reading` solo cuando es 2: los registros
+   anteriores siguen verificándose igual. Trazabilidad muestra las dos lecturas.
+3. El texto por defecto de `SEGUNDA_LECTURA` es un borrador: el definitivo lo aprueba
+   Cumplimiento de Claro y se carga en el panel (D-015).
+
 ## D-043 · En vivo ordenado y revisión que se puede cerrar · APROBADA — implementada en local
 
 **Contexto (11/11/2026, producción).** En «En vivo» el robot libre (0/3) mostraba arriba chats de

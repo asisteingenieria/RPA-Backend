@@ -66,6 +66,24 @@ export class ConversationsController {
     return new StreamableFile(Buffer.from(csv, 'utf8'));
   }
 
+  /** D-045: log de auditoría por interacción (una fila por paso, con los campos de Claro). */
+  @Get('audit-log')
+  async auditLog(
+    @Query() q: QueryParams,
+    @Req() req: AdminRequest,
+    @Res({ passthrough: true }) res: DownloadResponse,
+  ) {
+    const csv = await toHttp(
+      Promise.resolve().then(() =>
+        this.conversations.interactionLogCsv(parseFilters(q), req.adminUser),
+      ),
+    );
+    const day = new Date(Date.now() - 5 * 3_600_000).toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="log-auditoria-${day}.csv"`);
+    return new StreamableFile(Buffer.from(csv, 'utf8'));
+  }
+
   /**
    * Cierra la revisión de una conversación `NEEDS_REVIEW` que ya se resolvió a mano en Avaya:
    * pasa a «Cerrada en Avaya» (`CLOSED_EXTERNALLY`) y queda en Auditoría (REVIEW_RESOLVED).

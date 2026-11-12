@@ -254,6 +254,14 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   lo más reciente arriba (`byBoardOrder`); «Marcar como revisada» (ADMIN, Trazabilidad,
   `POST /admin/conversations/:id/resolve-review`) pasa `NEEDS_REVIEW` → `CLOSED_EXTERNALLY`,
   PENDING → `FAILED`, auditoría `REVIEW_RESOLVED`.
+- Evidencias de Claro (12/11/2026): **D-044** dos lecturas del tratamiento de datos
+  (`flow.consentReadings` 1|2, por defecto 1; plantilla del sistema `SEGUNDA_LECTURA`, borrador
+  hasta el texto de Cumplimiento; `ConsentEvidence.reading`, el hash incluye `reading` solo si es 2;
+  la venta se crea con la última lectura). **D-045** log por interacción: `InteractionStep` (pasos
+  de `stepsForTurn`, en la transacción del turno) y CSV `GET /admin/conversations/audit-log`
+  (`interactionRows`, línea `maskPhone`, auditado `INTERACTION_LOG_EXPORTED`). **D-046** logs:
+  `name` redactado, `[NOMBRE]` en `scrubText` y prueba estática `no-pii-logs.test.ts`. TLS 1.3
+  solo en nginx: runbook §12.8. La suite admite `flow:` por caso.
 - Tras el corte (D-042, worker): robot sin heartbeat hace 2 min o sesión no `ACTIVE`
   (`offlineRobots`, `conversation/robot-online.ts`) → sin reactivación ni cierre por inactividad; la
   reactivación sigue aunque el último envío quedó `UNCERTAIN`/`FAILED` (las fallidas no la agotan).

@@ -389,13 +389,56 @@ export class ConversationEngine {
       }
       // Con la marca de nota de voz, EXPLICIT_YES (anclado) nunca coincide: solo vale escrito.
       if (EXPLICIT_YES.test(text) && !(profile.authorizationDeclined && BARE_YES.test(text))) {
-        const consent: TurnAction = {
-          type: 'RECORD_CONSENT',
-          // Hash y versión del texto EXACTO que se mostró (fijados al mostrarlo).
-          textShownHash: profile.authorizationTextHash ?? '',
-          templateVersion: profile.authorizationTemplateVersion ?? 'desconocida',
-          customerReply: text,
-        };
+        // D-044: con dos lecturas, el primer «SÍ» guarda la lectura 1 y muestra la segunda; los
+        // datos se piden solo con el «SÍ» a la segunda.
+        const second = profile.secondReadingShownAt !== undefined;
+        if (agent.flow.consentReadings === 2 && !second) {
+          const shownAt = this.now();
+          const reading2 = T.secondReadingFor(agent, profile.name, shownAt);
+          const p: Profile = {
+            ...profile,
+            secondReadingShownAt: shownAt.toISOString(),
+            secondReadingTemplateVersion: reading2.version,
+            secondReadingTextHash: sha256(reading2.text),
+          };
+          // Un «no» antes de esta lectura ya no aplica: la respuesta nueva es a la segunda.
+          delete p.authorizationDeclined;
+          return result(
+            'AUTORIZACION',
+            p,
+            [
+              {
+                type: 'RECORD_CONSENT',
+                reading: 1,
+                completes: false,
+                textShownHash: profile.authorizationTextHash ?? '',
+                templateVersion: profile.authorizationTemplateVersion ?? 'desconocida',
+                customerReply: text,
+              },
+              send(reading2.text),
+            ],
+            [],
+            'NO_LLM',
+          );
+        }
+        const consent: TurnAction = second
+          ? {
+              type: 'RECORD_CONSENT',
+              reading: 2,
+              completes: true,
+              textShownHash: profile.secondReadingTextHash ?? '',
+              templateVersion: profile.secondReadingTemplateVersion ?? 'desconocida',
+              customerReply: text,
+            }
+          : {
+              type: 'RECORD_CONSENT',
+              reading: 1,
+              completes: true,
+              // Hash y versión del texto EXACTO que se mostró (fijados al mostrarlo).
+              textShownHash: profile.authorizationTextHash ?? '',
+              templateVersion: profile.authorizationTemplateVersion ?? 'desconocida',
+              customerReply: text,
+            };
         // D-013: como los asesores, antes de finalizar se le piden los datos.
         const askData = T.dataRequestFor(agent, profile.name, this.now());
         if (askData) {

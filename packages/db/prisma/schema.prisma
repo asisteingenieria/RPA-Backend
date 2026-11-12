@@ -150,6 +150,8 @@ model ConsentEvidence {
   textShownHash          String // hash del texto de autorización mostrado
   /// Versión de la plantilla legal mostrada (permite reconstruir el texto y su hash).
   templateVersion        String
+  /// D-044: lectura del tratamiento de datos (1 o 2). Entra en el hash solo si es 2.
+  reading                Int      @default(1)
   customerReplyEncrypted Bytes
   acceptedAt             DateTime // hora de Bogotá
   /// Único: la cadena no puede bifurcarse.
@@ -157,6 +159,24 @@ model ConsentEvidence {
   hash                   String   @unique
 
   @@index([conversationId])
+}
+
+/// D-045: pasos del flujo de cada conversación, para el log de auditoría por interacción que pide
+/// Claro (requerimiento 3). Solo inserción y sin datos personales.
+model InteractionStep {
+  id             String   @id @default(cuid())
+  seq            Int      @unique @default(autoincrement())
+  conversationId String
+  /// PERFILAMIENTO | OFERTA | OBJECIONES | LECTURA_DATOS | CAPTURA_DATOS | TRANSFERENCIA |
+  /// CIERRE_SIN_VENTA | SOPORTE | ESCALAMIENTO
+  step           String
+  /// Resultado conocido al registrarlo (RECHAZO: no autorizó); vacío = se deduce al exportar.
+  result         String?
+  /// LECTURA_DATOS: número de lectura (1 o 2).
+  detail         String?
+  at             DateTime @default(now())
+
+  @@index([conversationId, seq])
 }
 
 model RpaSession {

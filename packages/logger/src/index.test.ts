@@ -45,4 +45,22 @@ describe('logger', () => {
     expect(out).toContain('c1');
     expect(JSON.parse(out).name).toBe('test');
   });
+
+  it('D-046: la clave name del objeto no sale en claro; el nombre del logger sí', () => {
+    const { lines, stream } = capture();
+    createLogger('robot', { level: 'info' }, stream).info({ name: 'Pedro Pruebas', chatId: 'c1' });
+    const out = lines.join('');
+    expect(out).not.toContain('Pedro');
+    expect(JSON.parse(out).name).toBe('robot');
+    expect(JSON.parse(out).nameRedacted).toBe('[REDACTED]');
+  });
+
+  it('D-046: enmascara el nombre que da el cliente en texto libre', () => {
+    expect(scrubText('hola, me llamo Pedro Pruebas Sintético')).toBe('hola, me llamo [NOMBRE]');
+    expect(scrubText('Mi nombre completo es ana maría lópez')).toBe(
+      'Mi nombre completo es [NOMBRE]',
+    );
+    expect(scrubText('nombre: Juan Pérez, cc 1020304050')).toBe('nombre: [NOMBRE], cc [NUM]');
+    expect(scrubText('el plan de 52.900 incluye redes')).toBe('el plan de 52.900 incluye redes');
+  });
 });

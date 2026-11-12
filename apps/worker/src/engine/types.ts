@@ -52,6 +52,13 @@ export interface Profile {
   /** Versión de la plantilla legal y hash del texto exacto mostrado (evidencia, sección 8). */
   authorizationTemplateVersion?: string;
   authorizationTextHash?: string;
+  /**
+   * D-044: segunda lectura del tratamiento de datos mostrada (tras el primer «SÍ»): hora, versión
+   * de la plantilla y hash del texto exacto (evidencia de la lectura 2).
+   */
+  secondReadingShownAt?: string;
+  secondReadingTemplateVersion?: string;
+  secondReadingTextHash?: string;
   /** D-003: el cliente no autorizó y se le ofreció un asesor (siguiente respuesta: sí/no). */
   authorizationDeclined?: boolean;
   /** D-003: se le enviaron los canales de soporte y el chat sigue abierto en el menú. */
@@ -139,6 +146,10 @@ export type TurnAction =
   | { type: 'ALERT'; code: 'CUSTOMER_THREAT' }
   | {
       type: 'RECORD_CONSENT';
+      /** D-044: lectura del tratamiento de datos a la que responde (1 o 2). */
+      reading: 1 | 2;
+      /** Última lectura que pide el flujo: con ella queda autorizada la venta. */
+      completes: boolean;
       textShownHash: string;
       templateVersion: string;
       customerReply: string;

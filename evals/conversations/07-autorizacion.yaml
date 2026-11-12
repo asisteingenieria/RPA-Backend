@@ -78,3 +78,23 @@ cases:
         'SÍ AUTORIZO',
       ]
     expect: { finalStage: TRANSFERENCIA, sale: true }
+  # D-044: con dos lecturas, el primer «SÍ» muestra la segunda y solo el segundo pide los datos.
+  - id: aut-dos-lecturas-01
+    flow: { consentReadings: 2 }
+    turns: ['Hola', 'B', 'Mónica', 'uso diario', 'Instagram', 'lo tomo', 'SÍ AUTORIZO', 'SI']
+    expect: { finalStage: TRANSFERENCIA, sale: true, required: ['Para confirmar'] }
+  - id: aut-dos-lecturas-no-01
+    flow: { consentReadings: 2 }
+    turns:
+      [
+        'Hola',
+        'B',
+        'Mónica',
+        'uso diario',
+        'Instagram',
+        'lo tomo',
+        'SÍ AUTORIZO',
+        'No',
+        'no gracias',
+      ]
+    expect: { finalStage: CIERRE_SIN_VENTA, sale: false, required: ['Para confirmar'] }
