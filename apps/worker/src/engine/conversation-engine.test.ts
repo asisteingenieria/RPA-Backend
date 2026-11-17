@@ -508,21 +508,30 @@ describe('13/10/2026: la venta pasa al backoffice cuando están los datos del cl
     expect(note).not.toContain('Faltó');
   });
 
-  it('tras 3 mensajes seguidos sin datos nuevos transfiere igual (la venta no se pierde)', async () => {
+  it('D-048: sin datos sigue pidiéndolos (sin tope) y nunca transfiere incompleto', async () => {
     let st = pidio;
-    for (const t of ['¿para qué?', 'ok', 'después']) {
+    const noData = [
+      '¿para qué?',
+      'ok',
+      'después',
+      '[imagen del cliente] Un sticker de un hombre con gafas de sol',
+      'ya te los mando',
+      'mmm',
+    ];
+    for (const t of noData) {
       const r = await turn(st, t);
-      if (t === 'después') {
-        expect(r.stage).toBe('TRANSFERENCIA');
-        const note = (
-          r.actions.find((a) => a.type === 'TRANSFER_BACKOFFICE') as { saleDataNote?: string }
-        ).saleDataNote!;
-        expect(note).toContain('Faltó:');
-      } else {
-        expect(r.stage).toBe('AUTORIZACION');
-      }
+      expect(r.stage).toBe('AUTORIZACION');
+      expect(r.actions.some((a) => a.type === 'TRANSFER_BACKOFFICE')).toBe(false);
+      expect(sent(r)[0]).toContain('me falta');
       st = next(st, r);
     }
+    // Cuando por fin los manda, pasa al backoffice con todo.
+    const r = await turn(st, '1020304050, Ana María Pérez, ana@correo.com');
+    expect(r.stage).toBe('TRANSFERENCIA');
+    const note = (
+      r.actions.find((a) => a.type === 'TRANSFER_BACKOFFICE') as { saleDataNote?: string }
+    ).saleDataNote!;
+    expect(note).not.toContain('Faltó');
   });
 
   it('con el flujo sin datos requeridos transfiere con la primera respuesta (como antes)', async () => {

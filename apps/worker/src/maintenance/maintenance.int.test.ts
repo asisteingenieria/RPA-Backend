@@ -126,7 +126,7 @@ describe('cierre por inactividad', () => {
     expect(await tagOf('CH-T2')).toBe('NO_VENTA_ABANDONA');
   });
 
-  it('D-013: una venta ya autorizada que se queda callada NO se cierra: pasa al backoffice', async () => {
+  it('D-048: una venta autorizada sin datos que se queda callada se cierra SIN venta', async () => {
     const now = new Date();
     const sold = await conv('CH-9', new Date(now.getTime() - 3 * HOUR), 'WAITING_CONSENT');
     await db.prisma.sale.create({
@@ -145,12 +145,18 @@ describe('cierre por inactividad', () => {
       select: { id: true, status: true },
     });
     const s = new Map(rows.map((x) => [x.id, x.status]));
-    expect(s.get(sold.id)).toBe('TRANSFERRING');
+    expect(s.get(sold.id)).toBe('CLOSED_INACTIVE');
     expect(s.get(other.id)).toBe('CLOSED_INACTIVE');
+    // No hubo venta: la fila se borra (no cuenta en las métricas).
+    expect(await db.prisma.sale.findUnique({ where: { conversationId: sold.id } })).toBeNull();
     const events = await db.prisma.outboxEvent.findMany();
     expect(
       events.find((e) => (e.payload as { abayaChatId: string }).abayaChatId === 'CH-9'),
-    ).toMatchObject({ type: 'TransferRequested', payload: { target: 'BACKOFFICE' } });
+    ).toMatchObject({
+      type: 'ConversationClosed',
+      payload: { reason: 'INACTIVE', tag: 'NO_VENTA_ABANDONA' },
+    });
+    expect(events.some((e) => e.type === 'TransferRequested')).toBe(false);
     expect(
       events.find((e) => (e.payload as { abayaChatId: string }).abayaChatId === 'CH-10'),
     ).toMatchObject({ type: 'ConversationClosed', payload: { reason: 'INACTIVE' } });

@@ -290,7 +290,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
     const logError = (msg: string) => (err: unknown) =>
       this.logger.error({ err: err instanceof Error ? err.name : 'unknown' }, msg);
     // D-013: si el cliente deja de responder, plantillas de reactivación de la versión publicada
-    // y, agotadas, cierre por inactividad (una venta ya autorizada pasa al backoffice).
+    // y, agotadas, cierre por inactividad (D-048: una venta sin datos se cierra sin venta).
     const reactivate = async () => {
       if (await pause.isPaused()) return;
       const agent = agentSource.get();
@@ -302,7 +302,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
       });
       if (r.sent) this.logger.info({ sent: r.sent }, 'reactivación enviada');
       if (r.exhausted.length) {
-        const n = await closeInactive(prisma, now, 0, r.exhausted);
+        const n = await closeInactive(prisma, now, 0, r.exhausted, this.logger);
         if (n) this.logger.info({ closed: n }, 'conversaciones cerradas tras la reactivación');
       }
     };
@@ -319,7 +319,7 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
         // Pausados no se cierra nada: el cliente pudo escribir y el robot no podía responder.
         void pause.isPaused().then((paused) => {
           if (paused) return;
-          return closeInactive(prisma, new Date(), cfg.INACTIVITY_MINUTES)
+          return closeInactive(prisma, new Date(), cfg.INACTIVITY_MINUTES, undefined, this.logger)
             .then(
               (n) =>
                 n && this.logger.info({ closed: n }, 'conversaciones cerradas por inactividad'),

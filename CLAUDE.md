@@ -214,8 +214,9 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
 - Datos tras el «SÍ» (13/10/2026): la venta pasa al backoffice cuando están los datos del flujo
   (`saleData`: documento, nombre completo y correo); se reconocen en código (`sale-data.ts`) y lo que
   falta se pide con la plantilla `DATOS_FALTANTES` solo cuando el cliente deja de escribir
-  (`saleDataWaitSeconds`, 45 s; mientras manda datos el robot calla); 3 mensajes sin datos nuevos →
-  transfiere igual.
+  (`saleDataWaitSeconds`, 45 s; mientras manda datos el robot calla). D-048: sin tope de
+  recordatorios; nunca pasa una venta sin datos: si el cliente se queda callado, se cierra sin venta
+  (`closeInactive` borra la `Sale`; el consentimiento queda).
 - Proceso según el operador (D-021): A + Claro prepago → Migración en el mismo turno (se vuelve a
   generar con sus planes); A + Claro pospago → plantilla `YA_POSPAGO` y vuelve al menú; B + otro
   operador → Portabilidad. El modelo solo extrae `lineType`; lo decide el código con
