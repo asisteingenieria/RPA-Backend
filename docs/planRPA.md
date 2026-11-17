@@ -648,6 +648,10 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   pide WIN, Disney+ o Netflix, en cuanto se sabe su proceso se salta el perfil y la primera oferta es
   la circular de esa plataforma (flujo `platformRequest`). Qué decir si no la acepta va en el guion.
   Detalle en `docs/DECISIONS.md` (D-022).
+- **D-048 (17/11/2026): tras el «SÍ», insistir por los datos.** El robot pide lo que falta
+  (`DATOS_FALTANTES`) mientras el cliente escriba, sin tope; la venta pasa al backoffice solo con
+  todos los datos. Si el cliente se queda callado y se agota la reactivación, se cierra sin venta
+  (se borra la `Sale`; el consentimiento queda). Detalle en `docs/DECISIONS.md` (D-048).
 - **D-047 (17/11/2026): notas de voz e imágenes del cliente.** El robot descarga el adjunto
   (enlace SAS de Azure Blob, solo https, 5 MB) y lo sube a la pasarela; el worker transcribe el
   audio (D-010) o describe la imagen con Gemini, sin datos personales, y el motor recibe el texto

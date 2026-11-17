@@ -22,8 +22,11 @@ export async function conversationsWithPendingInbound(prisma: PrismaClient): Pro
  * nada pendiente (o, con `ids`, las que ya agotaron la reactivación, D-013). El cierre en Abaya
  * lo hace el rpa al consumir el evento.
  *
- * D-013: si el cliente ya autorizó (hay venta) y se quedó callado al pedirle los datos, la
- * venta NO se cierra: se finaliza y pasa al backoffice, que lo contacta.
+ * D-048 (reemplaza a D-013 en este punto): si el cliente ya autorizó (hay venta) y se quedó
+ * callado al pedirle los datos, la conversación se cierra SIN venta: una conversación abierta con
+ * venta siempre tiene datos incompletos (completos, el robot transfiere en el mismo turno), y una
+ * venta sin datos no pasa al backoffice. La fila `Sale` se borra en la misma transacción (no cuenta
+ * en las métricas); la evidencia del consentimiento queda intacta.
  *
  * D-042: las de robots sin conexión no se cierran (corte de red: el cliente pudo escribir y el
  * robot no lo ve); se revisan cuando el robot vuelve.
@@ -33,6 +36,7 @@ export async function closeInactive(
   now: Date,
   minutes: number,
   ids?: readonly string[],
+  logger?: Logger,
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - minutes * 60_000);
   const candidates = await prisma.conversation.findMany({
@@ -57,6 +61,7 @@ export async function closeInactive(
     },
   });
   let closed = 0;
+  let unsold = 0;
   const offline = candidates.length ? await offlineRobots(prisma, now) : new Set<string>();
   for (const c of candidates) {
     if (offline.has(c.robotUser)) continue;
@@ -69,12 +74,14 @@ export async function closeInactive(
           status: { in: [...OPEN_STATUSES] },
           messages: { none: { direction: 'INBOUND', processedAt: null } },
         },
-        data: sold
-          ? { status: 'TRANSFERRING', stage: 'TRANSFERENCIA' }
-          : { status: 'CLOSED_INACTIVE' },
+        data: { status: 'CLOSED_INACTIVE' },
       });
       if (r.count === 0) return;
       closed++;
+      if (sold) {
+        await tx.sale.delete({ where: { conversationId: c.id } });
+        unsold++;
+      }
       const base = {
         conversationId: c.id,
         abayaChatId: c.abayaChatId,
@@ -82,20 +89,20 @@ export async function closeInactive(
         afterMessageIds: [],
       };
       await tx.outboxEvent.create({
-        data: sold
-          ? { type: 'TransferRequested', payload: { ...base, target: 'BACKOFFICE' } }
-          : {
-              type: 'ConversationClosed',
-              // D-025: si el modelo ya tipificó la conversación, esa; si no, «abandona».
-              payload: {
-                ...base,
-                reason: 'INACTIVE',
-                tag: isCloseTag(c.closeTag) ? c.closeTag : 'NO_VENTA_ABANDONA',
-              },
-            },
+        data: {
+          type: 'ConversationClosed',
+          // D-025: si el modelo ya tipificó la conversación, esa; si no, «abandona».
+          payload: {
+            ...base,
+            reason: 'INACTIVE',
+            tag: isCloseTag(c.closeTag) ? c.closeTag : 'NO_VENTA_ABANDONA',
+          },
+        },
       });
     });
   }
+  // D-048: sin datos personales; solo cuántas.
+  if (unsold) logger?.info({ count: unsold }, 'venta sin datos: cerrada sin venta');
   return closed;
 }
 

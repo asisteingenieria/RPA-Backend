@@ -113,8 +113,6 @@ const WANTS_ADVISOR =
   /^\s*(s[ií]|claro|dale|ok|okay|bueno|de\s+acuerdo|por\s+favor|s[ií]\s*,?\s*(por\s+favor|gracias|quiero|me\s+gustar[ií]a)|quiero(\s+un\s+asesor)?)\s*[.!]*\s*$/i;
 const NO_ADVISOR =
   /^\s*(no|no\s+gracias|no\s+quiero|no\s+por\s+ahora|no\s+es\s+necesario)\s*[.!]*\s*$/i;
-/** Mensajes seguidos sin datos nuevos tras pedirlos: luego se transfiere con lo que haya. */
-const MAX_DATA_REMINDERS = 3;
 
 /**
  * D-018: amenazas de violencia (bomba, atentado, matar, disparar…). Solo levantan una alerta a
@@ -331,15 +329,15 @@ export class ConversationEngine {
 
     // D-013: ya autorizó y se le pidieron los datos. 13/10/2026: la venta pasa al backoffice
     // cuando están los que pide el flujo (pueden llegar en varios mensajes); mientras falten, se
-    // piden con la plantilla DATOS_FALTANTES. Tras 3 mensajes seguidos sin datos nuevos se
-    // transfiere igual con lo que haya: una venta autorizada no se pierde (el backoffice completa).
+    // piden con la plantilla DATOS_FALTANTES. D-048: sin tope de recordatorios: nunca pasa sin los
+    // datos (si el cliente se queda callado, la inactividad la cierra sin venta).
     // D-023: lo mismo con los datos para validar una portabilidad (pasa como caso de servicio).
     if ((stage === 'AUTORIZACION' && profile.dataRequested) || validating) {
       const merged = mergeSaleData(profile, extractSaleData(plain));
       const p = merged.profile;
       const missing = agent.flow.saleData.filter((f) => !hasSaleData(p, f));
       const reminders = merged.gotNew ? 0 : Number(p.dataReminders ?? '0') + 1;
-      if (!missing.length || reminders >= MAX_DATA_REMINDERS) {
+      if (!missing.length) {
         delete p.dataReminders;
         if (validating) return portabilityTransfer(agent, p, this.now());
         return result(
@@ -1613,7 +1611,7 @@ const PORTABILITY_YES =
   /^\s*(s[ií](?![a-záéíóúñ])|claro\b|ya\b|correcto\b|afirmativo\b|me\s+lleg[oó]|me\s+confirmaron)/i;
 
 /**
- * D-023: no recibió la confirmación y ya están sus datos (o los recordatorios se agotaron): pasa al
+ * D-023: no recibió la confirmación y ya están sus datos (D-048: solo completos): pasa al
  * backoffice con «Finalizar» como caso de servicio (no es una venta), con los datos en el resumen.
  */
 function portabilityTransfer(agent: AgentConfig, p: Profile, now: Date): TurnResult {

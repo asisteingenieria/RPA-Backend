@@ -1,5 +1,35 @@
 # Decisiones de diseño
 
+## D-048 · Tras el «SÍ», el robot insiste por los datos y nunca pasa una venta sin ellos · APROBADA — implementada en local
+
+**Contexto (17/11/2026, prueba en producción, caso 2224206016).** El cliente autorizó el
+tratamiento de datos, el robot le pidió documento, nombre completo y correo, y el cliente respondió
+con mensajes sin datos (el último, un sticker). Con la regla del 13/10/2026 («3 mensajes seguidos sin
+datos nuevos → se transfiere igual») el robot hizo «Finalizar» y pasó al backoffice una venta sin
+ningún dato. Con D-047 esto pasa más rápido: la descripción de una imagen nunca copia números de
+documento (a propósito), así que un sticker o la foto de la cédula cuentan como «mensaje sin datos».
+El usuario pidió que el robot insista y que nunca transfiera sin los datos.
+
+**Decisión.**
+
+1. Mientras el cliente escriba, el robot **sigue pidiendo lo que falta** con `DATOS_FALTANTES`, sin
+   tope de mensajes. Se quita el límite de 3 recordatorios (`MAX_DATA_REMINDERS`). La venta pasa al
+   backoffice solo con todos los datos del flujo (`AgentFlow.saleData`). Igual para los datos de la
+   validación de una portabilidad (D-023).
+2. Si el cliente **deja de responder**, sigue la reactivación (D-013, 3 intentos). Agotada, o por
+   inactividad, la conversación **se cierra sin venta** (`CLOSED_INACTIVE`, etiqueta
+   `NO_VENTA_ABANDONA` o la que tipificó el modelo), en lugar de pasar incompleta al backoffice como
+   decía D-013. Una conversación abierta con venta siempre tiene datos incompletos: con los datos
+   completos el robot transfiere en el mismo turno.
+3. Al cerrar así, la fila `Sale` de esa conversación **se borra** (en la misma transacción): no hubo
+   venta y no debe contar en las métricas. La evidencia del consentimiento (`ConsentEvidence`,
+   cadena de hashes) **no se toca**. Queda en el log `venta sin datos: cerrada sin venta`.
+4. Si el cliente vuelve a escribir después del cierre, la conversación se reabre como hoy (D-037) y
+   el flujo vuelve a empezar.
+
+**Reemplaza** el ajuste del 13/10/2026 de D-013 en dos puntos: «tras 3 mensajes sin datos se
+transfiere igual» y «una venta autorizada que se queda callada pasa al backoffice».
+
 ## D-047 · Notas de voz e imágenes del cliente: el robot las descarga y el servidor las entiende · APROBADA — implementada en local
 
 **Contexto (17/11/2026, producción).** En el caso 2222230051 el cliente mandó dos notas de voz y una
@@ -1180,7 +1210,8 @@ completo y correo; el celular es opcional). Pueden llegar en mensajes separados:
 reconoce sin el modelo (`apps/worker/src/engine/sale-data.ts`) y, mientras falten, pide lo que falta
 con la plantilla del sistema `DATOS_FALTANTES` (variable `{datos_faltantes}`). Tras 3 mensajes
 seguidos sin datos nuevos se transfiere igual, para no perder una venta autorizada, y el resumen dice
-qué faltó. Los datos van cifrados en el perfil y se agregan al resumen cifrado de la venta.
+qué faltó. **Cambiado por D-048 (17/11/2026):** el robot insiste sin tope y, sin datos, la
+conversación se cierra sin venta. Los datos van cifrados en el perfil y se agregan al resumen cifrado de la venta.
 Mientras el cliente va mandando sus datos el robot **no responde**: los mensajes quedan pendientes y,
 cuando deja de escribir (`AgentFlow.saleDataWaitSeconds`, 45 s por defecto, entre 10 y 90 para no
 cruzarse con el «dame un momento» de D-009 a los 120 s), los revisa juntos: si están todos transfiere
