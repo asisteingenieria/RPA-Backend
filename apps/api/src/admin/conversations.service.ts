@@ -589,10 +589,11 @@ export class ConversationsService {
         // D-014 fase 2: imagen de planes; `text` es su pie de foto. null si la versión se purgó.
         ...(m.imageId ? { image: images.get(m.imageId) ?? null } : {}),
         // D-010: nota de voz del cliente; `text` es su transcripción. El audio nunca sale.
-        ...(m.mediaKind === 'AUDIO'
+        // D-047: imagen del cliente; `text` es su descripción. La imagen tampoco sale.
+        ...(m.mediaKind
           ? {
               media: {
-                kind: 'AUDIO' as const,
+                kind: m.mediaKind,
                 durationSec: m.mediaDurationSec,
                 transcriptStatus: m.transcriptStatus ?? 'FAILED',
                 transcriptMs: m.transcriptMs,

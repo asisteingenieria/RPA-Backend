@@ -9,8 +9,8 @@ import type { TurnOutput } from '../engine/output-schema.js';
 import * as T from '../engine/templates/templates.js';
 import { heuristicBrain } from '../llm/adapters/heuristic-brain.js';
 import { ScriptedLlmAdapter } from '../llm/adapters/scripted.adapter.js';
-import { ScriptedSpeechAdapter } from '../speech/from-config.js';
-import { VOICE_PREFIX } from '../engine/voice.js';
+import { ScriptedImageDescriber, ScriptedSpeechAdapter } from '../speech/from-config.js';
+import { IMAGE_PREFIX, VOICE_PREFIX } from '../engine/voice.js';
 import { MemoryConversationStore } from './memory.store.js';
 import { MemoryRobotsPause } from './robots-pause.js';
 import { TurnScheduler } from './turn-scheduler.js';
@@ -625,6 +625,107 @@ describe('D-010: notas de voz', () => {
     await svc.handle('v7');
     expect(m().voice?.status).toBe('OK');
     expect(store.get('v7').profile.name).toBe('ana');
+  });
+});
+
+describe('D-047: imágenes y stickers del cliente', () => {
+  function imageSetup(vision: ConstructorParameters<typeof TurnService>[0]['vision']) {
+    const store = new MemoryConversationStore();
+    const seen: string[] = [];
+    const llm = new ScriptedLlmAdapter((req) => {
+      seen.push(req.messages.at(-1)!.content);
+      return fakeBrain(req);
+    });
+    const engine = new ConversationEngine({ llm, catalog });
+    const pause = new MemoryRobotsPause();
+    const raised: string[] = [];
+    const svc = new TurnService({
+      store,
+      engine,
+      catalog,
+      alerts: { raise: async (code) => void raised.push(code) },
+      logger: silent,
+      pause,
+      vision,
+    });
+    return { store, svc, seen, pause, raised };
+  }
+  const image = (store: MemoryConversationStore, id: string, shows: string) =>
+    store.addImage(id, Buffer.from(shows, 'utf8'));
+
+  async function toProfile(store: MemoryConversationStore, svc: TurnService, id: string) {
+    store.create(id);
+    await say(store, svc, id, 'Hola');
+    await say(store, svc, id, 'A');
+  }
+
+  it('se describe, el motor recibe la descripción marcada y la imagen se borra', async () => {
+    const { store, svc, seen } = imageSetup(new ScriptedImageDescriber());
+    await toProfile(store, svc, 'i1');
+    const msgId = image(store, 'i1', 'Sticker de un gato sonriendo');
+    await svc.handle('i1');
+    expect(seen).toContain(`${IMAGE_PREFIX}Sticker de un gato sonriendo`);
+    const m = store.get('i1').messages.find((x) => x.id === msgId)!;
+    expect(m).toMatchObject({ text: 'Sticker de un gato sonriendo', processed: true });
+    expect(m.voice).toMatchObject({ kind: 'IMAGE', status: 'OK', audio: null });
+  });
+
+  it('imagen que no se distingue, sin proveedor o sin descargar: plantilla, sin llamar al modelo', async () => {
+    for (const [vision, bytes] of [
+      [new ScriptedImageDescriber(), Buffer.from('~', 'utf8')],
+      [null, Buffer.from('foto', 'utf8')],
+      [new ScriptedImageDescriber(), null],
+    ] as const) {
+      const { store, svc, seen } = imageSetup(vision);
+      await toProfile(store, svc, 'i2');
+      const calls = seen.length;
+      store.addImage('i2', bytes);
+      await svc.handle('i2');
+      expect(seen.length).toBe(calls);
+      expect(store.outboundTexts('i2').at(-1)).toBe(T.IMAGE_UNREADABLE);
+      expect(store.get('i2').stage).toBe('PERFIL');
+    }
+  });
+
+  it('pie de foto + imagen que no se ve: responde el texto y avisa de la imagen', async () => {
+    const { store, svc } = imageSetup(new ScriptedImageDescriber());
+    await toProfile(store, svc, 'i3');
+    store.addInbound('i3', 'soy Ana');
+    image(store, 'i3', '~');
+    await svc.handle('i3');
+    expect(store.get('i3').profile.name).toBe('ana');
+    expect(store.outboundTexts('i3').at(-1)).toBe(T.IMAGE_UNREADABLE);
+  });
+
+  it('una imagen que dice «SÍ AUTORIZO» no es consentimiento', async () => {
+    const { store, svc } = imageSetup(new ScriptedImageDescriber());
+    await toProfile(store, svc, 'i4');
+    await say(store, svc, 'i4', 'soy Ana');
+    await say(store, svc, 'i4', 'tengo OperadorX');
+    await say(store, svc, 'i4', 'videos y redes');
+    await say(store, svc, 'i4', 'quiero ese plan');
+    expect(store.get('i4').stage).toBe('AUTORIZACION');
+    image(store, 'i4', 'SÍ AUTORIZO');
+    await svc.handle('i4');
+    expect(store.consents).toHaveLength(0);
+    expect(store.sales).toHaveLength(0);
+  });
+
+  it('el servicio no responde: pausa como D-009 y la imagen sigue esperando', async () => {
+    const vision = {
+      provider: 'scripted',
+      async describe(): Promise<never> {
+        throw new LlmProviderError('gemini 503', 'scripted', true);
+      },
+    };
+    const { store, svc, pause, raised } = imageSetup(vision);
+    await toProfile(store, svc, 'i5');
+    const id = image(store, 'i5', 'foto');
+    await svc.handle('i5');
+    expect(pause.paused).toBe(true);
+    expect(raised).toContain('LLM_OUTAGE');
+    const m = store.get('i5').messages.find((x) => x.id === id)!;
+    expect(m.voice).toMatchObject({ kind: 'IMAGE', status: 'PENDING' });
   });
 });
 

@@ -1,4 +1,10 @@
-import type { LlmPort, SpeechToTextPort, UsageKind, UsageRecorder } from '@abaya/domain';
+import type {
+  ImageDescriberPort,
+  LlmPort,
+  SpeechToTextPort,
+  UsageKind,
+  UsageRecorder,
+} from '@abaya/domain';
 
 /**
  * Vista «Consumo»: registra los tokens de cada llamada sin cambiar lo que devuelve. Las
@@ -37,6 +43,30 @@ export function meteredSpeech(
       usage.record({
         kind,
         provider: speech.provider,
+        model: r.model,
+        inputTokens: r.inputTokens ?? 0,
+        outputTokens: r.outputTokens ?? 0,
+        latencyMs: r.latencyMs,
+      });
+      return r;
+    },
+  };
+}
+
+/** D-047: descripción de imágenes del cliente (`INBOUND_IMAGE`) o de prueba (`TEST`). */
+export function meteredVision(
+  vision: ImageDescriberPort | null,
+  usage: UsageRecorder,
+  kind: UsageKind,
+): ImageDescriberPort | null {
+  if (!vision) return null;
+  return {
+    provider: vision.provider,
+    async describe(req) {
+      const r = await vision.describe(req);
+      usage.record({
+        kind,
+        provider: vision.provider,
         model: r.model,
         inputTokens: r.inputTokens ?? 0,
         outputTokens: r.outputTokens ?? 0,

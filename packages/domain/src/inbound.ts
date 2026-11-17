@@ -1,13 +1,19 @@
 export type SenderType = 'CUSTOMER' | 'AGENT' | 'SYSTEM';
 
-/** D-010: nota de voz del cliente tal como la anuncia Abaya (el archivo se descarga aparte). */
-export interface InboundAudio {
-  kind: 'AUDIO';
+/**
+ * D-010 / D-047: adjunto del cliente tal como lo anuncia Abaya (el archivo se descarga aparte):
+ * nota de voz (`AUDIO`) o imagen/sticker (`IMAGE`).
+ */
+export interface InboundMedia {
+  kind: 'AUDIO' | 'IMAGE';
   /** Dónde está el archivo en Abaya (URL relativa o absoluta, `blob:` o `data:`). */
   url: string;
   mimeType?: string;
   durationSec?: number;
 }
+
+/** @deprecated nombre anterior a D-047. */
+export type InboundAudio = InboundMedia;
 
 /** Mensaje tal como se leyó de Abaya (por red o por DOM), ya normalizado. */
 export interface InboundMessage {
@@ -19,6 +25,6 @@ export interface InboundMessage {
   occurredAt: Date;
   /** Posición en la conversación (respaldo para la huella cuando no hay id). */
   position?: number;
-  /** D-010: nota de voz (el texto llega vacío o con la duración que pinta Abaya). */
-  media?: InboundAudio;
+  /** D-010: nota de voz (texto vacío); D-047: imagen (el texto es su pie de foto, si trae). */
+  media?: InboundMedia;
 }

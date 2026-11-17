@@ -98,6 +98,8 @@ export const SAFE_FALLBACK = defaultText('RESPUESTA_SEGURA');
 
 /** D-010: nota de voz que no se pudo transcribir (ruido, muy larga, sin audio, error). */
 export const VOICE_UNREADABLE = defaultText('NOTA_DE_VOZ_ILEGIBLE');
+/** D-047: imagen o sticker que no se pudo ver. */
+export const IMAGE_UNREADABLE = defaultText('IMAGEN_ILEGIBLE');
 
 /** D-010: la autorización queda por escrito; un «sí» en una nota de voz no cuenta. */
 export const CONSENT_IN_WRITING = defaultText('AUTORIZACION_POR_ESCRITO');

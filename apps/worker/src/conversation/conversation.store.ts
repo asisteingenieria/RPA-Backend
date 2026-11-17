@@ -8,8 +8,11 @@ export interface PendingInbound {
   text: string;
   /** Cuándo lo detectó el robot (Message.createdAt, reloj del robot). */
   detectedAt: Date;
-  /** D-010: nota de voz. */
-  voice?: { status: TranscriptStatus; durationSec: number | null };
+  /**
+   * D-010: nota de voz; D-047: imagen (`kind: 'IMAGE'`, `text` = su descripción y `status` el de
+   * la descripción). Sin `kind`, nota de voz.
+   */
+  voice?: { kind?: 'AUDIO' | 'IMAGE'; status: TranscriptStatus; durationSec: number | null };
 }
 
 export interface TurnInput {
@@ -83,7 +86,10 @@ export interface ConversationStore {
    */
   pendingInboundIds(conversationId: string): Promise<string[]>;
   commitTurn(commit: TurnCommit): Promise<{ outboundMessageIds: string[] }>;
-  /** D-010: audio de una nota de voz que espera transcripción (null si ya no está). */
+  /**
+   * D-010: audio de una nota de voz que espera transcripción (null si ya no está). D-047: también
+   * la imagen que espera su descripción.
+   */
   voiceAudio(messageId: string): Promise<{ data: Buffer; mimeType: string } | null>;
   /**
    * D-010: guarda la transcripción (cifrada, como cualquier mensaje) y BORRA el audio. Solo

@@ -180,11 +180,25 @@ export async function createChildBackend(
   const inbound: InboundSink = {
     chatAssigned: async (abayaChatId) =>
       (await call('inbound.chatAssigned', { abayaChatId })) as { created: boolean },
-    store: async (m) =>
-      (await call('inbound.store', { ...m, occurredAt: m.occurredAt.toISOString() })) as {
-        inserted: boolean;
-        conversationCreated: boolean;
-      },
+    store: async ({ media, ...m }) =>
+      media
+        ? // D-010 / D-047: el adjunto va aparte del RPC (tope de 100 KB del JSON).
+          client.uploadInboundMedia(
+            {
+              abayaChatId: m.abayaChatId,
+              fingerprint: m.fingerprint,
+              via: m.via,
+              occurredAt: m.occurredAt.toISOString(),
+              kind: media.kind,
+              ...(media.mimeType ? { mimeType: media.mimeType } : {}),
+              ...(media.durationSec !== null ? { durationSec: media.durationSec } : {}),
+            },
+            media.data ?? Buffer.alloc(0),
+          )
+        : ((await call('inbound.store', { ...m, occurredAt: m.occurredAt.toISOString() })) as {
+            inserted: boolean;
+            conversationCreated: boolean;
+          }),
   };
 
   return {

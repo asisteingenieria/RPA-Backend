@@ -32,7 +32,8 @@ const posterId = z.union([z.number(), z.string().max(64)]);
 
 /**
  * D-010: adjunto. El enlace es un SAS de Azure Blob que se descarga sin la sesión. `MimeType`
- * libre para no descartar el mensaje si trae otro adjunto: solo `audio/*` es nota de voz.
+ * libre para no descartar el mensaje si trae otro adjunto: `audio/*` es nota de voz e `image/*`
+ * imagen o sticker (D-047); los demás (PDF, video) se ignoran.
  */
 const attachmentSchema = z.object({
   MimeType: z.string().max(100).nullish(),
@@ -73,15 +74,22 @@ function sender(m: YMessage): SenderType {
   return m.ReplySource === REPLY_SOURCE_AGENT ? 'AGENT' : 'SYSTEM';
 }
 
-function audioOf(m: YMessage): InboundMessage['media'] | undefined {
-  const a = m.Attachments?.find((x) => x.MimeType?.toLowerCase().startsWith('audio/'));
-  const url = a?.Parameters?.AzureStorageUrlAttachment ?? a?.Url;
-  if (!a || !url) return undefined;
-  return { kind: 'AUDIO', url, ...(a.MimeType ? { mimeType: a.MimeType } : {}) };
+/**
+ * D-010: nota de voz (`audio/*`); D-047: si no hay audio, imagen o sticker (`image/*`). Un
+ * mensaje lleva un adjunto en WhatsApp; con varios, manda el audio.
+ */
+function mediaOf(m: YMessage): InboundMessage['media'] | undefined {
+  for (const kind of ['AUDIO', 'IMAGE'] as const) {
+    const prefix = kind === 'AUDIO' ? 'audio/' : 'image/';
+    const a = m.Attachments?.find((x) => x.MimeType?.toLowerCase().startsWith(prefix));
+    const url = a?.Parameters?.AzureStorageUrlAttachment ?? a?.Url;
+    if (a && url) return { kind, url, ...(a.MimeType ? { mimeType: a.MimeType } : {}) };
+  }
+  return undefined;
 }
 
 function toInbound(caseId: string, m: YMessage, position: number): InboundMessage {
-  const media = sender(m) === 'CUSTOMER' ? audioOf(m) : undefined;
+  const media = sender(m) === 'CUSTOMER' ? mediaOf(m) : undefined;
   return {
     abayaChatId: caseId,
     messageId: m.ID,

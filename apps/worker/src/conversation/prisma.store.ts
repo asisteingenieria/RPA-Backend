@@ -2,6 +2,7 @@ import { GENESIS_HASH, chainHash, sha256, type FieldCipher } from '@abaya/crypto
 import { withSerializableRetry, type PrismaClient } from '@abaya/db';
 import {
   audioAad,
+  IMAGE_PLACEHOLDER,
   consentAad,
   inboundAad,
   outboundAad,
@@ -11,7 +12,7 @@ import {
   type Stage,
 } from '@abaya/domain';
 import type { ChatTurnMessage, Profile } from '../engine/types.js';
-import { asVoice } from '../engine/voice.js';
+import { asImage, asVoice } from '../engine/voice.js';
 import type {
   ConversationStore,
   TranscriptResult,
@@ -51,10 +52,15 @@ export class PrismaConversationStore implements ConversationStore {
     const history: ChatTurnMessage[] = recent.reverse().map((m) => ({
       role: m.direction === 'INBOUND' ? 'customer' : 'bot',
       // D-010: el modelo ve que esa parte del historial fue una nota de voz transcrita.
+      // D-047: igual con la descripción de una imagen.
       text:
         m.mediaKind === 'AUDIO' && m.transcriptStatus === 'OK'
           ? asVoice(this.decryptBody(m))
-          : this.decryptBody(m),
+          : m.mediaKind === 'IMAGE' && m.transcriptStatus === 'OK'
+            ? asImage(this.decryptBody(m))
+            : m.mediaKind === 'IMAGE'
+              ? IMAGE_PLACEHOLDER
+              : this.decryptBody(m),
     }));
     const profile: Profile = c.profileEncrypted
       ? (JSON.parse(this.cipher.decryptString(c.profileEncrypted, profileAad(c.id))) as Profile)
@@ -74,9 +80,10 @@ export class PrismaConversationStore implements ConversationStore {
         id: m.id,
         text: this.decryptBody(m),
         detectedAt: m.createdAt,
-        ...(m.mediaKind === 'AUDIO'
+        ...(m.mediaKind
           ? {
               voice: {
+                kind: m.mediaKind,
                 status: m.transcriptStatus ?? 'FAILED',
                 durationSec: m.mediaDurationSec,
               },

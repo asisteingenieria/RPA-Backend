@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type { CatalogRecordData } from '@abaya/knowledge';
 import { MemoryCatalog, toPlan, type Plan } from '../catalog/catalog.js';
 import { MemoryConversationStore } from '../conversation/memory.store.js';
-import { ScriptedSpeechAdapter } from '../speech/from-config.js';
+import { ScriptedImageDescriber, ScriptedSpeechAdapter } from '../speech/from-config.js';
 import { TurnService } from '../conversation/turn.service.js';
 import {
   ConversationEngine,
@@ -32,6 +32,12 @@ import {
  * transcripción simulada). `🎤 ~` = audio que no se entiende.
  */
 export const VOICE_TURN = '🎤';
+
+/**
+ * D-047: un turno que empieza con 📷 es una imagen o sticker; lo que sigue es su descripción
+ * simulada. `📷 ~` = imagen que no se distingue.
+ */
+export const IMAGE_TURN = '📷';
 
 const caseSchema = z.object({
   id: z.string(),
@@ -75,8 +81,17 @@ export interface CaseResult {
   latencies: number[];
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Turnos en que el proveedor no respondió (timeout, 429, 5xx: D-009). Se reintentan como al
+   * reanudar los robots; si aun así no responde, el caso falla por el proveedor, no por el modelo.
+   */
+  outages: number;
   transcript: { role: 'cliente' | 'bot'; text: string }[];
 }
+
+/** Reintentos de un turno cuyo proveedor no respondió, y la espera entre ellos. */
+export const OUTAGE_RETRIES = 3;
+const OUTAGE_RETRY_MS = 3_000;
 
 // ---------- carga ----------
 
@@ -146,7 +161,13 @@ function stripTemplates(text: string, now: Date, plans: Plan[], agent?: AgentCon
   for (const f of fixed) t = t.split(f).join(' ');
   // Plantillas con el nombre del cliente (D-003): transferencia, no autoriza y asesor.
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  for (const role of ['TRANSFERENCIA', 'NO_AUTORIZA', 'ASESOR_TRAS_NO_AUTORIZAR'] as const) {
+  // D-044: también la segunda lectura (cita la Ley 1581 de 2012: cifras del texto legal).
+  for (const role of [
+    'TRANSFERENCIA',
+    'NO_AUTORIZA',
+    'ASESOR_TRAS_NO_AUTORIZAR',
+    'SEGUNDA_LECTURA',
+  ] as const) {
     const full = T.systemText(cfg, role, 'Ana', now);
     const at = full.indexOf('Ana');
     if (at < 0) continue;
@@ -226,6 +247,8 @@ export interface RunOptions {
   /** v1.9: documentos de los Brains (contexto completo y búsqueda) que ve el modelo. */
   knowledge?: TurnKnowledge;
   concurrency?: number;
+  /** Espera base entre reintentos de un turno sin proveedor (pruebas: 0). */
+  outageRetryMs?: number;
   /** D-004: avance (casos terminados / total) para mostrarlo en el panel. */
   onProgress?: (done: number, total: number) => Promise<void> | void;
   /** D-004: se consulta entre casos; false = cancelar (la versión ya no se está evaluando). */
@@ -252,11 +275,22 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     ...(agent ? { agentConfig: () => agent } : {}),
     ...(o.knowledge ? { knowledge: o.knowledge } : {}),
   });
+  // D-009: en producción una caída del proveedor pausa los robots y, al reanudar, se responden los
+  // mismos mensajes. Aquí se cuenta y el turno se reintenta; sin esto, el mensaje se juntaba con el
+  // siguiente y el caso fallaba por la red, no por el modelo.
+  let outages = 0;
   const svc = new TurnService({
     store,
     engine,
     catalog,
+    pause: {
+      isPaused: async () => false,
+      pauseAll: async () => {
+        outages++;
+      },
+    },
     speech: new ScriptedSpeechAdapter(),
+    vision: new ScriptedImageDescriber(),
     alerts: { raise: async () => undefined },
     logger: createLogger('evals', { level: 'silent' }),
     now: () => now,
@@ -266,12 +300,19 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
   const say = async (turn: string) => {
     if (turn.startsWith(VOICE_TURN)) {
       store.addVoice(c.id, Buffer.from(turn.slice(VOICE_TURN.length).trim(), 'utf8'), 10);
+    } else if (turn.startsWith(IMAGE_TURN)) {
+      store.addImage(c.id, Buffer.from(turn.slice(IMAGE_TURN.length).trim(), 'utf8'));
     } else {
       store.addInbound(c.id, turn);
     }
     transcript.push({ role: 'cliente', text: turn });
     const before = store.outboundTexts(c.id).length;
-    await svc.handle(c.id);
+    for (let attempt = 0; ; attempt++) {
+      const down = outages;
+      await svc.handle(c.id);
+      if (outages === down || attempt >= OUTAGE_RETRIES) break;
+      await new Promise((r) => setTimeout(r, (o.outageRetryMs ?? OUTAGE_RETRY_MS) * (attempt + 1)));
+    }
     for (const t of store.outboundTexts(c.id).slice(before))
       transcript.push({ role: 'bot', text: t });
   };
@@ -286,6 +327,9 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
   const conv = store.get(c.id);
   const sale = store.sales.length > 0;
   const failures: string[] = [];
+  // Solo cuenta lo que quedó sin responder por una caída (los datos tras el «SÍ» también esperan).
+  const lost = outages ? (await store.pendingInboundIds(c.id)).length : 0;
+  if (lost) failures.push(`PROVEEDOR: ${lost} mensajes sin responder (el proveedor no respondió)`);
   const e = c.expect;
   if (e.finalStage && conv.stage !== e.finalStage)
     failures.push(`estado final ${conv.stage} ≠ ${e.finalStage}`);
@@ -341,6 +385,7 @@ export async function runCase(c: EvalCase, o: RunOptions): Promise<CaseResult> {
     latencies: store.llmCalls.map((x) => x.latencyMs),
     inputTokens: store.llmCalls.reduce((a, x) => a + x.inputTokens, 0),
     outputTokens: store.llmCalls.reduce((a, x) => a + x.outputTokens, 0),
+    outages,
     transcript,
   };
 }
@@ -390,6 +435,8 @@ export interface SuiteSummary {
   cases: number;
   passed: number;
   invented: number;
+  /** Turnos en que el proveedor no respondió (D-009), reintentados. */
+  outages: number;
   regenRate: string;
   fallbackRate: string;
   p50: number;
@@ -413,6 +460,7 @@ export function summarize(results: CaseResult[], provider: string): SuiteSummary
     cases: rs.length,
     passed: rs.filter((r) => r.passed).length,
     invented: rs.filter((r) => r.invented).length,
+    outages: rs.reduce((a, r) => a + (r.outages ?? 0), 0),
     regenRate: pct(
       rs.reduce((a, r) => a + r.regenerated + r.fallbacks, 0),
       calls,
@@ -440,13 +488,13 @@ export function gateFailures(s: SuiteSummary): string[] {
 export function report(results: CaseResult[], providers: string[]): string {
   const lines = ['# Reporte de evaluación del motor', '', `Fecha: ${new Date().toISOString()}`, ''];
   lines.push(
-    '| Proveedor | Correctos | Datos inventados (meta 0) | Regeneración | Fallback | Latencia p50 | p95 | Costo/conv. (USD) |',
+    '| Proveedor | Correctos | Datos inventados (meta 0) | Regeneración | Fallback | Turnos sin proveedor | Latencia p50 | p95 | Costo/conv. (USD) |',
   );
-  lines.push('|---|---|---|---|---|---|---|---|');
+  lines.push('|---|---|---|---|---|---|---|---|---|');
   for (const p of providers) {
     const s = summarize(results, p);
     lines.push(
-      `| ${p} | ${s.passed}/${s.cases} (${pct(s.passed, s.cases)}) | ${s.invented} (${pct(s.invented, s.cases)}) | ${s.regenRate} | ${s.fallbackRate} | ${s.p50} ms | ${s.p95} ms | ${s.costPerConversation.toFixed(4)} |`,
+      `| ${p} | ${s.passed}/${s.cases} (${pct(s.passed, s.cases)}) | ${s.invented} (${pct(s.invented, s.cases)}) | ${s.regenRate} | ${s.fallbackRate} | ${s.outages} | ${s.p50} ms | ${s.p95} ms | ${s.costPerConversation.toFixed(4)} |`,
     );
   }
   lines.push('', '## Por grupo', '', '| Proveedor | Grupo | Correctos |', '|---|---|---|');

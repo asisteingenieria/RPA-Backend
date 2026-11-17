@@ -1,5 +1,6 @@
 import type { LlmRequest } from '@abaya/domain';
 import type { TurnOutput } from '../../engine/output-schema.js';
+import { IMAGE_PREFIX } from '../../engine/voice.js';
 
 /**
  * "LLM simulado" por palabras clave: línea base sin red para CI y para probar el runner.
@@ -86,6 +87,15 @@ function turn(req: LlmRequest): TurnOutput {
     });
   if (OUT_OF_SCOPE.test(lower))
     return base({ intent: 'FUERA_DE_ALCANCE', reply: 'Te comunico con un asesor.' });
+  // D-047 (regla 10 del sistema): un sticker o una foto personal no es un dato: se responde breve
+  // y se retoma el paso. Una captura de un plan o un precio sí se atiende como objeción o pregunta.
+  if (text.startsWith(IMAGE_PREFIX) && !/plan|precio|pesos|\bgb\b|captura|factura/.test(lower))
+    return base({
+      intent: 'PREGUNTA',
+      reply: '¡Gracias! 😊 Sigamos: ¿me cuentas lo que te pregunté?',
+    });
+  if (text.startsWith(IMAGE_PREFIX) && stage !== 'MENU' && stage !== 'PERFIL')
+    return base({ intent: 'OBJECION', reply: 'Entiendo, revisemos qué plan te conviene más.' });
 
   switch (stage) {
     case 'MENU': {

@@ -65,3 +65,37 @@ describe('GeminiSpeechAdapter (D-010)', () => {
     expect((e2 as LlmProviderError).outage).toBe(false);
   });
 });
+
+describe('GeminiSpeechAdapter.describe (D-047)', () => {
+  const image = { image: Buffer.from('JPEG-sintetico'), mimeType: 'image/jpeg' };
+
+  it('manda la imagen en línea con la instrucción sin datos personales', async () => {
+    let body: { contents: { parts: Record<string, unknown>[] }[] } | undefined;
+    const vision = new GeminiSpeechAdapter({
+      apiKey: 'k',
+      model: 'gemini-x',
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as typeof body;
+        return ok({ description: ' Sticker de un perro saludando ', readable: true });
+      },
+    });
+    const r = await vision.describe(image);
+    expect(r).toMatchObject({
+      description: 'Sticker de un perro saludando',
+      readable: true,
+      model: 'gemini-x',
+    });
+    expect(String(body!.contents[0]!.parts[0]!.text)).toContain('NO copies números de documento');
+    expect(body!.contents[0]!.parts[1]).toEqual({
+      inlineData: { mimeType: 'image/jpeg', data: image.image.toString('base64') },
+    });
+  });
+
+  it('imagen que no se distingue: readable=false', async () => {
+    const vision = new GeminiSpeechAdapter({
+      apiKey: 'k',
+      fetchImpl: async () => ok({ description: '', readable: false }),
+    });
+    expect((await vision.describe(image)).readable).toBe(false);
+  });
+});

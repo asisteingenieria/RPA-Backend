@@ -40,8 +40,8 @@ import { catchUpDraft, evaluateBrainVersion } from './evals/brain-evaluation.js'
 import { runAgentTest } from './evals/agent-test.js';
 import { llmFromConfig, providerAdapter } from './llm/from-config.js';
 import { imageReaderFromConfig } from './knowledge/gemini-image-reader.js';
-import { speechFromConfig } from './speech/from-config.js';
-import { meteredLlm, meteredSpeech } from './usage/metered.js';
+import { speechFromConfig, visionFromConfig } from './speech/from-config.js';
+import { meteredLlm, meteredSpeech, meteredVision } from './usage/metered.js';
 import { BullQueuePublisher, OutboxPublisher } from './outbox/outbox-publisher.js';
 import {
   AlertMonitor,
@@ -137,6 +137,8 @@ export class ConversationRuntimeService implements OnModuleInit, OnApplicationSh
       speech: meteredSpeech(speechFromConfig(cfg), usage, 'VOICE'),
       speechTimeoutMs: cfg.STT_TIMEOUT_MS,
       maxVoiceSeconds: cfg.STT_MAX_SECONDS,
+      // D-047: imágenes y stickers del cliente descritos antes del motor.
+      vision: meteredVision(visionFromConfig(cfg), usage, 'INBOUND_IMAGE'),
       engine: new ConversationEngine({
         llm: llmFromConfig(cfg),
         catalog,

@@ -41,6 +41,8 @@ export const TEMPLATE_ROLES = [
   'CONFIRMAR_AUTORIZACION',
   'AUTORIZACION_POR_ESCRITO',
   'NOTA_DE_VOZ_ILEGIBLE',
+  // D-047: imagen o sticker que no se pudo ver.
+  'IMAGEN_ILEGIBLE',
   'DATOS_FALTANTES',
   'YA_POSPAGO',
   // D-029: ySocial exige texto en cada mensaje; pie de las imágenes que siguen a la primera.
@@ -72,6 +74,8 @@ export const SYSTEM_TEMPLATE_ROLES = [
   'CONFIRMAR_AUTORIZACION',
   'AUTORIZACION_POR_ESCRITO',
   'NOTA_DE_VOZ_ILEGIBLE',
+  // D-047: imagen o sticker que no se pudo ver.
+  'IMAGEN_ILEGIBLE',
   'DATOS_FALTANTES',
   'YA_POSPAGO',
   // D-029: ySocial exige texto en cada mensaje; pie de las imágenes que siguen a la primera.
@@ -623,6 +627,14 @@ export const DEFAULT_TEMPLATES: AgentTemplate[] = [
     'NOTA_DE_VOZ_ILEGIBLE',
     'La envía el sistema cuando el cliente manda una nota de voz que no se puede escuchar o transcribir (con STT_PROVIDER=ninguno, todas): le pide con respeto escribir su solicitud.',
     'Gracias por tu mensaje 🙏 Por este medio no podemos escuchar notas de voz. ¿Me escribes tu solicitud en texto, por favor?',
+  ),
+  t(
+    'imagen-ilegible',
+    'Sistema',
+    'Imagen que no se pudo ver',
+    'IMAGEN_ILEGIBLE',
+    'La envía el sistema cuando el cliente manda una imagen o un sticker que no se puede ver o describir (con VISION_PROVIDER=ninguno, todas): le pide con respeto contar en texto lo que necesita.',
+    'Gracias por tu mensaje 🙏 No pude ver bien la imagen que enviaste. ¿Me cuentas en texto lo que necesitas, por favor?',
   ),
   t(
     'pie-imagen-adicional',

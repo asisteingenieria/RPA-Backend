@@ -1,9 +1,16 @@
-import { AUDIO_PLACEHOLDER, fingerprintInput, type InboundMessage } from '@abaya/domain';
+import { fingerprintInput, type InboundMessage } from '@abaya/domain';
 import { sha256, type FieldCipher } from '@abaya/crypto';
 import type { Logger } from '@abaya/logger';
 import { DirectInboundSink, type InboundSink } from '@abaya/robot-store';
 import type { InboundQueue } from './inbound-queue.js';
 import type { InboundRepository } from './inbound.repository.js';
+import type { MediaFetcher } from './media-fetcher.js';
+
+/**
+ * D-047: una fila del DOM sin texto suele ser un adjunto (la red trae el archivo). Se espera a
+ * que llegue por red; si no llega, se guarda tal cual.
+ */
+export const DOM_EMPTY_WAIT_MS = 5_000;
 
 export type DetectedVia = 'network' | 'dom';
 
@@ -63,6 +70,10 @@ export class InboundProcessor {
       logger: Logger;
       /** Para medir latencia de detección en pruebas y métricas. */
       onStored?: (m: InboundMessage, via: DetectedVia) => void;
+      /** D-010 / D-047: descarga de notas de voz e imágenes (sin él, se guardan sin archivo). */
+      media?: MediaFetcher;
+      /** Pruebas: espera de las filas vacías del DOM. */
+      domEmptyWaitMs?: number;
     } & (
       | { sink: InboundSink }
       // Modo directo (desarrollo y pruebas): guarda en la base desde el propio robot.
@@ -80,9 +91,9 @@ export class InboundProcessor {
           });
   }
 
-  handle(m: InboundMessage, via: DetectedVia): Promise<void> {
+  handle(m: InboundMessage, via: DetectedVia, waited = false): Promise<void> {
     const prev = this.chains.get(m.abayaChatId) ?? Promise.resolve();
-    const next = prev.then(() => this.process(m, via));
+    const next = prev.then(() => this.process(m, via, waited));
     const settled = next.catch((err: unknown) => {
       this.deps.logger.error(
         { abayaChatId: m.abayaChatId, err: err instanceof Error ? err.name : 'unknown' },
@@ -129,7 +140,7 @@ export class InboundProcessor {
     while (this.chains.size) await Promise.all([...this.chains.values()]);
   }
 
-  private async process(m: InboundMessage, via: DetectedVia) {
+  private async process(m: InboundMessage, via: DetectedVia, waited = false) {
     this.stats.received++;
     if (m.sender === 'AGENT') {
       this.stats.ignoredOwn++;
@@ -156,15 +167,24 @@ export class InboundProcessor {
       this.stats.duplicates++;
       return;
     }
-    const r = await this.sink.store({
-      abayaChatId: m.abayaChatId,
-      fingerprint,
-      // D-010: mientras el robot no descarga la nota de voz (captura pendiente), llega como
-      // `[audio]`, igual que antes: el motor no recibe un mensaje vacío.
-      text: m.media && !m.text.trim() ? AUDIO_PLACEHOLDER : m.text,
-      via,
-      occurredAt: m.occurredAt,
-    });
+    if (via === 'dom' && !m.media && !m.text.trim() && !waited) {
+      // D-047: probablemente un adjunto; la red lo trae con su archivo (misma huella).
+      const t = setTimeout(
+        () => void this.handle(m, via, true),
+        this.deps.domEmptyWaitMs ?? DOM_EMPTY_WAIT_MS,
+      );
+      t.unref?.();
+      return;
+    }
+    const r = m.media
+      ? await this.storeMedia(m, fingerprint, via)
+      : await this.sink.store({
+          abayaChatId: m.abayaChatId,
+          fingerprint,
+          text: m.text,
+          via,
+          occurredAt: m.occurredAt,
+        });
     if (r.conversationCreated) this.stats.newConversations++;
     this.remember(fingerprint);
     if (!r.inserted) {
@@ -173,12 +193,44 @@ export class InboundProcessor {
     }
     this.stats.stored++;
     if (m.media) {
-      // D-036: tipo de adjunto de cada nota de voz (sin contenido) para revisar falsos positivos.
+      // D-036: tipo de adjunto (sin contenido) para revisar falsos positivos.
       this.deps.logger.info(
-        { abayaChatId: m.abayaChatId, via, mimeType: m.media.mimeType ?? null },
-        'nota de voz del cliente',
+        { abayaChatId: m.abayaChatId, via, kind: m.media.kind, mimeType: m.media.mimeType ?? null },
+        'adjunto del cliente',
       );
     }
     this.deps.onStored?.(m, via);
+  }
+
+  /**
+   * D-010 / D-047: nota de voz o imagen. El pie de foto de una imagen se guarda antes, como un
+   * mensaje de texto propio (huella derivada), y el adjunto va sin texto: el worker lo transcribe
+   * o lo describe. Si no se pudo descargar, se guarda sin archivo y el worker pide escribir.
+   */
+  private async storeMedia(m: InboundMessage, fingerprint: string, via: DetectedVia) {
+    const media = m.media!;
+    if (media.kind === 'IMAGE' && m.text.trim()) {
+      await this.sink.store({
+        abayaChatId: m.abayaChatId,
+        fingerprint: sha256(`${fingerprint}:caption`),
+        text: m.text,
+        via,
+        occurredAt: m.occurredAt,
+      });
+    }
+    const fetched = this.deps.media ? await this.deps.media.fetch(media) : null;
+    return this.sink.store({
+      abayaChatId: m.abayaChatId,
+      fingerprint,
+      text: '',
+      via,
+      occurredAt: m.occurredAt,
+      media: {
+        kind: media.kind,
+        mimeType: fetched?.mimeType ?? media.mimeType ?? null,
+        durationSec: media.durationSec ?? null,
+        data: fetched?.data ?? null,
+      },
+    });
   }
 }

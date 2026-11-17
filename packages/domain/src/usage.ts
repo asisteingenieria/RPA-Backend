@@ -5,7 +5,15 @@
  */
 
 /** Usos de los modelos, además de las conversaciones (`CHAT`, que vive en `LlmCall`). */
-export const USAGE_KINDS = ['VOICE', 'IMAGE_READ', 'EMBEDDING', 'EVAL', 'TEST'] as const;
+/** D-047: `INBOUND_IMAGE` = descripción de las imágenes que manda el cliente. */
+export const USAGE_KINDS = [
+  'VOICE',
+  'INBOUND_IMAGE',
+  'IMAGE_READ',
+  'EMBEDDING',
+  'EVAL',
+  'TEST',
+] as const;
 export type UsageKind = (typeof USAGE_KINDS)[number];
 
 export interface ModelUsage {

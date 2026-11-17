@@ -4,9 +4,11 @@ import { pipeline } from 'node:stream/promises';
 import type { Logger } from '@abaya/logger';
 import {
   GATEWAY_PATH,
+  INBOUND_AUDIO_PATH,
   OUTBOUND_IMAGE_PATH,
   WS_CLOSE_NOT_OWNER,
   WS_CLOSE_REVOKED,
+  type InboundAudioParams,
   type JobKind,
   type RobotFrame,
   type RpcMethod,
@@ -163,6 +165,22 @@ export class GatewayClient {
       'bytes',
     );
     return bytes as Uint8Array | null;
+  }
+
+  /**
+   * D-010 / D-047: nota de voz o imagen del cliente (archivo en el cuerpo; vacío = no se pudo
+   * descargar). Los datos del mensaje van en la query: ninguno es contenido del cliente.
+   */
+  async uploadInboundMedia(
+    params: Omit<InboundAudioParams, 'kind'> & { kind: 'AUDIO' | 'IMAGE' },
+    data: Buffer,
+  ): Promise<{ inserted: boolean; conversationCreated: boolean }> {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, String(v));
+    const r = (await this.request('POST', `${INBOUND_AUDIO_PATH}?${q}`, data)) as {
+      result: { inserted: boolean; conversationCreated: boolean };
+    };
+    return r.result;
   }
 
   async uploadTrace(ref: string, zip: Buffer): Promise<void> {

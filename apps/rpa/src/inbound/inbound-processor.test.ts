@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { FieldCipher } from '@abaya/crypto';
-import type { InboundMessage } from '@abaya/domain';
+import { audioAad, inboundAad, type InboundMessage } from '@abaya/domain';
 import { createLogger } from '@abaya/logger';
 import { describe, expect, it } from 'vitest';
 import { InboundProcessor, messageFingerprint } from './inbound-processor.js';
+import type { MediaFetcher } from './media-fetcher.js';
 import { MemoryInboundQueue } from './inbound-queue.js';
 import { MemoryInboundRepository } from './inbound.repository.js';
 
@@ -129,5 +130,85 @@ describe('InboundProcessor', () => {
     for (let i = 0; i < 5; i++) void p.handle(msg({ messageId: `m-${i}` }), 'network');
     await p.drain();
     expect(queue.jobs).toHaveLength(5);
+  });
+});
+
+describe('D-010 / D-047: adjuntos del cliente', () => {
+  function withMedia(fetcher?: MediaFetcher) {
+    const repo = new MemoryInboundRepository();
+    const queue = new MemoryInboundQueue();
+    const p = new InboundProcessor({
+      robotUser: 'robot-ventas-01',
+      repo,
+      queue,
+      cipher,
+      logger: createLogger('t', { level: 'silent' }),
+      ...(fetcher ? { media: fetcher } : {}),
+      domEmptyWaitMs: 20,
+    });
+    return { p, repo, queue };
+  }
+  const bytes = Buffer.from('archivo');
+  const fetcher: MediaFetcher = { fetch: async () => ({ data: bytes, mimeType: 'audio/ogg' }) };
+
+  it('nota de voz: descarga el audio y lo guarda cifrado, sin texto', async () => {
+    const { p, repo } = withMedia(fetcher);
+    await p.handle(
+      msg({ text: '', media: { kind: 'AUDIO', url: 'https://x.blob.core.windows.net/a.ogg' } }),
+      'network',
+    );
+    const [m] = [...repo.messages.values()];
+    expect(m!.media).toMatchObject({ kind: 'AUDIO', mimeType: 'audio/ogg' });
+    expect(cipher.decrypt(m!.media!.audioEncrypted!, audioAad(m!.fingerprint))).toEqual(bytes);
+    expect(cipher.decryptString(m!.bodyEncrypted, inboundAad(m!.fingerprint))).toBe('');
+  });
+
+  it('imagen con pie de foto: dos mensajes (texto y la imagen sin texto)', async () => {
+    const { p, repo, queue } = withMedia({
+      fetch: async () => ({ data: bytes, mimeType: 'image/jpeg' }),
+    });
+    await p.handle(
+      msg({
+        text: 'este es mi plan',
+        media: {
+          kind: 'IMAGE',
+          url: 'https://x.blob.core.windows.net/i.jpg',
+          mimeType: 'image/jpeg',
+        },
+      }),
+      'network',
+    );
+    const stored = [...repo.messages.values()];
+    expect(stored).toHaveLength(2);
+    expect(cipher.decryptString(stored[0]!.bodyEncrypted, inboundAad(stored[0]!.fingerprint))).toBe(
+      'este es mi plan',
+    );
+    expect(stored[0]!.media).toBeUndefined();
+    expect(stored[1]!.media).toMatchObject({ kind: 'IMAGE', mimeType: 'image/jpeg' });
+    expect(queue.jobs).toHaveLength(2);
+  });
+
+  it('no se pudo descargar: se guarda igual, sin archivo (el worker pide escribir)', async () => {
+    const { p, repo } = withMedia({ fetch: async () => null });
+    await p.handle(
+      msg({ text: '', media: { kind: 'IMAGE', url: 'https://x.blob.core.windows.net/i.jpg' } }),
+      'network',
+    );
+    const [m] = [...repo.messages.values()];
+    expect(m!.media).toMatchObject({ kind: 'IMAGE', audioEncrypted: null });
+  });
+
+  it('fila vacía del DOM: espera a la red, que trae el archivo (misma huella)', async () => {
+    const { p, repo } = withMedia(fetcher);
+    await p.handle(msg({ text: '' }), 'dom');
+    await p.handle(
+      msg({ text: '', media: { kind: 'AUDIO', url: 'https://x.blob.core.windows.net/a.ogg' } }),
+      'network',
+    );
+    await new Promise((r) => setTimeout(r, 40));
+    await p.drain();
+    const stored = [...repo.messages.values()];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.media).toMatchObject({ kind: 'AUDIO' });
   });
 });

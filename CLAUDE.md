@@ -137,6 +137,19 @@ fuera de horario.
 - [~] F8 Seguridad (revisión hecha, ver docs/security-review.md) y runbook; servidor de producción desplegado (14/10/2026, runbook §12); falta instalar el robot en el PC dedicado y el piloto con Claro
 - [x] v1.9 Brains: catálogo (K1), panel (K2, en interfazRPA), contexto completo (K3), búsqueda híbrida (K4) y páginas web (K5); falta correr la suite con el LLM real
 - [x] v1.10 Abaya = ySocial (D-012), plantillas (D-013) y oferta con imágenes (D-014): Brain «Planes Agosto» v8 publicado y conectado (79/79, 0 inventados; descuentos por imagen, D-016), agente v22 publicado en local (D-015: conversación configurable en el panel; D-018: insultos y amenazas; imágenes por proceso); el robot pega la imagen en Abaya (probado en el simulador). Falta la prueba en vivo y activar `SEND_PLAN_IMAGES`
+- [x] 12/11/2026: evidencias de Claro (D-044 a D-046) y solo TLS 1.3 en nginx, en producción; PDF de
+      evidencias en `Descargas\Documentacion RPA` (y `Documentacion RPA.zip` con un LEEME para
+      contextualizar un chat de Claude). 13/11/2026: regenerados con las 3 pruebas en producción (log
+      por interacción real en E3.1 §6 y E4.3 §5; R-02/A-03 corregidos en E2.1/E2.2); el robot opera
+      con el servidor en solo TLS 1.3. Falta: texto de la segunda lectura (Claro) para activarla,
+      línea del cliente (vacía si no la escribe; ySocial no la da al robot), hash de consentimiento de
+      producción en E4.3, PAM, certificado de la CA de Claro y firma de E7.1. 17/11/2026: paquete v2
+      depurado (sin notas internas, `Descargas\Documentacion RPA v2` + `.zip`); pendientes en
+      `Descargas\Documentacion RPA v2 - PENDIENTES INTERNOS.pdf`; antes de enviar falta el comprobante
+      de facturación de Google (Anexo B de E7.4) y las firmas (docs/documentacionplan.md).
+- [~] 17/11/2026: D-047 notas de voz e imágenes del cliente (descarga en el robot, descripción con
+  Gemini) hecho y probado en local; suite con Gemini 105/107, 0 inventados (la suite reintenta las caídas del proveedor);
+  falta subirlo (runbook §12.9) y la burbuja de imagen en `interfazRPA`
 - [~] 14/10/2026: D-020 (`probar.cmd`) en producción; D-021 (proceso según el operador), D-022 (plataforma de video pedida) y D-023 (consulta de portabilidad, `ServiceCase`) , D-024 (compartidas solo con uso laboral) y D-025 (tipificación del cierre) hechos y probados en local, agente v22 publicado y v23 (D-024) en borrador en local; falta subirlos a producción (runbook §12.3)
 
 ## Diagramas (documentación)
@@ -261,7 +274,9 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   de `stepsForTurn`, en la transacción del turno) y CSV `GET /admin/conversations/audit-log`
   (`interactionRows`, línea `maskPhone`, auditado `INTERACTION_LOG_EXPORTED`). **D-046** logs:
   `name` redactado, `[NOMBRE]` en `scrubText` y prueba estática `no-pii-logs.test.ts`. TLS 1.3
-  solo en nginx: runbook §12.8. La suite admite `flow:` por caso.
+  solo en nginx y `server_tokens off` (en `/etc/nginx/nginx.conf`, runbook §12.8). La suite admite
+  `flow:` por caso. **En producción desde el 12/11/2026** (backend `e9fa22e`, panel `4bbcb86`;
+  segunda lectura apagada hasta el texto de Claro).
 - Tras el corte (D-042, worker): robot sin heartbeat hace 2 min o sesión no `ACTIVE`
   (`offlineRobots`, `conversation/robot-online.ts`) → sin reactivación ni cierre por inactividad; la
   reactivación sigue aunque el último envío quedó `UNCERTAIN`/`FAILED` (las fallidas no la agotan).
@@ -317,8 +332,13 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
   `ROBOT_WORK_HOURS` es el valor inicial) y el robot lo consulta cada minuto (`settings.workHours`);
   fuera de horario `main.ts` espera sin abrir Abaya; al fin del turno `ShiftEnd` pasa a FinTurno,
   vacía la bandeja y apaga con `EXIT.SHIFT` (5, el lanzador lo rearranca).
-- Notas de voz (D-027): «[audio]» (el robot aún no las descarga) → plantilla NOTA_DE_VOZ_ILEGIBLE,
-  que pide escribir; `STT_PROVIDER=ninguno` para no transcribir nunca.
+- Notas de voz e imágenes (D-047, 17/11/2026): el robot descarga el adjunto (`HttpMediaFetcher`,
+  solo Azure Blob https o el origen de Avaya, 5 MB) y lo sube por `inbound/audio` (`kind`); el
+  worker transcribe (D-010) o describe la imagen con Gemini (`ImageDescriberPort`, sin datos
+  personales) y el motor recibe `[nota de voz] …` o `[imagen del cliente] …` (regla 10 del sistema;
+  no eligen menú ni autorizan). Ilegible o sin descargar → NOTA_DE_VOZ_ILEGIBLE / IMAGEN_ILEGIBLE.
+  El pie de foto va como mensaje de texto aparte. `STT_PROVIDER` / `VISION_PROVIDER` = `ninguno`
+  para no hacerlo. Suite: turnos `🎤 …` y `📷 …`.
   ySocial no cierra la sesión al cerrar el navegador (`ALREADY_CONNECTED`) y esconde «Salir» con
   casos asignados: el robot hace `logout()` al detenerse y el diagnóstico no cierra la ventana con casos.
 - Monitor en vivo (D-032, solo ADMIN, solo mirar): `GET /admin/live/stream[?chat=]` (SSE: tablero

@@ -166,3 +166,31 @@ describe('MESSAGE_URL_PATTERNS', () => {
     ).toBe(true);
   });
 });
+
+describe('D-047: imagen o sticker del cliente', () => {
+  it('se reconoce como IMAGE con su enlace; el pie de foto queda como texto', () => {
+    const raw = structuredClone(fixture('ysocial-case.json')) as {
+      Result: { Case: { Messages: Record<string, unknown>[] } };
+    };
+    const customer = raw.Result.Case.Messages[5]!;
+    customer.Body = 'mira esto';
+    customer.Attachments = [
+      {
+        MimeType: 'image/webp',
+        FileName: 'sticker.webp',
+        Parameters: { AzureStorageUrlAttachment: 'https://x.blob.core.windows.net/s.webp?sig=z' },
+      },
+    ];
+    const r = parseCaseResponse(raw);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.value.messages[5]).toMatchObject({
+      sender: 'CUSTOMER',
+      text: 'mira esto',
+      media: {
+        kind: 'IMAGE',
+        url: 'https://x.blob.core.windows.net/s.webp?sig=z',
+        mimeType: 'image/webp',
+      },
+    });
+  });
+});

@@ -348,10 +348,11 @@ export class LiveService {
               }
             : {}),
           ...(m.imageId ? { image: images.get(m.imageId) ?? null } : {}),
-          ...(m.mediaKind === 'AUDIO'
+          // D-010 / D-047: nota de voz o imagen del cliente (solo el texto; el archivo nunca sale).
+          ...(m.mediaKind
             ? {
                 media: {
-                  kind: 'AUDIO' as const,
+                  kind: m.mediaKind,
                   durationSec: m.mediaDurationSec,
                   transcriptStatus: m.transcriptStatus ?? 'FAILED',
                   transcriptMs: m.transcriptMs,

@@ -6,6 +6,7 @@ import { ActorGate } from './actor/actor-gate.js';
 import { BrowserActor } from './actor/browser-actor.js';
 import { getRobotBackend, type RobotBackend } from './backend/robot-backend.js';
 import { HandoffProcessor } from './handoff/handoff-processor.js';
+import { HttpMediaFetcher } from './inbound/media-fetcher.js';
 import { InboundProcessor } from './inbound/inbound-processor.js';
 import { InboundWatcher } from './inbound/inbound-watcher.js';
 import { MissedMessageSweeper, SWEEP_EVERY_MS } from './inbound/missed-sweeper.js';
@@ -81,6 +82,11 @@ export class RpaRuntimeService implements OnModuleInit, OnApplicationShutdown {
       robotUser: abaya.robotUser,
       sink: backend.inbound,
       logger: createLogger('rpa.inbound'),
+      // D-010 / D-047: notas de voz e imágenes del cliente (Azure Blob de ySocial).
+      media: new HttpMediaFetcher({
+        abayaBaseUrl: abaya.baseUrl,
+        logger: createLogger('rpa.inbound'),
+      }),
     });
     const watcher = new InboundWatcher(processor, createLogger('rpa.inbound'));
 
