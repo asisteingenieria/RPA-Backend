@@ -3,7 +3,8 @@ import { Prisma, type PrismaClient } from '@abaya/db';
 import { parseFilters } from './conversations.service.js';
 
 /** Usos que muestra la vista: conversaciones (`LlmCall`) + los de `ModelUsage`. */
-export type UsageUse = 'CHAT' | 'VOICE' | 'IMAGE_READ' | 'EMBEDDING' | 'EVAL' | 'TEST';
+export type UsageUse =
+  'CHAT' | 'VOICE' | 'INBOUND_IMAGE' | 'IMAGE_READ' | 'EMBEDDING' | 'EVAL' | 'TEST';
 
 interface Row {
   day: string;
