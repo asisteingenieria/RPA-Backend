@@ -102,6 +102,15 @@ export const envSchema = z.object({
   STT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   /** Notas de voz más largas no se transcriben: se le pide al cliente que escriba. */
   STT_MAX_SECONDS: z.coerce.number().int().positive().default(120),
+  /**
+   * D-047: descripción de las imágenes y stickers que manda el cliente. Vacío = igual que
+   * STT_PROVIDER (o su valor por defecto); `ninguno` = se pide al cliente que cuente en texto.
+   * Modelo y tiempo: los de STT_MODEL y STT_TIMEOUT_MS.
+   */
+  VISION_PROVIDER: z
+    .enum(['gemini', 'simulado', 'ninguno'])
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   /** D-011: modelo que lee los planes de las imágenes (vacío = LLM_MODEL si es Gemini, o su defecto). */
   IMAGE_READER_MODEL: optionalString,
   /**
@@ -220,6 +229,12 @@ function crossChecks(cfg: AppConfig): string[] {
   }
   if (cfg.NODE_ENV === 'production' && cfg.STT_PROVIDER === 'simulado') {
     issues.push('STT_PROVIDER: "simulado" no está permitido en producción');
+  }
+  if (cfg.VISION_PROVIDER === 'gemini' && !cfg.GEMINI_API_KEY) {
+    issues.push('VISION_PROVIDER=gemini requiere GEMINI_API_KEY');
+  }
+  if (cfg.NODE_ENV === 'production' && cfg.VISION_PROVIDER === 'simulado') {
+    issues.push('VISION_PROVIDER: "simulado" no está permitido en producción');
   }
   if (cfg.NODE_ENV === 'production' && !cfg.ADMIN_COOKIE_SECURE) {
     issues.push('ADMIN_COOKIE_SECURE: debe ser "true" en producción (panel solo por HTTPS)');

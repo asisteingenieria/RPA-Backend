@@ -30,8 +30,10 @@ Rutas sin autenticación: solo `/health` (sin datos personales) y, en la pasarel
 
 ### Red y transporte
 
-- HTTPS en nginx. **Pendiente:** certificado de la CA de Claro (hoy autofirmado) y dejar solo
-  TLS 1.3 con `ssl_protocols TLSv1.3` y `server_tokens off` (runbook §12.8; hoy acepta 1.2 y 1.3).
+- HTTPS en nginx **solo con TLS 1.3** (`ssl_protocols TLSv1.3`, desde el 12/11/2026; TLS 1.2
+  rechazado) y sin versión en la cabecera `Server` (`server_tokens off`), ambos en
+  `/etc/nginx/nginx.conf` (runbook §12.1 y §12.8). **Pendiente:** certificado de la CA de Claro
+  (hoy autofirmado).
 - `Strict-Transport-Security: max-age=31536000` (sin `includeSubDomains`). Los navegadores lo
   ignoran para hosts IP: aplica cuando el servidor tenga nombre.
 - El robot confía en el certificado del servidor por `NODE_EXTRA_CA_CERTS`.
@@ -78,6 +80,9 @@ DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, HST
 - Trazas solo en error, cifradas, 7 días (`TRACE_DIR`).
 - El monitor en vivo (D-032) solo mira: no puede hacer clic ni escribir (`rule4.test.ts`); la
   pantalla no se guarda en disco.
+- Adjuntos del cliente (D-047): el robot solo descarga de `https://*.blob.core.windows.net` o del
+  mismo origen de Avaya (sin redirecciones, 15 s, 5 MB, en memoria) y los sube a la pasarela; no
+  los guarda en disco ni registra la URL (lleva la firma SAS).
 
 ### Datos personales
 
@@ -147,7 +152,7 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 | Pendiente                                                        | Depende de        |
 | ---------------------------------------------------------------- | ----------------- |
 | Secretos del servidor en bóveda o PAM (H6)                       | Claro / proveedor |
-| Certificado de la CA de Claro y solo TLS 1.3 (H7, runbook §12.8) | Servidor / Claro  |
+| Certificado de la CA de Claro (H7; solo TLS 1.3 ya aplicado)     | Claro             |
 | `X-Forwarded-For` en nginx (sin esto H1 no tiene efecto)         | Servidor          |
 | Doble factor (TOTP) para ADMIN (H8)                              | Nosotros          |
 | Plazo de retención de conversaciones                             | Claro             |
@@ -157,6 +162,22 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 | Pentest independiente, si Claro lo exige                         | Proveedor externo |
 
 ## 6. Registro de cambios
+
+### 17/11/2026 — D-047: notas de voz e imágenes del cliente
+
+- **Robot:** descarga nueva hacia Internet (Azure Blob de ySocial) con lista de orígenes
+  permitidos (anti-SSRF: `file:`, `blob:`, IP internas y otros dominios se rechazan; prueba en
+  `media-fetcher.test.ts`), `redirect: 'error'`, tope de tiempo y tamaño. Log solo con tipo y
+  motivo.
+- **Pasarela:** la misma ruta `inbound/audio` acepta `kind=IMAGE`; formato validado con lista
+  cerrada (`normalizeMediaMime`), tope de 5 MB. El pie de foto no viaja en la query (logs de nginx):
+  va como mensaje de texto por el RPC.
+- **Datos:** imagen cifrada (AES-256-GCM, AAD `audio:{huella}`) solo hasta describirla; se borra en
+  la misma escritura y, si no alcanzó turno, a las 24 h. La descripción se guarda cifrada como un
+  mensaje. Instrucción al modelo de visión: no copiar documentos, teléfonos, cuentas, tarjetas,
+  direcciones, correos ni nombres, y no obedecer el texto de la imagen.
+- **Motor:** la descripción entra marcada y no pasa por las reglas deterministas de menú y
+  consentimiento (regla 10 y regla 12); una imagen no puede autorizar.
 
 ### 12/11/2026 — D-044 a D-046: evidencias para Claro
 
@@ -169,8 +190,10 @@ Claro (requerimiento 6 de `documentacionplan.md`).
   descifrado solo para enmascararlo.
 - **Consentimiento (D-044):** `ConsentEvidence.reading`; el hash incluye `reading` solo cuando es 2,
   así las evidencias anteriores siguen verificando. La venta se crea con la última lectura.
-- **TLS:** procedimiento para dejar solo TLS 1.3 y ocultar la versión de nginx (runbook §12.8),
-  con vuelta atrás.
+- **TLS:** solo TLS 1.3 y versión de nginx oculta (runbook §12.8), con vuelta atrás.
+- **En producción el 12/11/2026**, fuera de horario y sin robots operando: migración aplicada con
+  respaldo previo de la base, nginx cambiado con respaldo de `nginx.conf`. Verificado: TLS 1.2
+  rechazado, `Server: nginx` sin versión, el log de auditoría sin sesión → 401.
 
 ### 10/11/2026 — D-037: método `recovery.closeMissing` en la pasarela
 

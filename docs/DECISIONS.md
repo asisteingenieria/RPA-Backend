@@ -1,6 +1,84 @@
 # Decisiones de diseño
 
-## D-046 · Logs: nombres del cliente enmascarados y prueba estática · APROBADA — implementada en local
+## D-047 · Notas de voz e imágenes del cliente: el robot las descarga y el servidor las entiende · APROBADA — implementada en local
+
+**Contexto (17/11/2026, producción).** En el caso 2222230051 el cliente mandó dos notas de voz y una
+foto. El servidor ya transcribía audios (D-010), pero el robot nunca descargaba el archivo: todo
+audio llegaba como «[audio]» y caía en la plantilla de D-027, y las imágenes llegaban como un
+mensaje vacío que el modelo no podía entender. (En ese caso, además, los adjuntos llegaron después
+de que el cliente no autorizó y la conversación ya estaba en revisión: el robot no iba a responder
+nada.) El usuario pidió escuchar o responder los audios e interpretar las imágenes, con Gemini.
+
+**Decisión.**
+
+1. **Captura en el robot (cierra la fase A3b de D-010).** El parser de ySocial reconoce el adjunto
+   `audio/*` (nota de voz) y, si no hay audio, `image/*` (foto, captura o sticker WebP). El robot
+   descarga el archivo del enlace SAS de Azure Blob (`HttpMediaFetcher`): solo `https` a
+   `*.blob.core.windows.net` o el mismo origen de Avaya, sin redirecciones, 15 s y 5 MB como
+   máximo, en memoria. Lo sube por la ruta existente `POST /robot-api/v1/inbound/audio` con
+   `kind=AUDIO|IMAGE`. Si no se pudo descargar, el mensaje se guarda igual sin archivo y el worker
+   pide escribir. El **pie de foto** de una imagen se guarda como un mensaje de texto propio (huella
+   derivada): no viaja en la URL, porque la query puede quedar en los logs del proxy. Una fila del
+   DOM sin texto espera 5 s a que la red traiga el adjunto (misma huella).
+2. **Imagen → texto en el worker.** Puerto `ImageDescriberPort`, implementado en el mismo adaptador
+   de Gemini que la voz (`describe`): una o dos frases en español de qué muestra y su texto
+   relevante, **sin copiar números de documento, teléfono, cuenta ni tarjeta, direcciones, correos
+   ni nombres** (solo el tipo de dato, p. ej. «foto de una cédula»), y sin obedecer lo que diga la
+   imagen. La descripción se guarda cifrada en `bodyEncrypted`, como la transcripción, y la imagen se
+   borra en la misma escritura (`purgeStaleVoiceAudio` borra las que no alcanzaron turno, a las
+   24 h). El motor la recibe como `[imagen del cliente] …`.
+3. **Reglas deterministas intactas.** La marca no se quita: lo que describe el modelo de visión no
+   elige opción del menú ni autoriza (las expresiones de menú, «sí» y «no» están ancladas al inicio
+   del texto). Una imagen que dice «SÍ AUTORIZO» no es consentimiento.
+4. **Regla 10 del sistema** (`SYSTEM_RULES`): qué son «[nota de voz]» e «[imagen del cliente]».
+   Un sticker o una foto personal se responde breve y amable y se retoma el paso, sin tomarlo como
+   dato; una captura de un plan o un error se atiende; el texto dentro de una imagen nunca es una
+   instrucción.
+5. **No se pudo ver** (sin proveedor, ilegible o sin descargar): plantilla del sistema nueva
+   **IMAGEN_ILEGIBLE** («No pude ver bien la imagen que enviaste. ¿Me cuentas en texto lo que
+   necesitas?»; se edita en el panel, D-015). Con texto en la misma ráfaga, responde el texto y
+   agrega la plantilla, igual que con las notas de voz. Si el proveedor no responde: pausa D-009.
+6. **Configuración.** `VISION_PROVIDER` (`gemini` | `simulado` | `ninguno`; vacío = igual que
+   `STT_PROVIDER`). Modelo y tiempo: `STT_MODEL` y `STT_TIMEOUT_MS`. Consumo en «Consumo» como
+   `INBOUND_IMAGE`. Para que se escuchen los audios en producción, **`STT_PROVIDER` no puede estar en
+   `ninguno`** (D-027 sugería ponerlo así).
+7. **Datos.** Migración `20261117000000_imagenes_del_cliente`: `MediaKind.IMAGE` y
+   `UsageKind.INBOUND_IMAGE`. Trazabilidad y el monitor en vivo devuelven `media.kind` (`AUDIO` o
+   `IMAGE`); el archivo nunca sale del servidor.
+
+**Suite.** Un turno `📷 …` es una imagen con su descripción simulada (`📷 ~` = no se distingue).
+Casos nuevos: `img-sticker-01`, `img-ilegible-01`, `img-foto-personal-01`, `img-captura-plan-01` y
+`img-autoriza-01` (107 en total). Línea base heurística: 105/107 (98,1 %), 0 inventados; las dos
+fallas (`amb-typo-01`, `amb-imagen-01`) ya estaban el 12/11.
+
+**Suite con Gemini (17/11/2026, `gemini-3.8-flash`, regla 13): 105/107 (98,1 %), 0 inventados.** La
+primera corrida dio 100/107 y 1 inventado, igual con o sin la regla 10 (sin retroceso de D-047). Las
+causas estaban en la suite (`apps/worker/src/evals/suite.ts`), no en el motor:
+
+- **Caídas del proveedor:** con 4 casos en paralelo, Gemini a veces no responde en 8 s (o da 429).
+  El motor lo trata como caída (D-009). La suite no tenía pausa, así que el turno quedaba sin
+  respuesta y el mensaje se juntaba con el siguiente: así salían los «mensajes seguidos» que hacían
+  fallar casos al azar (`feliz-*`, `aut-ambigua-02`, `img-autoriza-01`). Ahora la suite cuenta la
+  caída y reintenta el turno, como al reanudar los robots (hasta `OUTAGE_RETRIES` = 3, con espera
+  creciente). Si aun así no responde, el caso falla con `PROVEEDOR:` y no como error del modelo.
+  El reporte suma la columna «Turnos sin proveedor»: hubo 20 en 14 casos.
+- **Segunda lectura (D-044):** la plantilla `SEGUNDA_LECTURA` con el nombre del cliente no se
+  quitaba antes de buscar cifras. Por eso «Ley 1581 de 2012» contaba como dato inventado: era un
+  falso positivo, no lo escribió el modelo.
+
+Las dos fallas que quedan (`man-json-01`, `operador-claro-prepago`) cambian de una corrida a otra.
+
+**Pendiente.**
+
+1. Probar en vivo que el PC del robot llega a Azure Blob desde Node (si la red solo deja salir al
+   navegador, la descarga falla y se responde la plantilla; se ve en el log
+   `adjunto del cliente sin descargar`).
+2. Panel (`interfazRPA`): mostrar «Imagen · descrita» en la burbuja cuando `media.kind` es `IMAGE`
+   y la etiqueta `INBOUND_IMAGE` en «Consumo».
+3. **Claro:** que la autorización de datos cubra la descripción automática de imágenes (igual que
+   las notas de voz en D-010).
+
+## D-046 · Logs: nombres del cliente enmascarados y prueba estática · APROBADA — en producción desde el 12/11/2026
 
 **Contexto (12/11/2026, evidencias de la POC).** La prueba de datos personales en los logs (E2.1)
 encontró dos huecos del logger, sin uso en el código: la clave `name` en la raíz del objeto de log
@@ -13,7 +91,7 @@ no reconoce nombres dentro de texto libre.
 llamada al logger en el código de producción no puede llevar campos del cliente (`text`, `body`,
 `profile`, `saleFullName`, `saleDocument`, `saleEmail`, `salePhone`, `customerReply`, `summary`).
 
-## D-045 · Log de auditoría por interacción con los campos de Claro · APROBADA — implementada en local
+## D-045 · Log de auditoría por interacción con los campos de Claro · APROBADA — en producción desde el 12/11/2026
 
 **Contexto (12/11/2026).** Claro pide (requerimiento 3) un log por interacción: id de la sesión,
 número de línea enmascarado, inicio y fin, paso del flujo (saludo, perfilamiento, oferta,
@@ -38,7 +116,7 @@ turnos sin modelo no dejaban paso).
    Trazabilidad, `INTERACTION_LOG_EXPORTED` en Auditoría), una fila por paso. Conversaciones
    anteriores a la tabla: pasos tomados de `LlmCall`.
 
-## D-044 · Segunda lectura del tratamiento de datos · APROBADA — implementada en local
+## D-044 · Segunda lectura del tratamiento de datos · APROBADA — en producción desde el 12/11/2026
 
 **Contexto (12/11/2026).** Claro pide (requerimiento 4) dos lecturas de tratamiento de datos
 antes de capturar cédula, nombre y correo, con log de consentimiento de ambas. Sofía hacía una
@@ -473,6 +551,9 @@ seguro: el robot descartaba el caso completo («payload no reconocido»).
 4. `iniciar.cmd` pone la consola en UTF-8 (`chcp 65001`): los logs salían con «sesi├│n».
 
 ## D-027 · Notas de voz: pedir con respeto que escriba · APROBADA — implementada
+
+> **17/11/2026 (D-047):** el robot ya descarga las notas de voz y se transcriben (D-010); esta
+> plantilla queda para las que no se entienden o no se pudieron descargar.
 
 **Contexto (15/10/2026).** En ySocial real el robot todavía no descarga las notas de voz (captura
 pendiente de D-010): llegaban al motor como el texto «[audio]» y el modelo improvisaba. El usuario
@@ -1205,6 +1286,8 @@ catálogo. El código, la validación y las imágenes del Brain se conservan; pa
    agrega la opción al menú y su flujo.
 
 ## D-010 · Notas de voz del cliente: transcribir y seguir el flujo normal · APROBADA — servidor implementado
+
+> **17/11/2026:** la captura en el robot (fase A3b) quedó hecha con D-047, junto con las imágenes.
 
 Fecha: 2026-10-08 · Estado: **aprobada** por el responsable del proyecto (08/10/2026: que el robot
 descargue los audios, los mande al servidor, se pasen de voz a texto y siga la conversación).

@@ -1,17 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import {
   AUDIO_PLACEHOLDER,
+  IMAGE_PLACEHOLDER,
   LlmProviderError,
   stepsForTurn,
   type AlertPort,
   type ConversationStatus,
+  type ImageDescriberPort,
   type SpeechToTextPort,
   type Stage,
 } from '@abaya/domain';
 import type { Logger } from '@abaya/logger';
 import type { Catalog } from '../catalog/catalog.js';
 import type { ConversationEngine } from '../engine/conversation-engine.js';
-import { asVoice } from '../engine/voice.js';
+import { asImage, asVoice } from '../engine/voice.js';
 import { buildSaleSummary } from '../sales/sales.service.js';
 import {
   OUTBOUND_IDS_PLACEHOLDER,
@@ -23,6 +25,9 @@ import {
   type TurnInput,
 } from './conversation.store.js';
 import type { RobotsPause } from './robots-pause.js';
+
+/** D-010 / D-047: plantillas del sistema para un adjunto que no se entendió. */
+type UnreadableRole = 'NOTA_DE_VOZ_ILEGIBLE' | 'IMAGEN_ILEGIBLE';
 
 /**
  * D-034: tope para rehacer un turno porque el cliente sigue escribiendo: pasado este tiempo desde
@@ -62,6 +67,8 @@ export class TurnService {
       speechTimeoutMs?: number;
       /** Notas de voz más largas no se transcriben (STT_MAX_SECONDS). */
       maxVoiceSeconds?: number;
+      /** D-047: descripción de las imágenes del cliente; sin proveedor se pide contar en texto. */
+      vision?: ImageDescriberPort | null;
     },
   ) {}
 
@@ -94,16 +101,29 @@ export class TurnService {
     }
     const customerTexts: string[] = [];
     let voiceUnreadable = false;
+    let imageUnreadable = false;
     for (const p of input.pending) {
       // Nota de voz que el robot no pudo descargar: se pide escribir, igual que una ilegible.
       if (!p.voice && p.text.trim() === AUDIO_PLACEHOLDER) voiceUnreadable = true;
+      else if (!p.voice && p.text.trim() === IMAGE_PLACEHOLDER) imageUnreadable = true;
       else if (!p.voice) customerTexts.push(p.text);
-      else if (p.voice.status === 'OK' && p.text.trim()) customerTexts.push(asVoice(p.text));
+      else if (p.voice.kind === 'IMAGE') {
+        // D-047: la descripción entra marcada; si no se pudo ver, se pide contarlo en texto.
+        if (p.voice.status === 'OK' && p.text.trim()) customerTexts.push(asImage(p.text));
+        else imageUnreadable = true;
+      } else if (p.voice.status === 'OK' && p.text.trim()) customerTexts.push(asVoice(p.text));
       else voiceUnreadable = true;
     }
+    const unreadableRoles: UnreadableRole[] = [
+      ...(voiceUnreadable ? (['NOTA_DE_VOZ_ILEGIBLE'] as const) : []),
+      ...(imageUnreadable ? (['IMAGEN_ILEGIBLE'] as const) : []),
+    ];
     if (!customerTexts.length) {
-      // Solo notas de voz que no se entendieron: se le pide escribir, sin llamar al modelo.
-      await this.commitVoiceUnreadable(input);
+      // Solo adjuntos que no se entendieron: se le pide escribir, sin llamar al modelo.
+      await this.commitUnreadable(
+        input,
+        unreadableRoles.length ? unreadableRoles : ['NOTA_DE_VOZ_ILEGIBLE'],
+      );
       return;
     }
 
@@ -301,12 +321,15 @@ export class TurnService {
       }
     }
 
-    // D-010: si además hubo una nota de voz que no se entendió y la conversación sigue, se dice.
-    if (voiceUnreadable && (commit.status === 'ACTIVE' || commit.status === 'WAITING_CONSENT')) {
-      commit.outbound.push({
-        text: await this.d.engine.systemText(turnState, 'NOTA_DE_VOZ_ILEGIBLE'),
-        idempotencyKey: randomUUID(),
-      });
+    // D-010 / D-047: si además hubo una nota de voz o una imagen que no se entendió y la
+    // conversación sigue, se dice.
+    if (commit.status === 'ACTIVE' || commit.status === 'WAITING_CONSENT') {
+      for (const role of unreadableRoles) {
+        commit.outbound.push({
+          text: await this.d.engine.systemText(turnState, role),
+          idempotencyKey: randomUUID(),
+        });
+      }
     }
 
     // Un ReplyReady por mensaje, ANTES de transferencias o cierres (orden del outbox).
@@ -350,6 +373,7 @@ export class TurnService {
         logger: this.d.logger,
         ...(this.d.speechTimeoutMs ? { speechTimeoutMs: this.d.speechTimeoutMs } : {}),
         ...(this.d.maxVoiceSeconds ? { maxVoiceSeconds: this.d.maxVoiceSeconds } : {}),
+        vision: this.d.vision ?? null,
       },
       pending,
     );
@@ -396,39 +420,39 @@ export class TurnService {
     );
   }
 
-  /** D-010: la ráfaga fue solo de notas de voz que no se entendieron: se pide escribirlas. */
-  private async commitVoiceUnreadable(input: TurnInput) {
-    // D-015: plantilla NOTA_DE_VOZ_ILEGIBLE de la versión del agente de la conversación.
+  /**
+   * D-010 / D-047: la ráfaga fue solo de notas de voz o imágenes que no se entendieron: se pide
+   * escribirlas, con la plantilla de cada tipo.
+   */
+  private async commitUnreadable(input: TurnInput, roles: readonly UnreadableRole[]) {
+    // D-015: plantillas de la versión del agente de la conversación.
     const agentVersionId = input.state.agentVersionId ?? this.d.currentAgentVersionId?.();
-    const unreadable = await this.d.engine.systemText(
-      agentVersionId ? { ...input.state, agentVersionId } : input.state,
-      'NOTA_DE_VOZ_ILEGIBLE',
-    );
+    const state = agentVersionId ? { ...input.state, agentVersionId } : input.state;
+    const texts: string[] = [];
+    for (const role of roles) texts.push(await this.d.engine.systemText(state, role));
     await this.d.store.commitTurn({
       conversationId: input.state.conversationId,
       stage: input.state.stage,
       profile: input.state.profile,
       status: input.status,
       processedMessageIds: input.pending.map((p) => p.id),
-      outbound: [{ text: unreadable, idempotencyKey: randomUUID() }],
+      outbound: texts.map((text) => ({ text, idempotencyKey: randomUUID() })),
       respondsToAt: new Date(Math.min(...input.pending.map((p) => p.detectedAt.getTime()))),
       llmCalls: [],
       knowledge: [],
-      events: [
-        {
-          type: 'ReplyReady',
-          payload: {
-            conversationId: input.state.conversationId,
-            abayaChatId: input.abayaChatId,
-            outboundIndex: 0,
-            robotUser: input.robotUser,
-          },
+      events: texts.map((_, i) => ({
+        type: 'ReplyReady' as const,
+        payload: {
+          conversationId: input.state.conversationId,
+          abayaChatId: input.abayaChatId,
+          outboundIndex: i,
+          robotUser: input.robotUser,
         },
-      ],
+      })),
     });
     this.d.logger.info(
-      { conversationId: input.state.conversationId },
-      'nota de voz sin transcribir: se pidió escribir',
+      { conversationId: input.state.conversationId, roles },
+      'adjunto sin entender: se pidió escribir',
     );
   }
 }
@@ -440,6 +464,8 @@ export interface VoiceTurnDeps {
   speech?: SpeechToTextPort | null;
   speechTimeoutMs?: number;
   maxVoiceSeconds?: number;
+  /** D-047: descripción de imágenes del cliente. */
+  vision?: ImageDescriberPort | null;
   logger: Logger;
 }
 
@@ -467,6 +493,7 @@ async function transcribeOne(
   d: VoiceTurnDeps,
   p: PendingInbound,
 ): Promise<TranscriptResult | { outage: string }> {
+  if (p.voice?.kind === 'IMAGE') return describeOne(d, p);
   const failed: TranscriptResult = { status: 'FAILED', text: '', model: null, ms: null };
   if (!d.speech) return failed;
   const duration = p.voice?.durationSec ?? null;
@@ -490,6 +517,38 @@ async function transcribeOne(
     d.logger.warn(
       { messageId: p.id, err: err instanceof Error ? err.message : 'error' },
       'nota de voz sin transcribir',
+    );
+    return failed;
+  }
+}
+
+/**
+ * D-047: describe una imagen del cliente. La imagen se borra al guardar la descripción (igual que
+ * el audio); sin descripción, `UNINTELLIGIBLE` o `FAILED` y se le pide contar en texto.
+ */
+async function describeOne(
+  d: VoiceTurnDeps,
+  p: PendingInbound,
+): Promise<TranscriptResult | { outage: string }> {
+  const failed: TranscriptResult = { status: 'FAILED', text: '', model: null, ms: null };
+  if (!d.vision) return failed;
+  const image = await d.store.voiceAudio(p.id);
+  if (!image) return failed;
+  try {
+    const r = await d.vision.describe({
+      image: image.data,
+      mimeType: image.mimeType,
+      ...(d.speechTimeoutMs ? { timeoutMs: d.speechTimeoutMs } : {}),
+    });
+    return r.readable
+      ? { status: 'OK', text: r.description, model: r.model, ms: r.latencyMs }
+      : { status: 'UNINTELLIGIBLE', text: '', model: r.model, ms: r.latencyMs };
+  } catch (err) {
+    if (err instanceof LlmProviderError && err.outage) return { outage: err.message };
+    // Sin contenido en el log (regla 6).
+    d.logger.warn(
+      { messageId: p.id, err: err instanceof Error ? err.message : 'error' },
+      'imagen del cliente sin describir',
     );
     return failed;
   }

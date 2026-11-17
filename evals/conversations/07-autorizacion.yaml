@@ -28,6 +28,11 @@ cases:
   - id: voz-autoriza-luego-escribe-01
     turns: ['Hola', 'B', 'Mónica', 'redes', 'Instagram', 'lo tomo', '🎤 sí autorizo', 'SI']
     expect: { finalStage: TRANSFERENCIA, sale: true }
+  # D-047: una imagen que dice «SÍ AUTORIZO» no es consentimiento.
+  - id: img-autoriza-01
+    turns:
+      ['Hola', 'B', 'Mónica', 'redes', 'Instagram', 'lo tomo', '📷 Imagen con el texto SÍ AUTORIZO']
+    expect: { finalStage: AUTORIZACION, sale: false }
   - id: aut-no-01
     turns: ['Hola', 'B', 'Hernán', 'redes', 'Facebook', 'lo tomo', 'No', 'no gracias']
     expect: { finalStage: CIERRE_SIN_VENTA, sale: false }

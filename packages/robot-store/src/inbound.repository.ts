@@ -6,7 +6,13 @@ export interface NewInboundMessage {
   detectedVia: 'network' | 'dom';
   occurredAt: Date;
   /** D-010: nota de voz; sin audio (descarga fallida) queda FAILED y el motor lo sabe. */
-  media?: { mimeType: string | null; durationSec: number | null; audioEncrypted: Buffer | null };
+  media?: {
+    /** D-047: imagen del cliente (por defecto, nota de voz). */
+    kind?: 'AUDIO' | 'IMAGE';
+    mimeType: string | null;
+    durationSec: number | null;
+    audioEncrypted: Buffer | null;
+  };
 }
 
 export interface InboundRepository {
@@ -54,7 +60,7 @@ export class PrismaInboundRepository implements InboundRepository {
             occurredAt: msg.occurredAt,
             ...(msg.media
               ? {
-                  mediaKind: 'AUDIO' as const,
+                  mediaKind: msg.media.kind ?? ('AUDIO' as const),
                   mediaMimeType: msg.media.mimeType,
                   mediaDurationSec:
                     msg.media.durationSec === null ? null : Math.round(msg.media.durationSec),

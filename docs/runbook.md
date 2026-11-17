@@ -319,6 +319,9 @@ antivirus). Resolver los avisos con TI antes de poner el equipo en producción.
   API (`127.0.0.1:3000`) con `Upgrade`/`Connection` para el WebSocket y `proxy_read_timeout 300s`
   (el robot manda un latido cada 30 s). El resto es el panel `interfazRPA`, servido desde
   **`/var/www/rpa-frontend`** (no desde `~/rpa/frontend/dist`: el build hay que copiarlo, ver 12.4).
+  Desde el 12/11/2026 **solo TLS 1.3** y sin versión en la cabecera `Server`: `ssl_protocols
+TLSv1.3;` y `server_tokens off;` están en `/etc/nginx/nginx.conf` (bloque `http`, líneas 22 y
+  34; respaldo `nginx.conf.respaldo-2026-11-12`), no en el sitio. Ver 12.8.
 - **Paquete del robot:** `~/rpa/backend/dist/robot-package/abaya-robot-windows.zip` y su
   `.manifest.json` (versión `1.0.0+16b02c7.202610141527`). El panel → Robots debe decir «Firma
   válida».
@@ -500,11 +503,44 @@ dependencias al día y `/health` del robot solo en `127.0.0.1` (`docs/security-r
    versión anterior si la nueva no arranca (§10). Para no publicar en horario, subir el paquete
    después del cierre.
 
+### 12.9 Notas de voz e imágenes del cliente (D-047, 17/11/2026) — pendiente de subir
+
+**Orden, todo después de las 22:00:**
+
+1. **Servidor** como en §12.2 (trae la migración `20261117000000_imagenes_del_cliente`, solo suma
+   valores a dos enum). En el `.env` del servidor: `STT_PROVIDER` vacío o `gemini` (**no**
+   `ninguno`) y `VISION_PROVIDER` vacío (igual que la voz) o `gemini`; requiere `GEMINI_API_KEY`.
+   `pm2 restart rpa-api rpa-worker --update-env`.
+2. **Robot:** paquete nuevo (§12.5); se actualiza solo cuando no tiene chats.
+3. **Panel** (`interfazRPA`, §12.4.b) cuando tenga la burbuja de imagen y la etiqueta de consumo.
+4. **Comprobar** con un chat de prueba: mandar una nota de voz y un sticker. En Trazabilidad la nota
+   aparece transcrita y la imagen con su descripción; el robot responde a lo que dijeron. Si
+   responde «No pude ver bien la imagen…» o «no podemos escuchar notas de voz…», revisar el log del
+   robot: `adjunto del cliente sin descargar` con `reason` (p. ej. `TimeoutError`: el PC no sale a
+   Azure Blob desde Node; avisar a redes de Claro).
+
+**Vuelta atrás sin desplegar:** `VISION_PROVIDER=ninguno` y/o `STT_PROVIDER=ninguno` en el `.env`
+y reiniciar el worker: vuelven las plantillas que piden escribir.
+
 ### 12.8 Evidencias de Claro (12/11/2026): dos lecturas, log por interacción, logs y TLS 1.3
 
 Cambios de código (D-044 a D-046): segunda lectura del tratamiento de datos (perilla del flujo,
 apagada por defecto), tabla `InteractionStep` y exportación del log de auditoría por interacción,
 y logs sin nombres. **Nada cambia la conversación en producción hasta que se active la perilla.**
+
+**Hecho el 12/11/2026** (sin robots operando): pasos 1 a 3 aplicados. Respaldo de la base antes de
+migrar en `~/respaldos/abaya_rpa_2026-11-12_pre-evidencias.dump`; migración aplicada (28 en total,
+«up to date»); `rpa-api` y `rpa-worker` online sin errores; panel `index-Dt1hUUUL.js`. nginx: las
+directivas estaban en `/etc/nginx/nginx.conf` (no en el sitio) y se cambiaron con `sed` tras
+respaldarlo. Verificado desde el servidor y desde el equipo de desarrollo: TLS 1.3
+(`TLS_AES_256_GCM_SHA384`), TLS 1.2 rechazado (`alert protocol version`), `Server: nginx` sin
+versión, HSTS y `X-Frame-Options` intactos, `/admin/conversations/audit-log` sin sesión → 401.
+13/11/2026: el robot atendió conversaciones en producción con el servidor en solo TLS 1.3
+(confirmado). Paquete del robot armado desde `main` 6c4261f: `1.0.0+6c4261f.202611122144`, firmado,
+sin secretos; se sube con §12.5 y el robot se actualiza solo cuando no tiene chats.
+Pendiente: paso 4 (texto de Claro).
+Vuelta atrás de nginx:
+`sudo cp -a /etc/nginx/nginx.conf.respaldo-2026-11-12 /etc/nginx/nginx.conf && sudo nginx -t && sudo systemctl reload nginx`.
 
 **Orden, todo después de las 22:00:**
 

@@ -130,6 +130,8 @@ export const WS_CLOSE_NOT_OWNER = 4409;
  * D-010: nota de voz del cliente. Va aparte del RPC (el JSON tiene tope de 100 KB): el audio en
  * el cuerpo (`POST inbound/audio`, `application/octet-stream`) y estos datos en la query. Cuerpo
  * vacío = el robot no pudo descargar el audio (el servidor guarda el mensaje igual, sin audio).
+ * D-047: también las imágenes del cliente (`kind=IMAGE`). Su pie de foto NO va aquí (la query
+ * puede quedar en logs del proxy): el robot lo guarda como un mensaje de texto aparte.
  */
 export const INBOUND_AUDIO_PATH = 'inbound/audio';
 
@@ -140,6 +142,8 @@ export const INBOUND_AUDIO_PATH = 'inbound/audio';
 export const OUTBOUND_IMAGE_PATH = 'outbound/image';
 export const inboundAudioParams = z.object({
   abayaChatId: id,
+  /** D-047: la misma ruta recibe imágenes del cliente (por defecto, nota de voz). */
+  kind: z.enum(['AUDIO', 'IMAGE']).default('AUDIO'),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   via: z.enum(['network', 'dom']),
   occurredAt: isoDate,

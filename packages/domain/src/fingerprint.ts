@@ -14,8 +14,8 @@ export function fingerprintInput(m: InboundMessage): string {
     m.sender,
     m.occurredAt.toISOString(),
     // D-010: una nota de voz no tiene texto propio (la red lo deja vacío y el DOM pinta la
-    // duración): la identifica su archivo.
-    m.media ? `audio:${m.media.url}` : m.text,
+    // duración): la identifica su archivo. D-047: igual la imagen (`image:`).
+    m.media ? `${m.media.kind.toLowerCase()}:${m.media.url}` : m.text,
     String(m.position ?? ''),
   ].join('\u001f');
 }

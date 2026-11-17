@@ -10,12 +10,15 @@ export interface InboundToStore {
   text: string;
   via: 'network' | 'dom';
   occurredAt: Date;
-  /** D-010: nota de voz. `data` null = el robot no pudo descargarla (se responde con plantilla). */
+  /**
+   * D-010: nota de voz; D-047: imagen (sin texto: el pie de foto va como otro mensaje). `data`
+   * null = el robot no pudo descargarla (se responde con plantilla).
+   */
   media?: InboundAudioToStore;
 }
 
 export interface InboundAudioToStore {
-  kind: 'AUDIO';
+  kind: 'AUDIO' | 'IMAGE';
   mimeType: string | null;
   durationSec: number | null;
   data: Buffer | null;
@@ -58,13 +61,15 @@ export class DirectInboundSink implements InboundSink {
     const conv = await this.conversation(m.abayaChatId);
     const r = await this.d.repo.insertInbound(conv.id, {
       fingerprint: m.fingerprint,
-      // D-010: el texto de una nota de voz es su transcripción; hasta tenerla, vacío.
+      // D-010: el texto de una nota de voz es su transcripción; hasta tenerla, vacío. D-047: igual
+      // con la descripción de una imagen (su pie de foto llega como un mensaje de texto aparte).
       bodyEncrypted: this.d.cipher.encrypt(m.media ? '' : m.text, inboundAad(m.fingerprint)),
       detectedVia: m.via,
       occurredAt: m.occurredAt,
       ...(m.media
         ? {
             media: {
+              kind: m.media.kind,
               mimeType: m.media.mimeType,
               durationSec: m.media.durationSec,
               audioEncrypted:

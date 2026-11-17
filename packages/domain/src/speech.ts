@@ -10,8 +10,44 @@
  */
 export const AUDIO_PLACEHOLDER = '[audio]';
 
+/**
+ * D-047: texto con el que llega una imagen (o sticker) que el robot no descargó o que no se pudo
+ * describir: el worker responde la plantilla IMAGEN_ILEGIBLE (pedir que cuente en texto).
+ */
+export const IMAGE_PLACEHOLDER = '[imagen]';
+
 /** Tope del archivo que acepta la pasarela (una nota de 2 min en Opus pesa unos 300 KB). */
 export const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
+
+/** D-047: tope de una imagen del cliente (WhatsApp las comprime: casi siempre < 500 KB). */
+export const MAX_INBOUND_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** D-047: formatos de imagen aceptados (los stickers de WhatsApp son WebP). */
+export const IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+] as const;
+
+/** `image/jpg` → `image/jpeg`; null si no es una imagen aceptada (GIF animado, SVG…). */
+export function normalizeImageMime(raw: string | null | undefined): string | null {
+  const lower = (raw ?? '').split(';')[0]!.trim().toLowerCase();
+  const base = lower === 'image/jpg' || lower === 'image/pjpeg' ? 'image/jpeg' : lower;
+  return (IMAGE_MIME_TYPES as readonly string[]).includes(base) ? base : null;
+}
+
+/** D-047: tipo de adjunto entrante. */
+export type InboundMediaKind = 'AUDIO' | 'IMAGE';
+
+/** Normaliza el formato según el tipo de adjunto (null = no aceptado). */
+export function normalizeMediaMime(
+  kind: InboundMediaKind,
+  raw: string | null | undefined,
+): string | null {
+  return kind === 'IMAGE' ? normalizeImageMime(raw) : normalizeAudioMime(raw);
+}
 
 /** Formatos de audio aceptados (WhatsApp usa Ogg/Opus). */
 export const AUDIO_MIME_TYPES = [
@@ -78,5 +114,34 @@ export interface SpeechToTextPort {
   transcribe(req: SpeechRequest): Promise<SpeechResult>;
 }
 
-/** AAD del audio cifrado mientras espera la transcripción. */
+/**
+ * D-047: describe una imagen que mandó el cliente (foto, captura, sticker) para que el motor la
+ * lea como texto. Falla con `LlmProviderError`, igual que la voz a texto.
+ */
+export interface ImageDescriberPort {
+  readonly provider: string;
+  describe(req: ImageDescribeRequest): Promise<ImageDescribeResult>;
+}
+
+export interface ImageDescribeRequest {
+  image: Buffer;
+  mimeType: string;
+  timeoutMs?: number;
+}
+
+export interface ImageDescribeResult {
+  /** Descripción breve en español, sin datos personales (vacía si no se pudo ver). */
+  description: string;
+  /** false: imagen en blanco, corrupta o que no se distingue. */
+  readable: boolean;
+  model: string;
+  latencyMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/**
+ * AAD del adjunto cifrado mientras espera la transcripción (audio) o la descripción (imagen,
+ * D-047: mismo AAD; el tipo va en `Message.mediaKind`).
+ */
 export const audioAad = (fingerprint: string) => `audio:${fingerprint}`;

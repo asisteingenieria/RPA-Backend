@@ -648,6 +648,13 @@ Por familiaridad con Dapta y Retell, el guion del agente se edita en el panel co
   pide WIN, Disney+ o Netflix, en cuanto se sabe su proceso se salta el perfil y la primera oferta es
   la circular de esa plataforma (flujo `platformRequest`). Qué decir si no la acepta va en el guion.
   Detalle en `docs/DECISIONS.md` (D-022).
+- **D-047 (17/11/2026): notas de voz e imágenes del cliente.** El robot descarga el adjunto
+  (enlace SAS de Azure Blob, solo https, 5 MB) y lo sube a la pasarela; el worker transcribe el
+  audio (D-010) o describe la imagen con Gemini, sin datos personales, y el motor recibe el texto
+  marcado (`[nota de voz]`, `[imagen del cliente]`). Lo que no se entiende se responde con las
+  plantillas del sistema `NOTA_DE_VOZ_ILEGIBLE` o `IMAGEN_ILEGIBLE`. Ni la marca ni el texto de una
+  imagen eligen menú ni autorizan (el consentimiento sigue siendo solo escrito). Detalle en
+  `docs/DECISIONS.md` (D-047).
 - **D-023 (14/10/2026): pregunta por una portabilidad que ya solicitó.** En el menú se le pregunta si
   recibió la confirmación: sí → no se puede verificar y van los canales de soporte; no → se le piden
   los datos y pasa al backoffice con «Finalizar» como **caso de servicio** (`ServiceCase`, no es una
@@ -840,7 +847,7 @@ El robot lee y escribe datos personales. Aplican la Ley 1581 de 2012 (protecció
 | Datos en reposo | Cifrado de campos para mensajes, resúmenes y respuestas de consentimiento. |
 | Logs | Redacción automática de teléfonos, nombres, documentos y contenido. *(v1.13, D-046)* También la clave `name` del objeto de log (no el nombre del logger) y los nombres que el cliente da con «me llamo…», «mi nombre es…» o «nombre: …»; una prueba estática impide registrar campos del cliente. |
 | Auditoría por interacción | *(v1.13, D-045)* `InteractionStep` (solo inserción, sin datos personales): cada paso del flujo con su hora; el panel exporta (solo ADMIN, auditado) el log con los campos que pide Claro: conversación, caso, robot, línea enmascarada (`300****567`), inicio y fin, paso, resultado (EXITOSO, ERROR, ABANDONO, RECHAZO) y destino de la transferencia. |
-| TLS | *(v1.13)* nginx solo con TLS 1.3 (`ssl_protocols TLSv1.3`) y `server_tokens off` (runbook §12.8). |
+| TLS | *(v1.13)* nginx solo con TLS 1.3 (`ssl_protocols TLSv1.3`) y `server_tokens off` (runbook §12.8). Aplicado en producción el 12/11/2026: TLS 1.2 rechazado. |
 | Red | Robot en máquina con acceso a Abaya; salida a Internet solo hacia el proveedor de LLM. |
 | Datos al LLM | Enviar solo lo necesario; preferir el proveedor vía la nube contratada por Claro; verificar que el proveedor no use los datos para entrenar; evaluar transferencia internacional (Ley 1581). |
 | Consentimiento | Texto mostrado (hash), respuesta del cliente, fecha y hora de Bogotá, cadena de hashes. *(v1.13, D-044)* Una o dos lecturas según el flujo (`consentReadings`): con dos, la segunda (plantilla del sistema `SEGUNDA_LECTURA`) va después del primer «SÍ» y la captura de datos solo empieza con el segundo; un registro de `ConsentEvidence` por lectura (`reading` 1 y 2) en la misma cadena. |

@@ -33,6 +33,26 @@ cases:
   - id: amb-imagen-01
     turns: ['Hola', 'B', 'Diana', '[imagen]']
     expect: { finalStage: PERFIL }
+  # D-047: imágenes y stickers (📷 = imagen con su descripción simulada; 📷 ~ = no se distingue).
+  - id: img-sticker-01
+    turns: ['Hola', 'B', '📷 Sticker de un perrito que saluda con la mano']
+    expect: { finalStage: PERFIL, forbidden: ['precio'] }
+  - id: img-ilegible-01
+    turns: ['Hola', 'B', '📷 ~']
+    expect: { finalStage: PERFIL, forbidden: ['precio'] }
+  - id: img-foto-personal-01
+    turns: ['Hola', 'A', 'Soy Karen', '📷 Foto de un niño pequeño sentado en una silla']
+    expect: { finalStageIn: [PERFIL, OFERTA], process: PORTABILIDAD }
+  - id: img-captura-plan-01
+    turns:
+      [
+        'Hola',
+        'B',
+        'Mi nombre es Andrés',
+        'redes sociales y videos',
+        '📷 Captura de pantalla de un plan de otro operador que dice 40 GB por 35.000 pesos',
+      ]
+    expect: { finalStageIn: [OFERTA, OBJECIONES] }
   - id: amb-todo-junto-01
     turns: ['Hola', 'A', 'Soy Karen, tengo Movistar y uso mucho redes y videos']
     expect: { finalStage: OFERTA, process: PORTABILIDAD }

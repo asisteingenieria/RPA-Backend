@@ -1,6 +1,11 @@
-import type { ConversationStatus, Stage, TranscriptStatus } from '@abaya/domain';
+import {
+  IMAGE_PLACEHOLDER,
+  type ConversationStatus,
+  type Stage,
+  type TranscriptStatus,
+} from '@abaya/domain';
 import type { ChatTurnMessage, LlmCallRecord, Profile } from '../engine/types.js';
-import { asVoice } from '../engine/voice.js';
+import { asImage, asVoice } from '../engine/voice.js';
 import {
   OUTBOUND_IDS_PLACEHOLDER,
   type ConversationStore,
@@ -19,8 +24,13 @@ interface MemMessage {
   imageId?: string;
   at: Date;
   respondsToAt?: Date;
-  /** D-010: nota de voz; `audio` se borra al transcribir. */
-  voice?: { status: TranscriptStatus; durationSec: number | null; audio: Buffer | null };
+  /** D-010: nota de voz; D-047: imagen (`kind`). `audio` (el archivo) se borra al leerlo. */
+  voice?: {
+    kind?: 'AUDIO' | 'IMAGE';
+    status: TranscriptStatus;
+    durationSec: number | null;
+    audio: Buffer | null;
+  };
 }
 
 interface MemConversation {
@@ -82,6 +92,26 @@ export class MemoryConversationStore implements ConversationStore {
     return id;
   }
 
+  /** D-047: imagen del cliente; `image` null = el robot no la pudo descargar. */
+  addImage(conversationId: string, image: Buffer | null) {
+    const c = this.conversations.get(conversationId)!;
+    const id = `in-${++this.seq}`;
+    c.messages.push({
+      id,
+      direction: 'INBOUND',
+      text: '',
+      processed: false,
+      at: new Date(),
+      voice: {
+        kind: 'IMAGE',
+        status: image ? 'PENDING' : 'FAILED',
+        durationSec: null,
+        audio: image,
+      },
+    });
+    return id;
+  }
+
   async pendingInboundIds(conversationId: string) {
     const c = this.conversations.get(conversationId);
     return c
@@ -91,7 +121,8 @@ export class MemoryConversationStore implements ConversationStore {
 
   async voiceAudio(messageId: string) {
     const m = this.message(messageId);
-    return m?.voice?.audio ? { data: m.voice.audio, mimeType: 'audio/ogg' } : null;
+    if (!m?.voice?.audio) return null;
+    return { data: m.voice.audio, mimeType: m.voice.kind === 'IMAGE' ? 'image/jpeg' : 'audio/ogg' };
   }
 
   async saveTranscript(messageId: string, t: TranscriptResult) {
@@ -128,7 +159,14 @@ export class MemoryConversationStore implements ConversationStore {
       .slice(-historyLimit)
       .map((m) => ({
         role: m.direction === 'INBOUND' ? 'customer' : 'bot',
-        text: m.voice?.status === 'OK' ? asVoice(m.text) : m.text,
+        text:
+          m.voice?.kind === 'IMAGE'
+            ? m.voice.status === 'OK'
+              ? asImage(m.text)
+              : IMAGE_PLACEHOLDER
+            : m.voice?.status === 'OK'
+              ? asVoice(m.text)
+              : m.text,
       }));
     return {
       state: {
@@ -145,7 +183,15 @@ export class MemoryConversationStore implements ConversationStore {
         id: m.id,
         text: m.text,
         detectedAt: m.at,
-        ...(m.voice ? { voice: { status: m.voice.status, durationSec: m.voice.durationSec } } : {}),
+        ...(m.voice
+          ? {
+              voice: {
+                ...(m.voice.kind ? { kind: m.voice.kind } : {}),
+                status: m.voice.status,
+                durationSec: m.voice.durationSec,
+              },
+            }
+          : {}),
       })),
     };
   }

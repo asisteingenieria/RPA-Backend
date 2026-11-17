@@ -5,7 +5,7 @@ import type { PrismaClient } from '@abaya/db';
 import {
   MAX_AUDIO_BYTES,
   QUEUES,
-  normalizeAudioMime,
+  normalizeMediaMime,
   robotQueue,
   type AlertPort,
 } from '@abaya/domain';
@@ -199,13 +199,14 @@ export class RobotGateway {
    * D-010: nota de voz del cliente. Se guarda como cualquier entrante (huella única, cola del
    * motor) con el audio cifrado hasta que el worker lo transcriba. Cuerpo vacío o formato no
    * aceptado = sin audio: el mensaje queda FAILED y el robot le pide al cliente que escriba.
+   * D-047: igual con las imágenes del cliente (`kind=IMAGE`), que el worker describe.
    */
   async storeInboundAudio(robotUser: string, rawParams: unknown, audio: Buffer) {
     const parsed = inboundAudioParams.safeParse(rawParams ?? {});
-    if (!parsed.success) throw new ServiceError(400, 'Parámetros inválidos para la nota de voz');
-    if (audio.length > MAX_AUDIO_BYTES) throw new ServiceError(400, 'Audio demasiado grande');
+    if (!parsed.success) throw new ServiceError(400, 'Parámetros inválidos para el adjunto');
+    if (audio.length > MAX_AUDIO_BYTES) throw new ServiceError(400, 'Adjunto demasiado grande');
     const p = parsed.data;
-    const mimeType = normalizeAudioMime(p.mimeType);
+    const mimeType = normalizeMediaMime(p.kind, p.mimeType);
     return this.sink(robotUser).store({
       abayaChatId: p.abayaChatId,
       fingerprint: p.fingerprint,
@@ -213,7 +214,7 @@ export class RobotGateway {
       via: p.via,
       occurredAt: new Date(p.occurredAt),
       media: {
-        kind: 'AUDIO',
+        kind: p.kind,
         mimeType,
         durationSec: p.durationSec ?? null,
         data: audio.length && mimeType ? audio : null,

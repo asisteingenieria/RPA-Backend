@@ -14,3 +14,11 @@ export const stripVoice = (text: string) =>
     .split('\n')
     .map((l) => (l.startsWith(VOICE_PREFIX) ? l.slice(VOICE_PREFIX.length) : l))
     .join('\n');
+
+/**
+ * D-047: la descripción de una imagen del cliente entra al motor marcada. No se quita para las
+ * reglas deterministas: lo que describe el modelo de visión no elige menú ni autoriza.
+ */
+export const IMAGE_PREFIX = '[imagen del cliente] ';
+
+export const asImage = (description: string) => `${IMAGE_PREFIX}${description}`;
