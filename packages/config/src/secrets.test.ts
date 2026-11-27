@@ -161,7 +161,7 @@ describe('loadSecretsIntoEnv', () => {
   });
 
   it('un secreto inexistente (403 por permiso por secreto) no frena a los demás', async () => {
-    const env = { ...baseEnv(), DATABASE_URL: 'postgresql://env' };
+    const env: NodeJS.ProcessEnv = { ...baseEnv(), DATABASE_URL: 'postgresql://env' };
     const g = fakeGoogle(
       { 'abaya-gemini-api-key': SECRET_VALUE },
       { denied: ['abaya-database-url'] },
