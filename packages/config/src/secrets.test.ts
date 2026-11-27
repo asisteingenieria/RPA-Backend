@@ -39,7 +39,7 @@ const json = (status: number, body: unknown) =>
 /** Bóveda falsa: `vault` = id del secreto → valor. */
 function fakeGoogle(
   vault: Record<string, string>,
-  opts: { failFirst?: number; status?: number } = {},
+  opts: { failFirst?: number; status?: number; denied?: string[] } = {},
 ) {
   let failures = opts.failFirst ?? 0;
   const calls: string[] = [];
@@ -59,6 +59,8 @@ function fakeGoogle(
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer tok');
     if (opts.status) return json(opts.status, { error: {} });
     const id = /secrets\/([^/]+)\/versions\/latest:access$/.exec(url)?.[1] ?? '';
+    // Permiso por secreto: Google responde 403 también a un secreto que no existe.
+    if (opts.denied?.includes(id)) return json(403, { error: { code: 403 } });
     if (!(id in vault)) return json(404, { error: { code: 404 } });
     return json(200, { payload: { data: Buffer.from(vault[id]!).toString('base64') } });
   });
@@ -156,6 +158,27 @@ describe('loadSecretsIntoEnv', () => {
     expect(sleep).not.toHaveBeenCalled();
     expect(env.GEMINI_API_KEY).toBe('del-env');
     expect(lines.join('\n')).toMatch(/HTTP 403.*secretAccessor/);
+  });
+
+  it('un secreto inexistente (403 por permiso por secreto) no frena a los demás', async () => {
+    const env = { ...baseEnv(), DATABASE_URL: 'postgresql://env' };
+    const g = fakeGoogle(
+      { 'abaya-gemini-api-key': SECRET_VALUE },
+      { denied: ['abaya-database-url'] },
+    );
+    const sleep = vi.fn(noSleep);
+    const { log, lines } = memoryLog();
+    const r = await loadSecretsIntoEnv({ env, fetch: g.fetch, log, readFile: readSa, sleep });
+    expect(r).toMatchObject({
+      loaded: ['GEMINI_API_KEY'],
+      missing: ['DATABASE_URL'],
+      fellBack: false,
+    });
+    expect(env.GEMINI_API_KEY).toBe(SECRET_VALUE);
+    expect(env.DATABASE_URL).toBe('postgresql://env');
+    expect(sleep).not.toHaveBeenCalled();
+    expect(lines.join('\n')).toMatch(/HTTP 403 en abaya-database-url .*secretAccessor/);
+    expect(lines.join('\n')).not.toContain(SECRET_VALUE);
   });
 
   it('con el JSON de la cuenta inválido sigue con el .env', async () => {

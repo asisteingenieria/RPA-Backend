@@ -169,7 +169,7 @@ export async function loadSecretsIntoEnv(
 
   for (let attempt = 1; ; attempt++) {
     try {
-      const values = await fetchAll(doFetch, sa, project, prefix, names);
+      const { values, denied } = await fetchAll(doFetch, sa, project, prefix, names);
       const loaded: string[] = [];
       const missing: string[] = [];
       for (const name of names) {
@@ -180,7 +180,13 @@ export async function loadSecretsIntoEnv(
           loaded.push(name);
         }
       }
+      // Con el permiso dado secreto por secreto, Google responde 403 (no 404) a un secreto que no
+      // existe: no se distingue de «sin permiso». Uno así no frena a los demás.
+      const deniedIds = denied.map((n) => secretIdFor(n, prefix));
+      const deniedMsg = `HTTP 403 en ${deniedIds.join(', ')} (no existe o falta el permiso secretAccessor)`;
+      if (denied.length && !loaded.length) return fallback(deniedMsg);
       log.info(`bóveda: ${loaded.length} secretos cargados (${loaded.join(', ') || 'ninguno'})`);
+      if (denied.length) log.warn(deniedMsg);
       // Los que no están en la bóveda son normales (p. ej. un proveedor que no se usa).
       const fromEnv = missing.filter((n) => env[n]);
       if (fromEnv.length) log.warn(`fuera de la bóveda, se usa el .env: ${fromEnv.join(', ')}`);
@@ -203,9 +209,10 @@ async function fetchAll(
   project: string,
   prefix: string,
   names: string[],
-): Promise<Map<string, string>> {
+): Promise<{ values: Map<string, string>; denied: string[] }> {
   const token = await accessToken(doFetch, sa);
   const out = new Map<string, string>();
+  const denied: string[] = [];
   await Promise.all(
     names.map(async (name) => {
       const id = secretIdFor(name, prefix);
@@ -214,6 +221,10 @@ async function fetchAll(
         { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
       );
       if (res.status === 404) return; // no existe (o sin versión habilitada): se usa el .env
+      if (res.status === 403) {
+        denied.push(name); // no existe o sin permiso: se usa el .env
+        return;
+      }
       if (isTransient(res.status)) throw new Error(`HTTP ${res.status} en ${id}`);
       if (!res.ok)
         throw new PermanentError(`HTTP ${res.status} al leer ${id} (¿permiso secretAccessor?)`);
@@ -229,7 +240,8 @@ async function fetchAll(
       );
     }),
   );
-  return out;
+  denied.sort((a, b) => names.indexOf(a) - names.indexOf(b));
+  return { values: out, denied };
 }
 
 async function accessToken(doFetch: typeof fetch, sa: ServiceAccount): Promise<string> {

@@ -24,7 +24,11 @@ facturación de Gemini: no entra un proveedor nuevo y el servidor ya sale a Inte
    conocidos). La bóveda manda sobre el `.env`.
 3. Tolerante (regla de disponibilidad): secreto inexistente → se usa el `.env` (aviso con el
    nombre, nunca el valor); permiso denegado o archivo de cuenta inválido → error en el log y sigue
-   con el `.env`; red caída o 5xx/429 → reintenta sin límite (2 s → 60 s).
+   con el `.env`; red caída o 5xx/429 → reintenta sin límite (2 s → 60 s). Con el permiso dado
+   secreto por secreto, Google responde **403** (no 404) a un secreto que no existe: ese secreto
+   sigue con el `.env` y los demás se cargan igual (27/11/2026, encontrado al activarlo en
+   producción; antes un 403 frenaba toda la carga). En producción `SECRETS_NAMES` lista solo los
+   secretos creados.
 4. Consolas que necesitan los secretos (migraciones, `create-admin`, `seed`, scripts):
    `node packages/config/dist/with-secrets.js <comando>`.
 5. La cuenta de servicio solo tiene `roles/secretmanager.secretAccessor` sobre esos secretos; el
