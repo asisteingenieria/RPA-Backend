@@ -255,6 +255,9 @@ importers:
 
   evals:
     dependencies:
+      '@abaya/db':
+        specifier: workspace:*
+        version: link:../packages/db
       '@abaya/domain':
         specifier: workspace:*
         version: link:../packages/domain

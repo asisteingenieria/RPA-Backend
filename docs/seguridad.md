@@ -120,19 +120,23 @@ DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, HST
 
 ## 3. Variables de configuración de seguridad
 
-| Variable                                              | Por defecto | Para qué                                                                                                                       |
-| ----------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `TRUST_PROXY`                                         | `loopback`  | Proxies de confianza para la IP real. `false` = ninguno; número = saltos; `true` se trata como 1 (nunca confiar en cualquiera) |
-| `RPA_LISTEN_HOST`                                     | `127.0.0.1` | Interfaz del `/health` del robot (`0.0.0.0` solo en Docker)                                                                    |
-| `ADMIN_COOKIE_SECURE`                                 | `true`      | Cookie de sesión solo por HTTPS (`false` solo en desarrollo por HTTP)                                                          |
-| `FIELD_ENCRYPTION_KEY` / `_KEY_ID` / `_PREVIOUS_KEYS` | —           | Cifrado de campos y rotación                                                                                                   |
-| `CONVERSATION_RETENTION_DAYS`                         | vacío       | Borrado del contenido de conversaciones cerradas                                                                               |
-| `ROBOT_ACCESS_TTL_MS`                                 | 1 h         | Vida del token de acceso del robot                                                                                             |
-| `ROBOT_RELEASE_PUBLIC_KEY`                            | —           | Verificación de la firma de los paquetes del robot                                                                             |
+| Variable                                                 | Por defecto | Para qué                                                                                                                       |
+| -------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `TRUST_PROXY`                                            | `loopback`  | Proxies de confianza para la IP real. `false` = ninguno; número = saltos; `true` se trata como 1 (nunca confiar en cualquiera) |
+| `RPA_LISTEN_HOST`                                        | `127.0.0.1` | Interfaz del `/health` del robot (`0.0.0.0` solo en Docker)                                                                    |
+| `ADMIN_COOKIE_SECURE`                                    | `true`      | Cookie de sesión solo por HTTPS (`false` solo en desarrollo por HTTP)                                                          |
+| `FIELD_ENCRYPTION_KEY` / `_KEY_ID` / `_PREVIOUS_KEYS`    | —           | Cifrado de campos y rotación                                                                                                   |
+| `CONVERSATION_RETENTION_DAYS`                            | vacío       | Borrado del contenido de conversaciones cerradas                                                                               |
+| `ROBOT_ACCESS_TTL_MS`                                    | 1 h         | Vida del token de acceso del robot                                                                                             |
+| `ROBOT_RELEASE_PUBLIC_KEY`                               | —           | Verificación de la firma de los paquetes del robot                                                                             |
+| `SECRETS_PROVIDER`                                       | `env`       | `gcp` = secretos desde Google Secret Manager al arrancar (D-050)                                                               |
+| `SECRETS_GCP_PROJECT` / `GOOGLE_APPLICATION_CREDENTIALS` | —           | Proyecto de la bóveda y JSON de la cuenta de servicio (permisos 600, solo `secretAccessor`)                                    |
+| `SECRETS_NAMES`                                          | conocidos   | Variables que se buscan en la bóveda (`abaya-<variable-en-minúsculas>`)                                                        |
 
-Los secretos (`FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `ALERT_WEBHOOK_URL`) hoy
-están en el `.env` del servidor (permisos 600). **Pendiente:** moverlos a una bóveda o al PAM de
-Claro (requerimiento 6 de `documentacionplan.md`).
+Los secretos (`FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `ALERT_WEBHOOK_URL`) pasan a
+**Google Secret Manager** (D-050, bóveda propia autorizada por Claro el 23/11/2026); en el `.env` del
+servidor solo queda la ruta del JSON de la cuenta de servicio. Hasta migrar siguen en el `.env`
+(permisos 600).
 
 ## 4. Reglas al cambiar código
 
@@ -151,7 +155,7 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 
 | Pendiente                                                        | Depende de        |
 | ---------------------------------------------------------------- | ----------------- |
-| Secretos del servidor en bóveda o PAM (H6)                       | Claro / proveedor |
+| Secretos del servidor en la bóveda (H6, D-050: código listo)     | Servidor + Google |
 | Certificado de la CA de Claro (H7; solo TLS 1.3 ya aplicado)     | Claro             |
 | `X-Forwarded-For` en nginx (sin esto H1 no tiene efecto)         | Servidor          |
 | Doble factor (TOTP) para ADMIN (H8)                              | Nosotros          |
@@ -162,6 +166,16 @@ Claro (requerimiento 6 de `documentacionplan.md`).
 | Pentest independiente, si Claro lo exige                         | Proveedor externo |
 
 ## 6. Registro de cambios
+
+### 23/11/2026 — D-050: bóveda propia (Google Secret Manager)
+
+- **API y worker:** cargan los secretos de la bóveda antes de leer la configuración
+  (`packages/config/src/secrets.ts`, sin SDK). Ningún valor se escribe en logs: solo nombres y
+  códigos HTTP. Por defecto (`SECRETS_PROVIDER=env`) no cambia nada.
+- **Disponibilidad:** sin red reintenta sin límite; sin permiso o con el JSON inválido sigue con el
+  `.env`. Desplegar después de las 22:00.
+- **Cuenta de servicio:** solo `secretAccessor` sobre los secretos `abaya-*`; JSON con permisos 600
+  fuera del repositorio. Rotar todos los secretos al migrar.
 
 ### 17/11/2026 — D-047: notas de voz e imágenes del cliente
 

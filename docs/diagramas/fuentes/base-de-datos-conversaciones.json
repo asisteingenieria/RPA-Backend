@@ -4,13 +4,13 @@
   "meta": {
     "title": "Base de datos (1/3): conversaciones, ventas y robots",
     "locale": "es",
-    "output": ".archify/erd-conversaciones-20261027-094500/conversaciones.html",
+    "output": ".archify/erd-conversaciones-20261117-213017/conversaciones.html",
     "quality_profile": "standard",
     "repository": {
       "url": "https://github.com/asisteingenieria/RPA-Backend.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+      "revision": "3b27036202b2af51c883500f6c01e959e6d87a38"
     }
   },
   "layout": {
@@ -74,6 +74,14 @@
           "type": "text?"
         },
         {
+          "name": "sentiment",
+          "type": "text?"
+        },
+        {
+          "name": "sentimentWorst",
+          "type": "text?"
+        },
+        {
           "name": "createdAt",
           "type": "timestamp"
         },
@@ -85,8 +93,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 26,
-          "end_line": 52,
+          "line": 27,
+          "end_line": 56,
           "label": "model Conversation"
         }
       ],
@@ -196,8 +204,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 67,
-          "end_line": 100,
+          "line": 71,
+          "end_line": 104,
           "label": "model Message"
         }
       ],
@@ -256,8 +264,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 114,
-          "end_line": 126,
+          "line": 119,
+          "end_line": 131,
           "label": "model Sale"
         }
       ],
@@ -304,14 +312,14 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 130,
-          "end_line": 138,
+          "line": 135,
+          "end_line": 143,
           "label": "model ServiceCase"
         }
       ],
       "tag": "Conversaciones y ventas",
-      "row": 0,
-      "col": 3,
+      "row": 1,
+      "col": 0,
       "width": 285
     },
     {
@@ -341,6 +349,10 @@
           "type": "text"
         },
         {
+          "name": "reading",
+          "type": "integer"
+        },
+        {
           "name": "customerReplyEncrypted",
           "type": "bytea"
         },
@@ -362,14 +374,62 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 140,
-          "end_line": 156,
+          "line": 145,
+          "end_line": 163,
           "label": "model ConsentEvidence"
         }
       ],
       "tag": "Conversaciones y ventas",
-      "row": 0,
-      "col": 4,
+      "row": 1,
+      "col": 1,
+      "width": 285
+    },
+    {
+      "id": "InteractionStep",
+      "label": "InteractionStep",
+      "attributes": [
+        {
+          "name": "id",
+          "type": "text",
+          "key": "pk"
+        },
+        {
+          "name": "seq",
+          "type": "integer",
+          "key": "uk"
+        },
+        {
+          "name": "conversationId",
+          "type": "text"
+        },
+        {
+          "name": "step",
+          "type": "text"
+        },
+        {
+          "name": "result",
+          "type": "text?"
+        },
+        {
+          "name": "detail",
+          "type": "text?"
+        },
+        {
+          "name": "at",
+          "type": "timestamp"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 167,
+          "end_line": 181,
+          "label": "model InteractionStep"
+        }
+      ],
+      "tag": "Conversaciones y ventas",
+      "row": 1,
+      "col": 2,
       "width": 285
     },
     {
@@ -504,14 +564,14 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 371,
-          "end_line": 406,
+          "line": 397,
+          "end_line": 432,
           "label": "model Robot"
         }
       ],
       "tag": "Robots y operación",
-      "row": 1,
-      "col": 0,
+      "row": 0,
+      "col": 3,
       "width": 285
     },
     {
@@ -548,14 +608,14 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 158,
-          "end_line": 165,
+          "line": 183,
+          "end_line": 190,
           "label": "model RpaSession"
         }
       ],
       "tag": "Robots y operación",
-      "row": 1,
-      "col": 1,
+      "row": 0,
+      "col": 4,
       "width": 285
     },
     {
@@ -613,14 +673,14 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 167,
-          "end_line": 184,
+          "line": 192,
+          "end_line": 209,
           "label": "model RpaActionLog"
         }
       ],
       "tag": "Robots y operación",
       "row": 1,
-      "col": 2,
+      "col": 3,
       "width": 285
     },
     {
@@ -652,14 +712,14 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 303,
-          "end_line": 311,
+          "line": 329,
+          "end_line": 337,
           "label": "model OutboxEvent"
         }
       ],
       "tag": "Robots y operación",
       "row": 1,
-      "col": 3,
+      "col": 4,
       "width": 285
     }
   ],
@@ -694,8 +754,9 @@
       "dot": "violet",
       "title": "Datos cifrados",
       "items": [
-        "Columnas *Encrypted (bytea): texto del cliente, perfil, resúmenes, audio, contraseña de Abaya y secreto MFA",
-        "Se cifran en la aplicación (FieldCipher) antes de guardarse"
+        "Columnas *Encrypted (bytea): texto del cliente, perfil, resúmenes, audio o imagen del cliente, contraseña de Avaya y secreto MFA",
+        "Se cifran en la aplicación (FieldCipher) antes de guardarse",
+        "Message.mediaKind AUDIO o IMAGE (D-047): el archivo se borra al transcribirlo o describirlo; queda solo el texto"
       ]
     },
     {
@@ -703,7 +764,9 @@
       "title": "Cadenas de hashes",
       "items": [
         "ConsentEvidence: cada «SÍ AUTORIZO» enlaza con el anterior (prevHash → hash)",
-        "RpaActionLog: cada acción del robot, encadenada por robot"
+        "RpaActionLog: cada acción del robot, encadenada por robot",
+        "InteractionStep (D-045): pasos del flujo por conversación para el log de auditoría, sin datos personales",
+        "Sale solo existe con los datos completos (D-048): sin ellos se borra al cerrar; el consentimiento queda"
       ]
     },
     {
@@ -711,7 +774,7 @@
       "title": "Referencias sin llave foránea",
       "items": [
         "robotUser enlaza Conversation, RpaSession y RpaActionLog con Robot",
-        "ConsentEvidence.conversationId → Conversation",
+        "ConsentEvidence.conversationId e InteractionStep.conversationId → Conversation",
         "Conversation.agentVersionId → AgentConfigVersion (diagrama 2)",
         "Message.imageId → VersionImage (diagrama 3)"
       ]

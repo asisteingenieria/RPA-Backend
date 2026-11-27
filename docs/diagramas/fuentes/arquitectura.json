@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Arquitectura del robot de ventas en Abaya (ySocial)",
+    "title": "Arquitectura del robot de ventas en Avaya (ySocial)",
     "locale": "es",
     "translations": {
       "page.title": "{title} · Diagrama",
@@ -444,13 +444,13 @@
       "viewer.common.clear": "Borrar",
       "viewer.common.close": "Cerrar"
     },
-    "output": ".archify/architecture-rpa-software-20261027-091819/arquitectura-rpa.html",
+    "output": ".archify/architecture-rpa-20261117-213500/arquitectura-rpa.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/asisteingenieria/RPA-Backend.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+      "revision": "3b27036202b2af51c883500f6c01e959e6d87a38"
     },
     "legend": {
       "entries": {
@@ -497,7 +497,7 @@
     {
       "id": "ysocial",
       "type": "cloud",
-      "label": "Abaya / ySocial",
+      "label": "Avaya / ySocial",
       "sublabel": "chats de Claro (web)",
       "pos": [
         250,
@@ -547,8 +547,8 @@
       "sources": [
         {
           "path": "apps/rpa/src/session/playwright-session-driver.ts",
-          "line": 52,
-          "end_line": 52,
+          "line": 57,
+          "end_line": 57,
           "label": "chromium.launch"
         }
       ]
@@ -568,12 +568,6 @@
       ],
       "sources": [
         {
-          "path": "apps/rpa/src/session/session-manager.ts",
-          "line": 45,
-          "end_line": 45,
-          "label": "SessionManager"
-        },
-        {
           "path": "apps/rpa/src/inbound/inbound-watcher.ts",
           "line": 34,
           "end_line": 34,
@@ -581,9 +575,15 @@
         },
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 93,
-          "end_line": 93,
+          "line": 103,
+          "end_line": 103,
           "label": "BrowserActor"
+        },
+        {
+          "path": "apps/rpa/src/inbound/media-fetcher.ts",
+          "line": 26,
+          "end_line": 26,
+          "label": "descarga de adjuntos (D-047)"
         }
       ]
     },
@@ -631,8 +631,8 @@
       "sources": [
         {
           "path": "apps/rpa/src/child/gateway-client.ts",
-          "line": 92,
-          "end_line": 92,
+          "line": 94,
+          "end_line": 94,
           "label": "GatewayClient"
         },
         {
@@ -696,8 +696,8 @@
       "sources": [
         {
           "path": "docs/runbook.md",
-          "line": 308,
-          "end_line": 311,
+          "line": 317,
+          "end_line": 321,
           "label": "nginx sirve el panel"
         }
       ]
@@ -718,8 +718,8 @@
       "sources": [
         {
           "path": "docs/runbook.md",
-          "line": 307,
-          "end_line": 310,
+          "line": 317,
+          "end_line": 321,
           "label": "HTTPS y WebSocket a la API"
         }
       ]
@@ -746,14 +746,14 @@
         },
         {
           "path": "apps/api/src/robots/gateway/robot-gateway.service.ts",
-          "line": 189,
-          "end_line": 194,
+          "line": 44,
+          "end_line": 48,
           "label": "valida y ejecuta"
         },
         {
           "path": "apps/api/src/robots/gateway/ws-hub.ts",
           "line": 85,
-          "end_line": 85,
+          "end_line": 91,
           "label": "envía trabajos por WS"
         }
       ]
@@ -802,14 +802,14 @@
       "sources": [
         {
           "path": "apps/worker/src/conversation-runtime.service.ts",
-          "line": 164,
-          "end_line": 172,
+          "line": 166,
+          "end_line": 167,
           "label": "consume abaya.inbound"
         },
         {
           "path": "apps/worker/src/engine/state-machine.ts",
-          "line": 96,
-          "end_line": 96,
+          "line": 103,
+          "end_line": 103,
           "label": "máquina de estados"
         },
         {
@@ -824,7 +824,7 @@
       "id": "llm",
       "type": "cloud",
       "label": "Modelo de lenguaje",
-      "sublabel": "Gemini · Anthropic · OpenAI",
+      "sublabel": "Gemini: texto, voz e imágenes",
       "pos": [
         1380,
         340
@@ -847,10 +847,10 @@
           "label": "Anthropic"
         },
         {
-          "path": "apps/worker/src/llm/adapters/openai.adapter.ts",
-          "line": 19,
-          "end_line": 19,
-          "label": "OpenAI"
+          "path": "apps/worker/src/speech/gemini-speech.adapter.ts",
+          "line": 82,
+          "end_line": 82,
+          "label": "voz e imágenes (D-010, D-047)"
         }
       ]
     },
@@ -869,22 +869,44 @@
       ],
       "sources": [
         {
-          "path": "packages/db/src/index.ts",
-          "line": 1,
-          "end_line": 7,
-          "label": "Prisma con adaptador pg"
-        },
-        {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 67,
-          "end_line": 73,
+          "line": 77,
+          "end_line": 77,
           "label": "mensaje cifrado"
         },
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 140,
-          "end_line": 152,
+          "line": 145,
+          "end_line": 145,
           "label": "consentimiento encadenado"
+        },
+        {
+          "path": "packages/db/prisma/schema.prisma",
+          "line": 167,
+          "end_line": 167,
+          "label": "pasos por interacción (D-045)"
+        }
+      ]
+    },
+    {
+      "id": "azure",
+      "type": "cloud",
+      "label": "Azure Blob",
+      "sublabel": "adjuntos de ySocial",
+      "pos": [
+        250,
+        340
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "apps/rpa/src/inbound/media-fetcher.ts",
+          "line": 19,
+          "end_line": 19,
+          "label": "solo https a Azure Blob"
         }
       ]
     }
@@ -1001,7 +1023,7 @@
     {
       "from": "worker",
       "to": "llm",
-      "label": "solo redacta",
+      "label": "redacta · transcribe · describe",
       "variant": "dashed"
     },
     {
@@ -1017,6 +1039,17 @@
       "label": "Prisma (SQL)",
       "fromSide": "bottom",
       "toSide": "right"
+    },
+    {
+      "from": "robot",
+      "to": "azure",
+      "label": "audio o imagen (https, 5 MB)",
+      "variant": "security"
+    },
+    {
+      "from": "ysocial",
+      "to": "azure",
+      "variant": "dashed"
     }
   ],
   "cards": [
@@ -1024,9 +1057,10 @@
       "dot": "violet",
       "title": "Qué guarda PostgreSQL",
       "items": [
-        "Conversation y Message: texto del cliente cifrado",
+        "Conversation y Message: texto del cliente cifrado; el audio o la imagen solo hasta transcribirlo o describirlo",
         "Sale, ServiceCase y ConsentEvidence: venta y «SÍ AUTORIZO» con cadena de hashes",
         "RpaActionLog: cada acción del robot, encadenada",
+        "InteractionStep: pasos del flujo para el log de auditoría, sin datos personales",
         "Brain, CatalogRecord y AgentConfigVersion: catálogo y agente",
         "AdminUser, AdminSession y AdminAuditLog: panel y auditoría"
       ]
@@ -1058,6 +1092,8 @@
         "La máquina de estados decide el flujo",
         "El modelo solo redacta; los validadores revisan cifras contra el catálogo",
         "Textos legales y plantillas los pone el código",
+        "Notas de voz e imágenes: Gemini las transcribe o describe sin copiar datos personales; nunca autorizan",
+        "Tras el «SÍ», sin los datos no hay venta: el robot insiste y nunca transfiere incompleto",
         "Alertas a Slack/Teams sin datos personales"
       ]
     }

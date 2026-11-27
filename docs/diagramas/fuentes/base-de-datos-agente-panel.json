@@ -4,13 +4,13 @@
   "meta": {
     "title": "Base de datos (2/3): agente, modelo de lenguaje y panel",
     "locale": "es",
-    "output": ".archify/erd-agente-panel-20261027-094500/agente-panel.html",
+    "output": ".archify/erd-agente-panel-20261117-213017/agente-panel.html",
     "quality_profile": "standard",
     "repository": {
       "url": "https://github.com/asisteingenieria/RPA-Backend.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+      "revision": "3b27036202b2af51c883500f6c01e959e6d87a38"
     }
   },
   "layout": {
@@ -129,8 +129,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 222,
-          "end_line": 259,
+          "line": 247,
+          "end_line": 284,
           "label": "model AgentConfigVersion"
         }
       ],
@@ -184,8 +184,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 630,
-          "end_line": 645,
+          "line": 656,
+          "end_line": 671,
           "label": "model AgentTestRecord"
         }
       ],
@@ -247,8 +247,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 285,
-          "end_line": 301,
+          "line": 311,
+          "end_line": 327,
           "label": "model LlmCall"
         }
       ],
@@ -306,8 +306,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 186,
-          "end_line": 199,
+          "line": 211,
+          "end_line": 224,
           "label": "model Plan"
         }
       ],
@@ -353,8 +353,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 201,
-          "end_line": 212,
+          "line": 226,
+          "end_line": 237,
           "label": "model PromptVersion"
         }
       ],
@@ -408,8 +408,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 269,
-          "end_line": 283,
+          "line": 295,
+          "end_line": 309,
           "label": "model ModelUsage"
         }
       ],
@@ -480,8 +480,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 339,
-          "end_line": 356,
+          "line": 365,
+          "end_line": 382,
           "label": "model AdminUser"
         }
       ],
@@ -526,8 +526,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 358,
-          "end_line": 369,
+          "line": 384,
+          "end_line": 395,
           "label": "model AdminSession"
         }
       ],
@@ -569,8 +569,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 313,
-          "end_line": 324,
+          "line": 339,
+          "end_line": 350,
           "label": "model AdminAuditLog"
         }
       ],
@@ -604,8 +604,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 327,
-          "end_line": 332,
+          "line": 353,
+          "end_line": 358,
           "label": "model AppSetting"
         }
       ],

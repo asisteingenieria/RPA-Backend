@@ -199,6 +199,9 @@ contra Abaya real (D-020): `probar-abaya <url|login|estado|disponible|bandeja> [
   `abaya.agent-test`. Núcleo de la suite: `apps/worker/src/evals/suite.ts`.
 - Suite de evaluación: `pnpm evals` (línea base sin red) o
   `pnpm evals -- --provider anthropic,openai,gemini` (requiere API keys). Meta: 0 datos inventados, ≥ 95 %.
+  D-049: carga el `.env` y con un proveedor real registra su consumo en `ModelUsage` (`EVAL`); costo
+  con `MODEL_PRICES_USD` (Gemini 0.75/3.75 hasta el 31/12/2026, 1.50/7.50 desde el 1/1/2027).
+  Medición de consumo agregada: `node --env-file=.env scripts/consumo-tokens.mjs <desde>`.
 - Oferta con imágenes (D-014, plan 6.3.10): un Brain sin Excel toma los planes de las imágenes
   (`recordsFromImages`, códigos con la inicial del proceso: `P38327`). El modelo ofrece con
   `{{IMAGENES}}` (primero la imagen del plan más caro del proceso del cliente; las compartidas
@@ -359,6 +362,9 @@ bifurcarse) y la punta se busca por `seq`; las transacciones Serializable se rei
 - Envío (D-028): según el modo de envío del usuario en ySocial (`sendMode`: click/enter/both,
   `ChatPage.sendMode`); respuestas PENDING de más de 5 min (`STALE_AFTER_MS`) no se envían
   (`FAILED` + `SEND_STALE`), p. ej. las preparadas durante una pausa.
+- Bóveda (D-050, 23/11/2026): con `SECRETS_PROVIDER=gcp` la API y el worker cargan los secretos de
+  Google Secret Manager al arrancar (`packages/config/src/secrets.ts`; `main.ts` → `server.ts`/`run.ts`);
+  consolas con `node packages/config/dist/with-secrets.js <comando>`. Pasos en runbook §12.10.
 - Trazas solo en error, cifradas, en `TRACE_DIR` (7 días); `decryptTrace` para verlas.
 - Alertas: logs + `ALERT_WEBHOOK_URL` (Slack/Teams), sin datos personales.
 - Capacidad (v1.5, sección 2.7 del plan): 3 chats por robot (`MAX_CHATS_PER_ROBOT`), fila del
