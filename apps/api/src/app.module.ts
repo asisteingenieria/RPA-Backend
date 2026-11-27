@@ -87,7 +87,7 @@ const gateway = new RobotGateway({
   traceDir: cfg.TRACE_DIR,
   workHoursDefault: cfg.ROBOT_WORK_HOURS,
 });
-/** Lo que necesita el WebSocket de la pasarela (lo monta main.ts sobre el servidor HTTP). */
+/** Lo que necesita el WebSocket de la pasarela (lo monta server.ts sobre el servidor HTTP). */
 export const hubDeps: HubDeps = {
   robots,
   prisma,

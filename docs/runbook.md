@@ -576,3 +576,80 @@ Vuelta atrás de nginx:
    Llevarlo a producción por importación (§8.c, D-019).
 5. **Comprobar:** Trazabilidad → «Log de auditoría» descarga el CSV (una fila por paso, la línea
    como `300****567`) y la descarga aparece en Auditoría (`INTERACTION_LOG_EXPORTED`).
+
+### 12.10 Bóveda de secretos en Google Secret Manager (D-050, 23/11/2026)
+
+Claro autorizó una bóveda propia en lugar de su PAM. La API y el worker leen los secretos de la
+bóveda al arrancar; en el `.env` solo queda la ruta de la cuenta de servicio. `<PROYECTO>` es el id
+del proyecto de Google Cloud de Claro (el de la facturación de Gemini). **Nunca** pegar valores en
+chats ni en tickets; escribirlos solo en Cloud Shell con `read -rs`.
+
+**A. Google Cloud (Cloud Shell, con un usuario Owner del proyecto).**
+
+```bash
+gcloud config set project <PROYECTO>
+gcloud services enable secretmanager.googleapis.com
+gcloud iam service-accounts create abaya-secretos --display-name="RPA Claro - lectura de secretos"
+SA=abaya-secretos@<PROYECTO>.iam.gserviceaccount.com
+
+# Un secreto por variable (repetir con cada nombre; el valor se escribe sin que se vea):
+#   abaya-database-url, abaya-field-encryption-key, abaya-gemini-api-key, abaya-alert-webhook-url
+#   (abaya-redis-url solo si Redis tiene contraseña)
+N=abaya-gemini-api-key
+read -rs V && printf '%s' "$V" | gcloud secrets create $N --data-file=- --replication-policy=automatic && unset V
+gcloud secrets add-iam-policy-binding $N --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+
+# Llave de la cuenta de servicio (si la política de la organización la bloquea:
+# iam.disableServiceAccountKeyCreation, pedir la excepción para este proyecto)
+gcloud iam service-accounts keys create abaya-secretos.json --iam-account=$SA
+```
+
+Descargar `abaya-secretos.json` (menú ⋮ → Descargar), borrarlo de Cloud Shell (`shred -u`) y
+activar la auditoría de lecturas: IAM y administración → Registros de auditoría → «Secret Manager
+API» → «Lectura de datos».
+
+**B. Servidor (después de las 22:00, con el código de D-050 ya desplegado: pull, install, build).**
+
+```bash
+mkdir -p ~/rpa/secretos && chmod 700 ~/rpa/secretos
+# copiar el JSON (desde el equipo: scp abaya-secretos.json tecnologia@10.255.255.194:rpa/secretos/)
+chmod 600 ~/rpa/secretos/abaya-secretos.json
+cd ~/rpa/backend
+cp .env ~/respaldos/.env.antes-boveda && chmod 600 ~/respaldos/.env.antes-boveda
+cat >> .env <<'FIN'
+SECRETS_PROVIDER=gcp
+SECRETS_GCP_PROJECT=<PROYECTO>
+GOOGLE_APPLICATION_CREDENTIALS=/home/tecnologia/rpa/secretos/abaya-secretos.json
+FIN
+# Prueba sin reiniciar: debe decir «bóveda: N secretos cargados (…)»
+node packages/config/dist/with-secrets.js true
+pm2 restart rpa-api rpa-worker --update-env && pm2 logs --lines 30 --nostream | grep secretos
+```
+
+Si el panel y `/health` responden, quitar los secretos del `.env`, reiniciar y volver a comprobar:
+
+```bash
+sed -i -E '/^(DATABASE_URL|FIELD_ENCRYPTION_KEY|GEMINI_API_KEY|ALERT_WEBHOOK_URL)=/d' .env
+pm2 restart rpa-api rpa-worker --update-env && pm2 logs --lines 30 --nostream | grep secretos
+```
+
+Desde ahora las consolas que usan la base van con el envoltorio:
+`node packages/config/dist/with-secrets.js pnpm --filter @abaya/db migrate:deploy` (igual con
+`create-admin` y `consumo-tokens.mjs`). El respaldo con `pg_dump` toma la URL así:
+`node packages/config/dist/with-secrets.js sh -c 'pg_dump "${DATABASE_URL%%\?*}" -Fc -f ~/respaldos/x.dump'`.
+
+**C. Rotar (los valores estuvieron en claro en el `.env`).** Cada cambio es una versión nueva del
+secreto (`read -rs V && printf '%s' "$V" | gcloud secrets versions add <nombre> --data-file=-`) y un
+`pm2 restart rpa-api rpa-worker`, después de las 22:00:
+
+1. `GEMINI_API_KEY`: crear otra key en el mismo proyecto, versión nueva, reiniciar, revocar la vieja.
+2. PostgreSQL: `ALTER USER … PASSWORD '…'` y versión nueva de `abaya-database-url`.
+3. Cifrado: clave nueva (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`)
+   como versión nueva de `abaya-field-encryption-key`; la anterior va al secreto
+   `abaya-field-encryption-previous-keys` como `1:<anterior>` (con su permiso) y en el `.env`
+   `FIELD_ENCRYPTION_KEY_ID=2`. La anterior se queda mientras haya datos cifrados con ella.
+4. Al terminar: `shred -u ~/respaldos/.env.antes-boveda`.
+
+**D. Evidencia E6.2 (identificadores, nunca valores).** `gcloud secrets list
+--format="table(name,createTime)"`, `gcloud secrets get-iam-policy <nombre>` y en el Explorador de
+registros `protoPayload.methodName="google.cloud.secretmanager.v1.SecretManagerService.AccessSecretVersion"`.

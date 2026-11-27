@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./secrets": {
+      "types": "./dist/secrets.d.ts",
+      "default": "./dist/secrets.js"
     }
   },
   "scripts": {

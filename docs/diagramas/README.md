@@ -6,11 +6,11 @@ commit con que se hicieron.
 
 | Archivo | Qué muestra | Hecho con | Commit |
 | --- | --- | --- | --- |
-| `arquitectura.html` | Arquitectura del software: PC del robot, pasarela, API, motor, Redis, PostgreSQL, panel y servicios externos | Archify (architecture) | `1b29b83` |
-| `base-de-datos-conversaciones.html` | Tablas 1/3: conversaciones, ventas y robots | Archify (erd) | `1b29b83` |
-| `base-de-datos-agente-panel.html` | Tablas 2/3: agente, modelo de lenguaje y panel | Archify (erd) | `1b29b83` |
-| `base-de-datos-conocimiento.html` | Tablas 3/3: conocimiento (Brains) | Archify (erd) | `1b29b83` |
-| `flujo-mensaje.html` | Del mensaje del cliente a la respuesta (técnico, por procesos) | Archify (workflow) | `9c9aa55` |
+| `arquitectura.html` | Arquitectura del software: PC del robot, pasarela, API, motor, Redis, PostgreSQL, panel y servicios externos | Archify (architecture) | `3b27036` |
+| `base-de-datos-conversaciones.html` | Tablas 1/3: conversaciones, ventas y robots | Archify (erd) | `3b27036` |
+| `base-de-datos-agente-panel.html` | Tablas 2/3: agente, modelo de lenguaje y panel | Archify (erd) | `3b27036` |
+| `base-de-datos-conocimiento.html` | Tablas 3/3: conocimiento (Brains) | Archify (erd) | `3b27036` |
+| `flujo-mensaje.html` | Del mensaje del cliente a la respuesta (técnico, por procesos) | Archify (workflow) | `3b27036` |
 | `proceso-venta.md` | Proceso de venta (diagrama de flujo clásico, blanco y negro) | Mermaid | — |
 | `arquitectura-mermaid.md` | Arquitectura simple con tabla de componentes | Mermaid | — |
 

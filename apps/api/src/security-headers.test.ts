@@ -24,7 +24,7 @@ afterEach(async () => {
   app = undefined;
 });
 
-/** Arranca la API mínima como en main.ts y devuelve la IP que ve Express para un X-Forwarded-For. */
+/** Arranca la API mínima como en server.ts y devuelve la IP que ve Express para un X-Forwarded-For. */
 async function seenIp(trustProxy: string, forwardedFor?: string): Promise<string> {
   const a = await NestFactory.create<NestExpressApplication>(IpModule, { logger: false });
   a.set('trust proxy', parseTrustProxy(trustProxy));

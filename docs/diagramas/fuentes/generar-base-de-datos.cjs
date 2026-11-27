@@ -71,12 +71,12 @@ const LEER = { dot: "cyan", title: "Cómo leer las tablas", items: ["PK llave pr
 const diagrams = [
   { slug: "conversaciones", title: "Base de datos (1/3): conversaciones, ventas y robots",
     domains: [
-      { tag: "Conversaciones y ventas", cells: [["Conversation", 0, 0], ["Message", 0, 1], ["Sale", 0, 2], ["ServiceCase", 0, 3], ["ConsentEvidence", 0, 4]] },
-      { tag: "Robots y operación", cells: [["Robot", 1, 0], ["RpaSession", 1, 1], ["RpaActionLog", 1, 2], ["OutboxEvent", 1, 3]] }],
+      { tag: "Conversaciones y ventas", cells: [["Conversation", 0, 0], ["Message", 0, 1], ["Sale", 0, 2], ["ServiceCase", 1, 0], ["ConsentEvidence", 1, 1], ["InteractionStep", 1, 2]] },
+      { tag: "Robots y operación", cells: [["Robot", 0, 3], ["RpaSession", 0, 4], ["RpaActionLog", 1, 3], ["OutboxEvent", 1, 4]] }],
     cards: [
-      { dot: "violet", title: "Datos cifrados", items: ["Columnas *Encrypted (bytea): texto del cliente, perfil, resúmenes, audio, contraseña de Abaya y secreto MFA", "Se cifran en la aplicación (FieldCipher) antes de guardarse"] },
-      { dot: "rose", title: "Cadenas de hashes", items: ["ConsentEvidence: cada «SÍ AUTORIZO» enlaza con el anterior (prevHash → hash)", "RpaActionLog: cada acción del robot, encadenada por robot"] },
-      { dot: "amber", title: "Referencias sin llave foránea", items: ["robotUser enlaza Conversation, RpaSession y RpaActionLog con Robot", "ConsentEvidence.conversationId → Conversation", "Conversation.agentVersionId → AgentConfigVersion (diagrama 2)", "Message.imageId → VersionImage (diagrama 3)"] }, LEER] },
+      { dot: "violet", title: "Datos cifrados", items: ["Columnas *Encrypted (bytea): texto del cliente, perfil, resúmenes, audio o imagen del cliente, contraseña de Avaya y secreto MFA", "Se cifran en la aplicación (FieldCipher) antes de guardarse", "Message.mediaKind AUDIO o IMAGE (D-047): el archivo se borra al transcribirlo o describirlo; queda solo el texto"] },
+      { dot: "rose", title: "Cadenas de hashes", items: ["ConsentEvidence: cada «SÍ AUTORIZO» enlaza con el anterior (prevHash → hash)", "RpaActionLog: cada acción del robot, encadenada por robot", "InteractionStep (D-045): pasos del flujo por conversación para el log de auditoría, sin datos personales", "Sale solo existe con los datos completos (D-048): sin ellos se borra al cerrar; el consentimiento queda"] },
+      { dot: "amber", title: "Referencias sin llave foránea", items: ["robotUser enlaza Conversation, RpaSession y RpaActionLog con Robot", "ConsentEvidence.conversationId e InteractionStep.conversationId → Conversation", "Conversation.agentVersionId → AgentConfigVersion (diagrama 2)", "Message.imageId → VersionImage (diagrama 3)"] }, LEER] },
   { slug: "agente-panel", title: "Base de datos (2/3): agente, modelo de lenguaje y panel",
     domains: [
       { tag: "Agente y modelo de lenguaje", cells: [["AgentConfigVersion", 0, 0], ["AgentTestRecord", 0, 1], ["LlmCall", 0, 2], ["Plan", 1, 0], ["PromptVersion", 1, 1], ["ModelUsage", 1, 2]] },

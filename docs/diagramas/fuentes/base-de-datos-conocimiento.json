@@ -4,13 +4,13 @@
   "meta": {
     "title": "Base de datos (3/3): conocimiento (Brains)",
     "locale": "es",
-    "output": ".archify/erd-conocimiento-20261027-094500/conocimiento.html",
+    "output": ".archify/erd-conocimiento-20261117-213017/conocimiento.html",
     "quality_profile": "standard",
     "repository": {
       "url": "https://github.com/asisteingenieria/RPA-Backend.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1b29b8398b852d5a11fd7f155bdcae5396db5669"
+      "revision": "3b27036202b2af51c883500f6c01e959e6d87a38"
     }
   },
   "layout": {
@@ -49,8 +49,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 566,
-          "end_line": 575,
+          "line": 592,
+          "end_line": 601,
           "label": "model AgentBrain"
         }
       ],
@@ -93,8 +93,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 437,
-          "end_line": 448,
+          "line": 463,
+          "end_line": 474,
           "label": "model Brain"
         }
       ],
@@ -162,8 +162,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 450,
-          "end_line": 473,
+          "line": 476,
+          "end_line": 499,
           "label": "model BrainVersion"
         }
       ],
@@ -193,8 +193,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 511,
-          "end_line": 516,
+          "line": 537,
+          "end_line": 542,
           "label": "model KnowledgeBlob"
         }
       ],
@@ -298,8 +298,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 475,
-          "end_line": 509,
+          "line": 501,
+          "end_line": 535,
           "label": "model KnowledgeSource"
         }
       ],
@@ -361,8 +361,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 577,
-          "end_line": 594,
+          "line": 603,
+          "end_line": 620,
           "label": "model KnowledgeUsage"
         }
       ],
@@ -438,8 +438,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 518,
-          "end_line": 539,
+          "line": 544,
+          "end_line": 565,
           "label": "model CatalogRecord"
         }
       ],
@@ -503,8 +503,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 541,
-          "end_line": 564,
+          "line": 567,
+          "end_line": 590,
           "label": "model VersionImage"
         }
       ],
@@ -568,8 +568,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 611,
-          "end_line": 628,
+          "line": 637,
+          "end_line": 654,
           "label": "model VersionChunk"
         }
       ],
@@ -617,8 +617,8 @@
       "sources": [
         {
           "path": "packages/db/prisma/schema.prisma",
-          "line": 596,
-          "end_line": 609,
+          "line": 622,
+          "end_line": 635,
           "label": "model SourceChunk"
         }
       ],

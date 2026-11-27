@@ -1,5 +1,59 @@
 # Decisiones de diseño
 
+## D-050 · Bóveda propia de secretos: Google Secret Manager · APROBADA — implementada en local
+
+**Contexto (23/11/2026).** Requerimiento 6 de Claro (R-04/H6/G1): los secretos del servidor
+(`DATABASE_URL`, `FIELD_ENCRYPTION_KEY`, `GEMINI_API_KEY`, `ALERT_WEBHOOK_URL`) están en el `.env`
+en texto claro. Claro autorizó que Asiste use su propia bóveda en lugar del PAM corporativo.
+
+**Opciones evaluadas.** (1) Google Secret Manager; (2) OpenBao/HashiCorp Vault propio; (3) cifrado
+local (`systemd-creds`, SOPS). La 2 queda sellada al reiniciar el servidor (el robot no arranca en
+horario sin intervención manual) y hay que operarla; la 3 no da identificadores ni auditoría de
+acceso, que es lo que pide la evidencia E6.2.
+
+**Decisión.** Google Secret Manager, en el proyecto de Google Cloud de Claro (el mismo de la
+facturación de Gemini: no entra un proveedor nuevo y el servidor ya sale a Internet hacia Google).
+
+1. La API y el worker cargan los secretos al arrancar, ANTES de leer la configuración
+   (`apps/*/src/main.ts` → `loadSecretsIntoEnv()` de `@abaya/config/secrets` → `server.js`/`run.js`).
+   Por API REST (sin SDK): JWT RS256 de la cuenta de servicio → token OAuth → `…/versions/latest:access`.
+2. `SECRETS_PROVIDER=env` (por defecto) no hace nada: todo sigue igual hasta configurarlo.
+   `SECRETS_PROVIDER=gcp` + `SECRETS_GCP_PROJECT` + `GOOGLE_APPLICATION_CREDENTIALS` (JSON de la
+   cuenta de servicio, permisos 600). Nombres: `abaya-` + variable en minúsculas con guiones
+   (`GEMINI_API_KEY` → `abaya-gemini-api-key`); lista en `SECRETS_NAMES` (por defecto los secretos
+   conocidos). La bóveda manda sobre el `.env`.
+3. Tolerante (regla de disponibilidad): secreto inexistente → se usa el `.env` (aviso con el
+   nombre, nunca el valor); permiso denegado o archivo de cuenta inválido → error en el log y sigue
+   con el `.env`; red caída o 5xx/429 → reintenta sin límite (2 s → 60 s).
+4. Consolas que necesitan los secretos (migraciones, `create-admin`, `seed`, scripts):
+   `node packages/config/dist/with-secrets.js <comando>`.
+5. La cuenta de servicio solo tiene `roles/secretmanager.secretAccessor` sobre esos secretos; el
+   acceso queda en Cloud Audit Logs (Data Access). Es la credencial de arranque («secret zero»):
+   no da acceso a nada más y se rota. Al migrar se rotan todos los secretos.
+
+## D-049 · Consumo de tokens completo: la suite por consola también se registra · APROBADA — implementada en local
+
+**Contexto (19/11/2026).** Informe de consumo con la factura de Gemini (COP 28.515 del 23/10 al
+19/11): todo cuadró con `LlmCall` y `ModelUsage` de producción y desarrollo menos ≈ COP 9.935, que
+eran las corridas de `pnpm evals` del 17/11 (D-047). La suite por consola no registraba consumo y la
+vista «Consumo» no mostraba costo porque `MODEL_PRICES_USD` estaba vacío.
+
+**Decisión.**
+
+1. `pnpm evals` carga el `.env` de la raíz (`tsx --env-file-if-exists`) y, con un proveedor real y
+   `DATABASE_URL`, registra cada llamada en `ModelUsage` como `EVAL` (sin contenido), igual que
+   «Evaluar» del panel. `EVAL_RECORD_USAGE=false` lo apaga. Antes de salir espera las escrituras
+   (`PrismaUsageRecorder.flush`). La línea base heurística no registra nada.
+2. Al final imprime el consumo por modelo y el costo con `MODEL_PRICES_USD`; la columna
+   «Costo/conv.» del reporte usa esa tarifa si no hay `EVAL_PRICE_<PROVEEDOR>_IN/_OUT`.
+3. `MODEL_PRICES_USD` = `{"gemini-3.8-flash":{"input":0.75,"output":3.75},"gemini-embedding-2":{"input":0.2,"output":0}}`
+   (`.env.example` y `.env` local; en el servidor se agrega a mano). **Desde el 1/1/2027 Gemini 3.8
+   Flash cuesta 1.50 / 7.50: cambiar el valor ese día.**
+
+**Medición de referencia (producción, 23/10–19/11):** turno de conversación 9.162 / 128 tokens
+(COP 24), venta 6,5 turnos (COP 166), nota de voz COP 1,3, imagen COP 4,8, corrida de la suite
+≈ COP 8.000. Script `scripts/consumo-tokens.mjs` (solo cifras agregadas).
+
 ## D-048 · Tras el «SÍ», el robot insiste por los datos y nunca pasa una venta sin ellos · APROBADA — implementada en local
 
 **Contexto (17/11/2026, prueba en producción, caso 2224206016).** El cliente autorizó el

@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "RPA de ventas en Abaya (ySocial): del mensaje del cliente a la respuesta",
+    "title": "RPA de ventas en Avaya (ySocial): del mensaje del cliente a la respuesta",
     "locale": "es",
     "translations": {
       "page.title": "{title} · Diagrama",
@@ -445,12 +445,12 @@
       "viewer.common.close": "Cerrar"
     },
     "quality_profile": "showcase",
-    "output": ".archify/workflow-rpa-ventas-20261015-173839/rpa-ventas.html",
+    "output": ".archify/workflow-rpa-ventas-20261117-213800/rpa-ventas.html",
     "repository": {
       "url": "https://github.com/asisteingenieria/RPA-Backend.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "9c9aa55b84f401840083d5e308a3d3e20d9b3b53"
+      "revision": "3b27036202b2af51c883500f6c01e959e6d87a38"
     },
     "viewBox": [
       1215,
@@ -482,7 +482,7 @@
   "lanes": [
     {
       "id": "ysocial",
-      "label": "Cliente y ySocial / Abaya"
+      "label": "Cliente y Avaya / ySocial"
     },
     {
       "id": "robot",
@@ -559,8 +559,8 @@
       "sources": [
         {
           "path": "apps/rpa/src/abaya/selectors.ts",
-          "line": 62,
-          "end_line": 74,
+          "line": 66,
+          "end_line": 77,
           "label": "bandeja y aviso"
         }
       ]
@@ -576,8 +576,8 @@
       "sources": [
         {
           "path": "apps/rpa/src/abaya/pages/chat.page.ts",
-          "line": 216,
-          "end_line": 224,
+          "line": 251,
+          "end_line": 258,
           "label": "verificación"
         }
       ]
@@ -593,8 +593,8 @@
       "sources": [
         {
           "path": "apps/rpa/src/abaya/selectors.ts",
-          "line": 105,
-          "end_line": 140,
+          "line": 118,
+          "end_line": 160,
           "label": "Finalizar y etiquetas"
         }
       ]
@@ -610,14 +610,14 @@
       "sources": [
         {
           "path": "apps/rpa/src/main.ts",
-          "line": 33,
-          "end_line": 60,
+          "line": 54,
+          "end_line": 76,
           "label": "espera el horario"
         },
         {
           "path": "apps/rpa/src/session/session-manager.ts",
-          "line": 70,
-          "end_line": 105,
+          "line": 283,
+          "end_line": 350,
           "label": "login y relogin"
         }
       ]
@@ -638,8 +638,8 @@
         },
         {
           "path": "apps/rpa/src/abaya/network/parsers.ts",
-          "line": 13,
-          "end_line": 50,
+          "line": 14,
+          "end_line": 60,
           "label": "parsers zod"
         }
       ]
@@ -650,13 +650,20 @@
       "col": 2,
       "type": "backend",
       "label": "InboundProcessor",
-      "sublabel": "huella · sin duplicados",
-      "width": 147,
+      "sublabel": "huella · descarga adjuntos",
+      "width": 170,
       "sources": [
         {
           "path": "apps/rpa/src/inbound/inbound-processor.ts",
-          "line": 104,
-          "end_line": 120
+          "line": 143,
+          "end_line": 203,
+          "label": "huella y guardado"
+        },
+        {
+          "path": "apps/rpa/src/inbound/media-fetcher.ts",
+          "line": 51,
+          "end_line": 84,
+          "label": "audio o imagen (D-047)"
         }
       ]
     },
@@ -671,20 +678,20 @@
       "sources": [
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 294,
-          "end_line": 370,
+          "line": 344,
+          "end_line": 400,
           "label": "doSend"
         },
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 448,
-          "end_line": 475,
+          "line": 512,
+          "end_line": 537,
           "label": "submit según sendMode"
         },
         {
           "path": "apps/rpa/src/abaya/pages/chat.page.ts",
-          "line": 127,
-          "end_line": 146,
+          "line": 151,
+          "end_line": 168,
           "label": "sendMode"
         }
       ]
@@ -732,20 +739,20 @@
       "sources": [
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 294,
-          "end_line": 320,
+          "line": 344,
+          "end_line": 360,
           "label": "estado y edad"
         },
         {
           "path": "apps/rpa/src/child/gateway-client.ts",
-          "line": 99,
-          "end_line": 120,
+          "line": 101,
+          "end_line": 125,
           "label": "banderas por WebSocket"
         },
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 477,
-          "end_line": 486,
+          "line": 541,
+          "end_line": 550,
           "label": "preflight"
         }
       ]
@@ -761,14 +768,14 @@
       "sources": [
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 527,
-          "end_line": 532,
+          "line": 526,
+          "end_line": 527,
           "label": "uncertain"
         },
         {
           "path": "apps/rpa/src/actor/browser-actor.ts",
-          "line": 30,
-          "end_line": 37,
+          "line": 40,
+          "end_line": 40,
           "label": "STALE_AFTER_MS"
         }
       ]
@@ -784,13 +791,13 @@
       "sources": [
         {
           "path": "apps/api/src/robots/gateway/robot-gateway.service.ts",
-          "line": 108,
-          "end_line": 120,
+          "line": 109,
+          "end_line": 110,
           "label": "inbound.store"
         },
         {
           "path": "packages/robot-store/src/inbound-sink.ts",
-          "line": 38,
+          "line": 60,
           "end_line": 60,
           "label": "guarda y encola"
         }
@@ -813,14 +820,14 @@
         },
         {
           "path": "apps/worker/src/engine/state-machine.ts",
-          "line": 14,
-          "end_line": 40,
+          "line": 103,
+          "end_line": 103,
           "label": "etapas"
         },
         {
           "path": "apps/worker/src/engine/conversation-engine.ts",
-          "line": 374,
-          "end_line": 410,
+          "line": 389,
+          "end_line": 389,
           "label": "SÍ AUTORIZO"
         }
       ]
@@ -836,13 +843,13 @@
       "sources": [
         {
           "path": "apps/worker/src/outbox/outbox-publisher.ts",
-          "line": 18,
-          "end_line": 95
+          "line": 89,
+          "end_line": 89
         },
         {
           "path": "apps/api/src/robots/gateway/ws-hub.ts",
-          "line": 37,
-          "end_line": 90,
+          "line": 85,
+          "end_line": 91,
           "label": "WebSocket al robot"
         }
       ]
@@ -858,8 +865,8 @@
       "sources": [
         {
           "path": "apps/api/src/admin/agent-config.service.ts",
-          "line": 378,
-          "end_line": 420,
+          "line": 380,
+          "end_line": 380,
           "label": "publicar"
         },
         {
@@ -876,13 +883,13 @@
       "col": 3,
       "type": "cloud",
       "label": "LLM redacta",
-      "sublabel": "Gemini",
-      "width": 92,
+      "sublabel": "Gemini (voz e imágenes)",
+      "width": 150,
       "sources": [
         {
           "path": "apps/worker/src/engine/conversation-engine.ts",
-          "line": 990,
-          "end_line": 1000
+          "line": 1058,
+          "end_line": 1058
         },
         {
           "path": "apps/worker/src/llm/adapters/gemini.adapter.ts",
@@ -907,8 +914,8 @@
         },
         {
           "path": "apps/worker/src/engine/conversation-engine.ts",
-          "line": 950,
-          "end_line": 960
+          "line": 1019,
+          "end_line": 1019
         }
       ]
     },
@@ -923,8 +930,8 @@
       "sources": [
         {
           "path": "apps/worker/src/engine/conversation-engine.ts",
-          "line": 705,
-          "end_line": 715
+          "line": 763,
+          "end_line": 763
         }
       ]
     }
@@ -1103,8 +1110,8 @@
         "A Portabilidad · B Migración · C/D → soporte; el operador decide el proceso (D-021)",
         "Perfil (uso, red) → oferta del catálogo → autorización de consulta",
         "Solo «SÍ / SÍ AUTORIZO» escrito es consentimiento (regex)",
-        "Autorizado → documento, nombre y correo → «Finalizar» al backoffice",
-        "Nota de voz → plantilla NOTA_DE_VOZ_ILEGIBLE, sin modelo (D-027)",
+        "Autorizado → documento, nombre y correo; sin ellos el robot insiste y no hay venta (D-048) → «Finalizar» al backoffice",
+        "Nota de voz o imagen → Gemini la transcribe o la describe; nunca autoriza ni elige menú (D-047)",
         "Sin respuesta: 3 reactivaciones cada 2 min → cierre con etiqueta"
       ]
     },
