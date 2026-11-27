@@ -620,7 +620,10 @@ cat >> .env <<'FIN'
 SECRETS_PROVIDER=gcp
 SECRETS_GCP_PROJECT=<PROYECTO>
 GOOGLE_APPLICATION_CREDENTIALS=/home/tecnologia/rpa/secretos/abaya-secretos.json
+SECRETS_NAMES=DATABASE_URL,FIELD_ENCRYPTION_KEY,GEMINI_API_KEY
 FIN
+# (SECRETS_NAMES = solo los secretos creados; agregar ALERT_WEBHOOK_URL si se crea el suyo.
+#  Pegar el bloque UNA vez: `grep -E '^(SECRETS_|GOOGLE_APPLICATION)' .env` debe dar 4 líneas.)
 # Prueba sin reiniciar: debe decir «bóveda: N secretos cargados (…)»
 node packages/config/dist/with-secrets.js true
 pm2 restart rpa-api rpa-worker --update-env && pm2 logs --lines 30 --nostream | grep secretos

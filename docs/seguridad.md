@@ -167,6 +167,12 @@ servidor solo queda la ruta del JSON de la cuenta de servicio. Hasta migrar sigu
 
 ## 6. Registro de cambios
 
+### 27/11/2026 — D-050: un secreto inexistente no frena la bóveda
+
+- Con el permiso por secreto, Google responde 403 a un secreto que no existe; antes eso hacía
+  seguir todo con el `.env`. Ahora solo ese secreto sigue con el `.env` (aviso con su id) y los
+  demás se cargan; si ninguno carga, error y `.env` como antes. Prueba en `secrets.test.ts`.
+
 ### 23/11/2026 — D-050: bóveda propia (Google Secret Manager)
 
 - **API y worker:** cargan los secretos de la bóveda antes de leer la configuración
